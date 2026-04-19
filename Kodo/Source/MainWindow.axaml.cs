@@ -7,6 +7,7 @@
 // April 19th, 2026 - SS-YYC - Added keybinds
 // April 19th, 2026 - KerbalMissile - Fixed lines and characters showning in the bottom right with no file. Fixed grammar if there is only 1 line or character too.
 // April 19th, 2026 - KerbalMissile - Changed logo colour
+// April 19th, 2026 - KerbalMissile - Added proper comments to SS-YYC's changes and improvements
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -248,6 +249,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FocusEditor();
     }
 
+    // Clears the editor and resets state to start a new file
     private void NewFile()
     {
         _currentFilePath = null;
@@ -339,6 +341,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshState();
     }
 
+    // Focuses the editor text box, used after opening a file or switching back from settings
     private void FocusEditor()
     {
         Dispatcher.UIThread.Post(() =>
@@ -350,6 +353,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }, DispatcherPriority.Background);
     }
 
+    // Handles keyboard shortcuts for New File, Open, Save, and focusing the editor
     private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
     {
         var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
@@ -383,11 +387,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Returns the file name to display in the top bar, or "untitled.txt" if it's a new unsaved document
     private string GetDocumentDisplayName()
     {
         return HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
     }
 
+    // Sets the editor content while suppressing dirty tracking, used when loading a file or starting a new file
     private void SetEditorContent(string content)
     {
         _suppressDirtyTracking = true;
