@@ -6,6 +6,7 @@
 // April 19th, 2026 - KerbalMissile - Re-added SS-YYC's changes to improve Kodo's UI, did some changes the New File buttons but they still do not work
 // April 19th, 2026 - SS-YYC - Added keybinds
 // April 19th, 2026 - KerbalMissile - Fixed lines and characters showning in the bottom right with no file. Fixed grammar if there is only 1 line or character too.
+// April 19th, 2026 - KerbalMissile - Changed logo colour
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -131,7 +132,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush PrimaryTextBrush { get; private set; } = Brush.Parse("#F4F4F4");
     public IBrush MutedTextBrush { get; private set; } = Brush.Parse("#A0A0A0");
     public IBrush SurfaceBorderBrush { get; private set; } = Brush.Parse("#2B2B2B");
-    public IBrush AccentBrush { get; private set; } = Brush.Parse("#0E639C");
+    public IBrush AccentBrush { get; private set; } = Brush.Parse("#8400db");
 
     event PropertyChangedEventHandler? INotifyPropertyChanged.PropertyChanged
     {
@@ -185,7 +186,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             PrimaryTextBrush = Brush.Parse("#202124");
             MutedTextBrush = Brush.Parse("#5F6B7A");
             SurfaceBorderBrush = Brush.Parse("#D7DCE5");
-            AccentBrush = Brush.Parse("#0067C0");
+            AccentBrush = Brush.Parse("#9900ff");
         }
         else // Dark mode colours
         {
@@ -199,7 +200,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             PrimaryTextBrush = Brush.Parse("#F4F4F4");
             MutedTextBrush = Brush.Parse("#A0A0A0");
             SurfaceBorderBrush = Brush.Parse("#2B2B2B");
-            AccentBrush = Brush.Parse("#0E639C");
+            AccentBrush = Brush.Parse("#9900ff");
         }
 
         // Notify the UI that all the brushes have changed
