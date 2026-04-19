@@ -15,7 +15,8 @@
         MinWidth="900"
         MinHeight="620"
         Title="Kodo"
-        Background="{Binding WindowBackgroundBrush}">
+        Background="{Binding WindowBackgroundBrush}"
+        KeyDown="MainWindow_OnKeyDown">
     <Window.Styles>
         <Style Selector="Button.chrome">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
@@ -127,7 +128,7 @@
 
                 <Grid Grid.Row="1"
                       Background="{Binding EditorBackgroundBrush}"
-                      IsVisible="{Binding HasFileOpen}">
+                      IsVisible="{Binding HasDocumentOpen}">
                     <TextBox x:Name="EditorTextBox"
                              Classes="editor"
                              Text="{Binding EditorContent, Mode=TwoWay}"
@@ -152,7 +153,7 @@
                                            Foreground="{Binding PrimaryTextBrush}"
                                            Text="Get Started!" />
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           Text="Open one file, edit it, save it. Or start a new file (WIP)." />
+                                           Text="Open one file, edit it, save it. Or start a new file." />
                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                     <Button Classes="chrome"
                                             Click="OpenFileButton_OnClick"
