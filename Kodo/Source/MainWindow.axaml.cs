@@ -361,12 +361,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     e.Handled = true;
                 }
                 break;
+            case Key.S:
+                e.Handled = true;
+                await SaveAsync();
+                break;
             case Key.O:
-                if ((e.KeyModifiers & KeyModifiers.Shift) == KeyModifiers.Shift)
-                {
-                    e.Handled = true;
-                    await OpenFileAsync();
-                }
+                e.Handled = true;
+                await OpenFileAsync();
                 break;
         }
     }
