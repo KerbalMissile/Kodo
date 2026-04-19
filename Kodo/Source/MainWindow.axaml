@@ -66,16 +66,16 @@
                 BorderThickness="0,0,1,0">
             <Grid RowDefinitions="Auto,*,Auto">
                 <StackPanel Margin="8,12,8,0" Spacing="4">
-                    <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor">
+                    <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor (Ctrl+Shift+E)">
                         <TextBlock FontSize="18" Text="⌘" />
                     </Button>
-                    <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="New File">
+                    <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="New File (Ctrl+N)">
                         <TextBlock FontSize="18" Text="＋" />
                     </Button>
-                    <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File">
+                    <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File (Ctrl+O)">
                         <TextBlock FontSize="20" Text=" 🗎" />
                     </Button>
-                    <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File">
+                    <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File (Ctrl+S)" IsEnabled="{Binding IsSaveEnabled}">
                         <TextBlock FontSize="18" Text=" ⭳" />
                     </Button>
                 </StackPanel>
