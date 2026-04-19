@@ -1,3 +1,5 @@
+<!-- Licensed under the Kodo Public License v1.0 -->
+<!-- April 19th, 2026 - KerbalMissile - Changed "Simple Code Editor" to "Get Started!", added WIP comment to new file in the UI changed open file icon to be more descriptive -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -66,10 +68,10 @@
                         <TextBlock FontSize="18" Text="＋" />
                     </Button>
                     <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File">
-                        <TextBlock FontSize="18" Text="↗" />
+                        <TextBlock FontSize="18" Text="📄" />
                     </Button>
                     <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File">
-                        <TextBlock FontSize="18" Text="⭳" />
+                        <TextBlock FontSize="18" Text=" ⭳" />
                     </Button>
                 </StackPanel>
 
@@ -154,9 +156,9 @@
                                 <TextBlock FontSize="26"
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
-                                           Text="Simple code editor" />
+                                           Text="Get Started!" />
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           Text="Open one file, edit it, save it. Or start a new file." />
+                                           Text="Open one file, edit it, save it. Or start a new file (WIP)." />
                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                     <Button Classes="chrome"
                                             Click="OpenFileButton_OnClick"
