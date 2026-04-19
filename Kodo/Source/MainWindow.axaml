@@ -5,6 +5,7 @@
 <!-- April 19th, 2026 - KerbalMissile - Removed top right Open, Save, etc. buttons -->
 <!-- April 19th, 2026 - KerbalMissile - Re-added Save button to the top right -->
 <!-- April 19th, 2026 - KerbalMissile - Make Kodo start maximized -->
+<!-- April 19th, 2026 - KerbalMissile - Updated Editor Icon to Pen-->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -76,7 +77,7 @@
             <Grid RowDefinitions="Auto,*,Auto">
                 <StackPanel Margin="8,12,8,0" Spacing="4">
                     <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor (Ctrl+Shift+E)">
-                        <TextBlock FontSize="18" Text="⌘" />
+                        <TextBlock FontSize="24" Text="✍︎" />
                     </Button>
                     <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="New File (Ctrl+N)">
                         <TextBlock FontSize="18" Text="＋" />
