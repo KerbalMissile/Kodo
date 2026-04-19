@@ -1,4 +1,5 @@
 // Licensed under the Kodo Public License v1.0
+// April 19th, 2026 - KerbalMissile - Changed "One file at a time" note to "No file open"
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -86,7 +87,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string FileSummaryText => HasFileOpen
         ? $"{Path.GetFileName(_currentFilePath!)}{(_isDirty ? " • unsaved" : string.Empty)}"
-        : "One file at a time";
+        : "No file open";
 
     public string FilePathText => HasFileOpen ? _currentFilePath! : "No file open";
 
