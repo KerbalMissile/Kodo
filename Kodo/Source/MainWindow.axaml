@@ -1,7 +1,3 @@
-<!-- Licensed under the Kodo Public License v1.0 -->
-<!-- April 19th, 2026 - KerbalMissile - Changed "Simple Code Editor" to "Get Started!", added WIP comment to new file in the UI changed open file icon to be more descriptive -->
-<!-- April 19th, 2026 - SS-YYC - Removed "Pick a Theme" from the top of the settings menu as this will be expanded. -->
- <!-- April 19th, 2026 - SS-YYC - Changed a couple emojis on the left sidebar -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -14,8 +10,7 @@
         MinWidth="900"
         MinHeight="620"
         Title="Kodo"
-        Background="{Binding WindowBackgroundBrush}"
-        KeyDown="MainWindow_OnKeyDown">
+        Background="{Binding WindowBackgroundBrush}">
     <Window.Styles>
         <Style Selector="Button.chrome">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
@@ -25,11 +20,9 @@
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="12,8" />
         </Style>
-
         <Style Selector="Button.chrome:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
         </Style>
-
         <Style Selector="Button.activity">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
@@ -38,12 +31,10 @@
             <Setter Property="Padding" Value="10,12" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
         </Style>
-
         <Style Selector="Button.activity:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
-
         <Style Selector="TextBox.editor">
             <Setter Property="Background" Value="{Binding EditorBackgroundBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
@@ -55,6 +46,15 @@
             <Setter Property="AcceptsReturn" Value="True" />
             <Setter Property="AcceptsTab" Value="True" />
         </Style>
+        <Style Selector="TextBox.file-name-box">
+            <Setter Property="Background" Value="{Binding CardBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="MinWidth" Value="240" />
+        </Style>
     </Window.Styles>
 
     <Grid ColumnDefinitions="60,*">
@@ -64,18 +64,44 @@
                 BorderThickness="0,0,1,0">
             <Grid RowDefinitions="Auto,*,Auto">
                 <StackPanel Margin="8,12,8,0" Spacing="4">
-                    <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor (Ctrl+Shift+E)">
-                        <TextBlock FontSize="18" Text="📝" />
+
+                    <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor">
+                        <TextBlock FontSize="18" Text="⌘" />
                     </Button>
+
+                    <!--
+                        New File icon: single Path, geometry starts at 0,0 so Stretch=Uniform works.
+                        Document body (0,0)-(16,20), fold at (10,0), plus sign centred at (8,13).
+                    -->
                     <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="New File">
-                        <TextBlock FontSize="18" Text="＋" />
+                        <Path Width="18" Height="18"
+                              Stretch="Uniform"
+                              Stroke="{Binding PrimaryTextBrush}"
+                              StrokeThickness="1.5"
+                              StrokeLineCap="Round"
+                              StrokeLineJoin="Round"
+                              Fill="Transparent"
+                              Data="M0,0 L10,0 L16,6 L16,20 L0,20 Z M10,0 L10,6 L16,6 M8,10 L8,16 M5,13 L11,13" />
                     </Button>
-                    <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File (Ctrl+Shift+O)">
-                        <TextBlock FontSize="18" Text="📄" />
+
+                    <!--
+                        Open File icon: same document outline, up-arrow inside instead of plus.
+                    -->
+                    <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File">
+                        <Path Width="18" Height="18"
+                              Stretch="Uniform"
+                              Stroke="{Binding PrimaryTextBrush}"
+                              StrokeThickness="1.5"
+                              StrokeLineCap="Round"
+                              StrokeLineJoin="Round"
+                              Fill="Transparent"
+                              Data="M0,0 L10,0 L16,6 L16,20 L0,20 Z M10,0 L10,6 L16,6 M8,16 L8,10 M5,13 L8,10 L11,13" />
                     </Button>
+
                     <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File">
-                        <TextBlock FontSize="18" Text=" ⭳" />
+                        <TextBlock FontSize="18" Text="⭳" />
                     </Button>
+
                 </StackPanel>
 
                 <StackPanel Grid.Row="2" Margin="8,0,8,12" Spacing="4">
@@ -95,10 +121,7 @@
                         Padding="18,14">
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Orientation="Horizontal" Spacing="12">
-                            <Border Width="28"
-                                    Height="28"
-                                    CornerRadius="8"
-                                    Background="{Binding AccentBrush}">
+                            <Border Width="28" Height="28" CornerRadius="8" Background="{Binding AccentBrush}">
                                 <TextBlock HorizontalAlignment="Center"
                                            VerticalAlignment="Center"
                                            FontSize="14"
@@ -106,30 +129,30 @@
                                            Foreground="White"
                                            Text="K" />
                             </Border>
-
-                            <StackPanel Spacing="2">
+                            <StackPanel Spacing="4">
                                 <TextBlock FontSize="18"
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
                                            Text="Kodo" />
                                 <TextBlock FontSize="12"
                                            Foreground="{Binding MutedTextBrush}"
+                                           IsVisible="{Binding ShowReadOnlyTitle}"
                                            Text="{Binding FileSummaryText}" />
+                                <!--
+                                    This TextBox is visible for new unsaved files.
+                                    It IS the "name your file" step — it gets focused automatically.
+                                -->
+                                <TextBox Classes="file-name-box"
+                                         x:Name="FileNameTextBox"
+                                         IsVisible="{Binding ShowTitleInput}"
+                                         PlaceholderText="filename.txt"
+                                         Text="{Binding PendingFileName, Mode=TwoWay}" />
                             </StackPanel>
                         </StackPanel>
-
-                        <StackPanel Grid.Column="1"
-                                    Orientation="Horizontal"
-                                    Spacing="8">
-                            <Button Classes="chrome"
-                                    Click="OpenFileButton_OnClick"
-                                    Content="Open" />
-                            <Button Classes="chrome"
-                                    Click="NewFileButton_OnClick"
-                                    Content="New" />
-                            <Button Classes="chrome"
-                                    Click="SaveButton_OnClick"
-                                    Content="Save" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <Button Classes="chrome" Click="OpenFileButton_OnClick" Content="Open" />
+                            <Button Classes="chrome" Click="NewFileButton_OnClick" Content="New" />
+                            <Button Classes="chrome" Click="SaveButton_OnClick" Content="Save" />
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -159,16 +182,12 @@
                                 <TextBlock FontSize="26"
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
-                                           Text="Get Started!" />
+                                           Text="Simple code editor" />
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           Text="Open one file, edit it, save it. Or start a new file (WIP)." />
+                                           Text="Open one file, edit it, save it. Or start a new file." />
                                 <StackPanel Orientation="Horizontal" Spacing="10">
-                                    <Button Classes="chrome"
-                                            Click="OpenFileButton_OnClick"
-                                            Content="Open File" />
-                                    <Button Classes="chrome"
-                                            Click="NewFileButton_OnClick"
-                                            Content="New File" />
+                                    <Button Classes="chrome" Click="OpenFileButton_OnClick" Content="Open File" />
+                                    <Button Classes="chrome" Click="NewFileButton_OnClick" Content="New File" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -181,11 +200,8 @@
                         BorderThickness="0,1,0,0"
                         Padding="16,10">
                     <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Foreground="{Binding MutedTextBrush}"
-                                   Text="{Binding FilePathText}" />
-                        <TextBlock Grid.Column="1"
-                                   Foreground="{Binding MutedTextBrush}"
-                                   Text="{Binding EditorStatsText}" />
+                        <TextBlock Foreground="{Binding MutedTextBrush}" Text="{Binding FilePathText}" />
+                        <TextBlock Grid.Column="1" Foreground="{Binding MutedTextBrush}" Text="{Binding EditorStatsText}" />
                     </Grid>
                 </Border>
             </Grid>
@@ -200,19 +216,12 @@
                         Padding="24,18">
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Spacing="4">
-                            <TextBlock FontSize="28"
-                                       FontWeight="SemiBold"
-                                       Foreground="{Binding PrimaryTextBrush}"
-                                       Text="Settings" />
+                            <TextBlock FontSize="28" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" Text="Settings" />
+                            <TextBlock Foreground="{Binding MutedTextBrush}" Text="Pick a theme." />
                         </StackPanel>
-
-                        <Button Grid.Column="1"
-                                Classes="chrome"
-                                Click="BackToEditorButton_OnClick"
-                                Content="Back" />
+                        <Button Grid.Column="1" Classes="chrome" Click="BackToEditorButton_OnClick" Content="Back" />
                     </Grid>
                 </Border>
-
                 <Grid Grid.Row="1" Margin="24">
                     <Border Background="{Binding CardBrush}"
                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -223,46 +232,22 @@
                             HorizontalAlignment="Left"
                             VerticalAlignment="Top">
                         <StackPanel Spacing="16">
-                            <TextBlock FontSize="18"
-                                       FontWeight="SemiBold"
-                                       Foreground="{Binding PrimaryTextBrush}"
-                                       Text="Theme" />
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" Text="Theme" />
                             <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
-                                <Button Grid.Column="0"
-                                        Classes="chrome"
-                                        Click="ThemeButton_OnClick"
-                                        Tag="Dark">
+                                <Button Grid.Column="0" Classes="chrome" Click="ThemeButton_OnClick" Tag="Dark">
                                     <StackPanel Spacing="8">
-                                        <Border Height="96"
-                                                CornerRadius="12"
-                                                Background="#1E1E1E"
-                                                BorderBrush="#2B2B2B"
-                                                BorderThickness="1" />
-                                        <TextBlock HorizontalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Dark" />
+                                        <Border Height="96" CornerRadius="12" Background="#1E1E1E" BorderBrush="#2B2B2B" BorderThickness="1" />
+                                        <TextBlock HorizontalAlignment="Center" Foreground="{Binding PrimaryTextBrush}" Text="Dark" />
                                     </StackPanel>
                                 </Button>
-
-                                <Button Grid.Column="1"
-                                        Classes="chrome"
-                                        Click="ThemeButton_OnClick"
-                                        Tag="Light">
+                                <Button Grid.Column="1" Classes="chrome" Click="ThemeButton_OnClick" Tag="Light">
                                     <StackPanel Spacing="8">
-                                        <Border Height="96"
-                                                CornerRadius="12"
-                                                Background="#FFFFFF"
-                                                BorderBrush="#D7DCE5"
-                                                BorderThickness="1" />
-                                        <TextBlock HorizontalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Light" />
+                                        <Border Height="96" CornerRadius="12" Background="#FFFFFF" BorderBrush="#D7DCE5" BorderThickness="1" />
+                                        <TextBlock HorizontalAlignment="Center" Foreground="{Binding PrimaryTextBrush}" Text="Light" />
                                     </StackPanel>
                                 </Button>
                             </Grid>
-
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       Text="{Binding ThemeStatusText}" />
+                            <TextBlock Foreground="{Binding MutedTextBrush}" Text="{Binding ThemeStatusText}" />
                         </StackPanel>
                     </Border>
                 </Grid>
