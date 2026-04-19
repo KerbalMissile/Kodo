@@ -1,4 +1,8 @@
 // Licensed under the Kodo Public License v1.0
+// April 19th, 2026 - KerbalMissile - Changed "One file at a time" note to "No file open"
+// April 19th, 2026 - KerbalMissile - Added proper comments
+// April 19th, 2026 - KerbalMissile - Changed "No File Open" at top bar to be empty when no file is open, and to show the file name when a file is open, also shows "unsaved" if there are unsaved changes
+// April 19th, 2026 - KerbalMissile - Changed open file icon to fit in better
 using System;
 using System.ComponentModel;
 using System.IO;
