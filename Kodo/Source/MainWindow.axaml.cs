@@ -1,5 +1,6 @@
 // Licensed under the Kodo Public License v1.0
 // April 19th, 2026 - KerbalMissile - Changed "One file at a time" note to "No file open"
+// April 19th, 2026 - KerbalMissile - Added proper comments
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -85,6 +86,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Displays the file name and unsaved status in the top bar
     public string FileSummaryText => HasFileOpen
         ? $"{Path.GetFileName(_currentFilePath!)}{(_isDirty ? " • unsaved" : string.Empty)}"
         : "No file open";
@@ -143,6 +145,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(ThemeStatusText));
     }
 
+    // Light Mode and Dark Mode color definitions
     private void ApplyTheme(string themeName)
     {
         CurrentThemeName = themeName == "Light" ? "Light" : "Dark";
@@ -150,7 +153,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? ThemeVariant.Light
             : ThemeVariant.Dark;
 
-        if (CurrentThemeName == "Light")
+        if (CurrentThemeName == "Light") // Light mode colours
         {
             WindowBackgroundBrush = Brush.Parse("#F3F3F3");
             TopBarBrush = Brush.Parse("#FFFFFF");
@@ -164,7 +167,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SurfaceBorderBrush = Brush.Parse("#D7DCE5");
             AccentBrush = Brush.Parse("#0067C0");
         }
-        else
+        else // Dark mode colours
         {
             WindowBackgroundBrush = Brush.Parse("#1E1E1E");
             TopBarBrush = Brush.Parse("#181818");
@@ -179,6 +182,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AccentBrush = Brush.Parse("#0E639C");
         }
 
+        // Notify the UI that all the brushes have changed
         OnPropertyChanged(nameof(WindowBackgroundBrush));
         OnPropertyChanged(nameof(TopBarBrush));
         OnPropertyChanged(nameof(SidebarBrush));
@@ -192,7 +196,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(AccentBrush));
         RefreshState();
     }
-
+    
+    // Opens a file picker dialog and loads the selected file into the editor
     private async Task OpenFileAsync()
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -220,6 +225,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshState();
     }
 
+    // Clears the editor and resets the state to allow creating a new file
+    // Currently is BROKEN, new file does not work
     private void NewFile()
     {
         _currentFilePath = null;
@@ -230,6 +237,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.Focus();
     }
 
+    // Saves the current editor content to the open file, or prompts for a file path if no file is open
     private async Task SaveAsync()
     {
         if (_currentFilePath is null)
@@ -253,7 +261,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isDirty = false;
         RefreshState();
     }
-
+    
+    // Event handlers for UI interactions
     private void EditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsSettingsPageVisible = false;
@@ -284,6 +293,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsSettingsPageVisible = false;
     }
 
+    // Handles theme selection buttons in the settings page
     private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { Tag: string themeName })
@@ -292,6 +302,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Marks the editor content as dirty (unsaved) whenever it changes
     private void EditorTextBox_OnTextChanged(object? sender, TextChangedEventArgs e)
     {
         _isDirty = true;
