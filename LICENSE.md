@@ -1,33 +1,79 @@
 # Kodo Public License v1.0
 
-KODO PUBLIC LICENSE
-Version 1.0
+**KODO PUBLIC LICENSE**  
+Version 1.0  
 
 Copyright (c) 2026 **KerbalMissile SS-YYC**
 
-### 1. DEFINITIONS
-"Software" refers to the source code, documentation, and associated files, including specific code blocks, snippets, or logic structures distributed under this License. 
-"Licensor" refers to the copyright holder(s) of the Software.
-"User" refers to any individual or entity exercising permissions granted by this License.
+---
 
-### 2. GRANT OF RIGHTS
-The Licensor hereby grants the User a worldwide, royalty-free, non-exclusive license to use, copy, modify, merge, and distribute the Software, or portions thereof, subject to the conditions defined in Sections 3 and 4.
+## 1. Definitions
 
-### 3. MANDATORY ATTRIBUTION (CREDIT)
-As a condition of this License, the User must provide clear and prominent credit to the original author(s). This requirement applies to:
-(a) The Software in its entirety.
-(b) **Substantial Portions:** Any specific blocks, functions, or snippets of code integrated into another project.
-(c) **Minor Modifications:** Instances where the code is utilized with only nominal changes (e.g., variable renaming or minor logic adjustments).
+- **“Software”** means the source code, object code, documentation, and associated files distributed under this License.  
+- **“Licensor”** means the copyright holder(s) of the Software.  
+- **“User”** (or “You”) means any individual or legal entity exercising permissions granted by this License.  
+- **“Derivative Work”** means any work based upon or incorporating all or part of the Software.
 
-**Exemption:** Credit is not legally required for "trivial" snippets (e.g., standard boilerplates or lines under 10 lines of non-unique logic) or if the code has been so heavily transformed that the original logic is no longer recognizable.
+---
 
-### 4. OBLIGATION TO INFORM
-If the User distributes the Software, or any work containing protected portions of the Software as defined in Section 3, the User is **legally required to inform the Licensor**. 
-* **Trigger:** Notification is required upon the public distribution or sub-licensing of any work containing the Licensor's code.
-* **Method:** Notification must be sent via the project's primary communication channel (e.g., GitHub Issues, Pull Requests, or public developer contact) within thirty (30) days of the initial distribution.
+## 2. Grant of Rights
 
-### 5. COPYLEFT
-Any modified version of the Software that is distributed must be released under the terms of this Kodo Public License v1.0. The User may not impose further restrictions on the exercise of the rights granted herein.
+Subject to the terms of this License, the Licensor grants You a worldwide, royalty-free, non-exclusive, perpetual license to:
 
-### 6. DISCLAIMER OF WARRANTY
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE.
+- use, reproduce, and distribute the Software;
+- modify and create Derivative Works of the Software;
+- sublicense the Software only under the terms of this License.
+
+---
+
+## 3. Attribution Requirement
+
+You must provide clear and reasonable attribution to the Licensor in any distribution of the Software or Derivative Works.
+
+Attribution must:
+- include the original author name(s);
+- include a reference to this License; and
+- be placed in a location customary for such notices (e.g., LICENSE file, documentation, or source headers).
+
+### Scope of Attribution
+
+Attribution is required when:
+- distributing the Software in whole or in part;
+- incorporating identifiable portions of the Software into another project.
+
+### Exemption
+
+Attribution is not required for:
+- code fragments that are **non-unique, generic, or widely known**, or  
+- portions of the Software that have been **substantially transformed** such that the original structure and logic are no longer reasonably identifiable.
+
+---
+
+## 4. Notification Requirement
+
+If You publicly distribute the Software or a Derivative Work containing identifiable portions of the Software, You must make a reasonable effort to notify the Licensor.
+
+- **Timing:** Within 30 days of initial public distribution  
+- **Method:** Any publicly available contact method associated with the Licensor (e.g., repository issue tracker, listed email)
+
+Failure to notify does not terminate this License but may be considered a breach of its terms.
+
+---
+
+## 5. Copyleft
+
+You may distribute the Software or Derivative Works only under the terms of this License.
+
+You may not impose additional legal or technical restrictions that limit the rights granted under this License.
+
+---
+
+## 6. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+---
+
+## 7. Limitation of Liability
+
+IN NO EVENT SHALL THE LICENSOR OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
