@@ -3,6 +3,7 @@
 <!-- April 19th, 2026 - SS-YYC - Removed "Pick a Theme" from the top of the settings menu as this will be expanded. -->
 <!-- April 19th, 2026 - SS-YYC - Changed a couple emojis on the left sidebar -->
 <!-- April 19th, 2026 - KerbalMissile - Removed top right Open, Save, etc. buttons -->
+<!-- April 19th, 2026 - KerbalMissile - Re-added Save button to the top right -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
