@@ -4,6 +4,7 @@
 <!-- April 19th, 2026 - SS-YYC - Changed a couple emojis on the left sidebar -->
 <!-- April 19th, 2026 - KerbalMissile - Removed top right Open, Save, etc. buttons -->
 <!-- April 19th, 2026 - KerbalMissile - Re-added Save button to the top right -->
+<!-- April 19th, 2026 - KerbalMissile - Make Kodo start maximized -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -11,8 +12,9 @@
         mc:Ignorable="d"
         x:Class="Kodo.MainWindow"
         x:CompileBindings="False"
-        Width="1100"
-        Height="760"
+        Width="1920"
+        Height="1080"
+        WindowState="Maximized"
         MinWidth="900"
         MinHeight="620"
         Title="Kodo"
@@ -50,12 +52,19 @@
             <Setter Property="Background" Value="{Binding EditorBackgroundBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="20,18" />
             <Setter Property="FontSize" Value="15" />
             <Setter Property="FontFamily" Value="Cascadia Code,Consolas,Menlo,Monospace" />
             <Setter Property="TextWrapping" Value="NoWrap" />
             <Setter Property="AcceptsReturn" Value="True" />
             <Setter Property="AcceptsTab" Value="True" />
+            <Setter Property="FocusAdorner" Value="{x:Null}" />
+            <Setter Property="CornerRadius" Value="0" />
+        </Style>
+
+        <Style Selector="TextBox.editor:focus">
+            <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
     </Window.Styles>
 
@@ -130,14 +139,17 @@
                     </Grid>
                 </Border>
 
-                <Grid Grid.Row="1"
-                      Background="{Binding EditorBackgroundBrush}"
-                      IsVisible="{Binding HasDocumentOpen}">
+                <Border Grid.Row="1"
+                        Background="{Binding CardBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="0"
+                        IsVisible="{Binding HasDocumentOpen}">
                     <TextBox x:Name="EditorTextBox"
                              Classes="editor"
+                             Background="{Binding CardBrush}"
                              Text="{Binding EditorContent, Mode=TwoWay}"
                              TextChanged="EditorTextBox_OnTextChanged" />
-                </Grid>
+                </Border>
 
                 <Border Grid.Row="1"
                         Background="{Binding EditorBackgroundBrush}"
