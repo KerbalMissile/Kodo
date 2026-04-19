@@ -5,6 +5,7 @@
 // April 19th, 2026 - KerbalMissile - Changed open file icon to fit in better
 // April 19th, 2026 - KerbalMissile - Re-added SS-YYC's changes to improve Kodo's UI, did some changes the New File buttons but they still do not work
 // April 19th, 2026 - SS-YYC - Added keybinds
+// April 19th, 2026 - KerbalMissile - Fixed lines and characters showning in the bottom right with no file. Fixed grammar if there is only 1 line or character too.
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -145,8 +146,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshState()
     {
-        var lines = EditorContent.Length == 0 ? 1 : EditorContent.Count(static c => c == '\n') + 1;
-        EditorStatsText = $"{lines} lines  |  {EditorContent.Length} characters";
+        if (HasFileOpen)
+        {
+            var lines = EditorContent.Length == 0 ? 1 : EditorContent.Count(static c => c == '\n') + 1;
+            EditorStatsText = $"{lines} line(s)  |  {EditorContent.Length} character(s)";
+        }
+        else
+        {
+            EditorStatsText = string.Empty;
+        }
+
         Title = HasDocumentOpen ? $"{GetDocumentDisplayName()} - Kodo" : "Kodo";
         OnPropertyChanged(nameof(HasDocumentOpen));
         OnPropertyChanged(nameof(HasFileOpen));
