@@ -14,7 +14,8 @@
         MinWidth="900"
         MinHeight="620"
         Title="Kodo"
-        Background="{Binding WindowBackgroundBrush}">
+        Background="{Binding WindowBackgroundBrush}"
+        KeyDown="MainWindow_OnKeyDown">
     <Window.Styles>
         <Style Selector="Button.chrome">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
@@ -63,13 +64,13 @@
                 BorderThickness="0,0,1,0">
             <Grid RowDefinitions="Auto,*,Auto">
                 <StackPanel Margin="8,12,8,0" Spacing="4">
-                    <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor">
+                    <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor (Ctrl+Shift+E)">
                         <TextBlock FontSize="18" Text="📝" />
                     </Button>
                     <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="New File">
                         <TextBlock FontSize="18" Text="＋" />
                     </Button>
-                    <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File">
+                    <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File (Ctrl+Shift+O)">
                         <TextBlock FontSize="18" Text="📄" />
                     </Button>
                     <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File">
