@@ -4,6 +4,7 @@
 // April 19th, 2026 - KerbalMissile - Changed "No File Open" at top bar to be empty when no file is open, and to show the file name when a file is open, also shows "unsaved" if there are unsaved changes
 // April 19th, 2026 - KerbalMissile - Changed open file icon to fit in better
 // April 19th, 2026 - KerbalMissile - Re-added SS-YYC's changes to improve Kodo's UI, did some changes the New File buttons but they still do not work
+// April 19th, 2026 - SS-YYC - Added keybinds
 using System;
 using System.ComponentModel;
 using System.IO;
