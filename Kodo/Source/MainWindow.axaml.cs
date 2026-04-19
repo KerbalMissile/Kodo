@@ -26,7 +26,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _currentFilePath;
     private string _editorContent = string.Empty;
     private bool _isDirty;
+    private bool _hasUntitledDocument;
     private bool _isSettingsPageVisible;
+    private bool _suppressDirtyTracking;
     private string _currentThemeName = "Dark";
     private string _editorStatsText = "0 lines";
     private event PropertyChangedEventHandler? ViewModelPropertyChanged;
@@ -72,9 +74,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsEditorPageVisible => !IsSettingsPageVisible;
 
+    public bool HasDocumentOpen => _currentFilePath is not null || _hasUntitledDocument;
+
     public bool HasFileOpen => _currentFilePath is not null;
 
-    public bool IsEmptyStateVisible => !HasFileOpen;
+    public bool IsEmptyStateVisible => !HasDocumentOpen;
 
     public string CurrentThemeName
     {
@@ -92,11 +96,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // Displays the file name and unsaved status in the top bar
-    public string FileSummaryText => HasFileOpen
-        ? $"{Path.GetFileName(_currentFilePath!)}{(_isDirty ? " • unsaved" : string.Empty)}"
+    public string FileSummaryText => HasDocumentOpen
+        ? $"{GetDocumentDisplayName()}{(_isDirty ? " • unsaved" : string.Empty)}"
         : "Open A File";
 
-    public string FilePathText => HasFileOpen ? _currentFilePath! : "No file open";
+    public string FilePathText => HasFileOpen ? _currentFilePath! : HasDocumentOpen ? "Unsaved file" : "No file open";
 
     public string ThemeStatusText => $"Current theme: {CurrentThemeName}";
 
@@ -142,7 +146,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var lines = EditorContent.Length == 0 ? 1 : EditorContent.Count(static c => c == '\n') + 1;
         EditorStatsText = $"{lines} lines  |  {EditorContent.Length} characters";
-        Title = HasFileOpen ? $"{Path.GetFileName(_currentFilePath!)} - Kodo" : "Kodo";
+        Title = HasDocumentOpen ? $"{GetDocumentDisplayName()} - Kodo" : "Kodo";
+        OnPropertyChanged(nameof(HasDocumentOpen));
         OnPropertyChanged(nameof(HasFileOpen));
         OnPropertyChanged(nameof(IsEmptyStateVisible));
         OnPropertyChanged(nameof(FileSummaryText));
@@ -224,23 +229,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         _currentFilePath = path;
-        EditorContent = await File.ReadAllTextAsync(path);
+        _hasUntitledDocument = false;
+        SetEditorContent(await File.ReadAllTextAsync(path));
         _isDirty = false;
         IsSettingsPageVisible = false;
         RefreshState();   
         FocusEditor();
     }
 
-    // Clears the editor and resets the state to allow creating a new file
-    // Currently is BROKEN, new file does not work
     private void NewFile()
     {
         _currentFilePath = null;
-        EditorContent = string.Empty;
+        _hasUntitledDocument = true;
+        SetEditorContent(string.Empty);
         _isDirty = false;
         IsSettingsPageVisible = false;
         RefreshState();
-        EditorTextBox.Focus();
+        FocusEditor();
     }
 
     // Saves the current editor content to the open file, or prompts for a file path if no file is open
@@ -261,6 +266,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             _currentFilePath = newPath;
+            _hasUntitledDocument = false;
         }
 
         await File.WriteAllTextAsync(_currentFilePath, EditorContent);
@@ -313,6 +319,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Marks the editor content as dirty (unsaved) whenever it changes
     private void EditorTextBox_OnTextChanged(object? sender, TextChangedEventArgs e)
     {
+        if (_suppressDirtyTracking)
+        {
+            return;
+        }
+
         _isDirty = true;
         RefreshState();
     }
@@ -321,33 +332,54 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Dispatcher.UIThread.Post(() =>
         {
-            if (IsEditorPageVisible && HasFileOpen)
+            if (IsEditorPageVisible && HasDocumentOpen)
             {
                 EditorTextBox.Focus();
             }
         }, DispatcherPriority.Background);
     }
 
-    // Handles keyboard shortcuts for focusing the editor and opening files
     private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        var requiredModifiers = KeyModifiers.Control | KeyModifiers.Shift;
-        if ((e.KeyModifiers & requiredModifiers) != requiredModifiers)
+        var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
+        if (!hasControl)
         {
             return;
         }
 
         switch (e.Key)
         {
-            case Key.E:
-                IsSettingsPageVisible = false;
-                FocusEditor();
+            case Key.N:
+                NewFile();
                 e.Handled = true;
+                break;
+            case Key.E:
+                if ((e.KeyModifiers & KeyModifiers.Shift) == KeyModifiers.Shift)
+                {
+                    IsSettingsPageVisible = false;
+                    FocusEditor();
+                    e.Handled = true;
+                }
                 break;
             case Key.O:
-                e.Handled = true;
-                await OpenFileAsync();
+                if ((e.KeyModifiers & KeyModifiers.Shift) == KeyModifiers.Shift)
+                {
+                    e.Handled = true;
+                    await OpenFileAsync();
+                }
                 break;
         }
+    }
+
+    private string GetDocumentDisplayName()
+    {
+        return HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
+    }
+
+    private void SetEditorContent(string content)
+    {
+        _suppressDirtyTracking = true;
+        EditorContent = content;
+        _suppressDirtyTracking = false;
     }
 }
