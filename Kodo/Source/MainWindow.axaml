@@ -1,6 +1,7 @@
 <!-- Licensed under the Kodo Public License v1.0 -->
 <!-- April 19th, 2026 - KerbalMissile - Changed "Simple Code Editor" to "Get Started!", added WIP comment to new file in the UI changed open file icon to be more descriptive -->
 <!-- April 19th, 2026 - SS-YYC - Removed "Pick a Theme" from the top of the settings menu as this will be expanded. -->
+ <!-- April 19th, 2026 - SS-YYC - Changed a couple emojis on the left sidebar -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -63,7 +64,7 @@
             <Grid RowDefinitions="Auto,*,Auto">
                 <StackPanel Margin="8,12,8,0" Spacing="4">
                     <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor">
-                        <TextBlock FontSize="18" Text="⌘" />
+                        <TextBlock FontSize="18" Text="📝" />
                     </Button>
                     <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="New File">
                         <TextBlock FontSize="18" Text="＋" />
