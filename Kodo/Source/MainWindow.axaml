@@ -1,5 +1,6 @@
 <!-- Licensed under the Kodo Public License v1.0 -->
 <!-- April 19th, 2026 - KerbalMissile - Changed "Simple Code Editor" to "Get Started!", added WIP comment to new file in the UI changed open file icon to be more descriptive -->
+<!-- April 19th, 2026 - SS-YYC - Removed "Pick a Theme" from the top of the settings menu as this will be expanded. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -201,8 +202,6 @@
                                        FontWeight="SemiBold"
                                        Foreground="{Binding PrimaryTextBrush}"
                                        Text="Settings" />
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       Text="Pick a theme." />
                         </StackPanel>
 
                         <Button Grid.Column="1"
