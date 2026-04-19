@@ -1,7 +1,6 @@
 // Licensed under the Kodo Public License v1.0
 // April 19th, 2026 - KerbalMissile - Changed "One file at a time" note to "No file open"
 // April 19th, 2026 - KerbalMissile - Added proper comments
-// April 19th, 2026 - KerbalMissile - Changed "No File Open" at top bar to be empty when no file is open, and to show the file name when a file is open, also shows "unsaved" if there are unsaved changes
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -10,10 +9,12 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.Threading;
 
 namespace Kodo;
 
@@ -90,7 +91,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Displays the file name and unsaved status in the top bar
     public string FileSummaryText => HasFileOpen
         ? $"{Path.GetFileName(_currentFilePath!)}{(_isDirty ? " • unsaved" : string.Empty)}"
-        : string.Empty;
+        : "No file open";
 
     public string FilePathText => HasFileOpen ? _currentFilePath! : "No file open";
 
@@ -224,6 +225,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isDirty = false;
         IsSettingsPageVisible = false;
         RefreshState();
+        FocusEditor();
     }
 
     // Clears the editor and resets the state to allow creating a new file
@@ -267,6 +269,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void EditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsSettingsPageVisible = false;
+        FocusEditor();
     }
 
     private async void OpenFileButton_OnClick(object? sender, RoutedEventArgs e)
@@ -292,6 +295,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsSettingsPageVisible = false;
+        FocusEditor();
     }
 
     // Handles theme selection buttons in the settings page
@@ -308,5 +312,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _isDirty = true;
         RefreshState();
+    }
+
+    private void FocusEditor()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (IsEditorPageVisible && HasFileOpen)
+            {
+                EditorTextBox.Focus();
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        var requiredModifiers = KeyModifiers.Control | KeyModifiers.Shift;
+        if ((e.KeyModifiers & requiredModifiers) != requiredModifiers)
+        {
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.E:
+                IsSettingsPageVisible = false;
+                FocusEditor();
+                e.Handled = true;
+                break;
+            case Key.O:
+                e.Handled = true;
+                await OpenFileAsync();
+                break;
+        }
     }
 }
