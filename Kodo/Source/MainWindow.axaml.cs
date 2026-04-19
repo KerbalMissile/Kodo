@@ -3,6 +3,7 @@
 // April 19th, 2026 - KerbalMissile - Added proper comments
 // April 19th, 2026 - KerbalMissile - Changed "No File Open" at top bar to be empty when no file is open, and to show the file name when a file is open, also shows "unsaved" if there are unsaved changes
 // April 19th, 2026 - KerbalMissile - Changed open file icon to fit in better
+// April 19th, 2026 - KerbalMissile - Re-added SS-YYC's changes to improve Kodo's UI, did some changes the New File buttons but they still do not work
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -11,10 +12,12 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.Threading;
 
 namespace Kodo;
 
@@ -22,8 +25,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private string? _currentFilePath;
     private string _editorContent = string.Empty;
-    private string _pendingFileName = string.Empty;
-    private bool _hasDocumentOpen;
     private bool _isDirty;
     private bool _isSettingsPageVisible;
     private string _currentThemeName = "Dark";
@@ -43,21 +44,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _editorContent;
         set
         {
-            if (_editorContent == value) return;
+            if (_editorContent == value)
+            {
+                return;
+            }
+
             _editorContent = value;
             OnPropertyChanged();
-        }
-    }
-
-    public string PendingFileName
-    {
-        get => _pendingFileName;
-        set
-        {
-            if (_pendingFileName == value) return;
-            _pendingFileName = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(FileSummaryText));
         }
     }
 
@@ -66,7 +59,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _isSettingsPageVisible;
         set
         {
-            if (_isSettingsPageVisible == value) return;
+            if (_isSettingsPageVisible == value)
+            {
+                return;
+            }
+
             _isSettingsPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
@@ -74,29 +71,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public bool IsEditorPageVisible => !IsSettingsPageVisible;
-    public bool HasFileOpen => _hasDocumentOpen;
-    public bool IsEmptyStateVisible => !_hasDocumentOpen;
-    public bool ShowTitleInput => _hasDocumentOpen && _currentFilePath is null;
-    public bool ShowReadOnlyTitle => _hasDocumentOpen && _currentFilePath is not null;
+
+    public bool HasFileOpen => _currentFilePath is not null;
+
+    public bool IsEmptyStateVisible => !HasFileOpen;
 
     public string CurrentThemeName
     {
         get => _currentThemeName;
         private set
         {
-            if (_currentThemeName == value) return;
+            if (_currentThemeName == value)
+            {
+                return;
+            }
+
             _currentThemeName = value;
             OnPropertyChanged();
         }
     }
 
-    public string FileSummaryText => _hasDocumentOpen
-        ? $"{GetDisplayName()}{(_isDirty ? " • unsaved" : string.Empty)}"
-        : "One file at a time";
+    // Displays the file name and unsaved status in the top bar
+    public string FileSummaryText => HasFileOpen
+        ? $"{Path.GetFileName(_currentFilePath!)}{(_isDirty ? " • unsaved" : string.Empty)}"
+        : "Open A File";
 
-    public string FilePathText => _hasDocumentOpen
-        ? _currentFilePath ?? "Unsaved file"
-        : "No file open";
+    public string FilePathText => HasFileOpen ? _currentFilePath! : "No file open";
 
     public string ThemeStatusText => $"Current theme: {CurrentThemeName}";
 
@@ -105,7 +105,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _editorStatsText;
         private set
         {
-            if (_editorStatsText == value) return;
+            if (_editorStatsText == value)
+            {
+                return;
+            }
+
             _editorStatsText = value;
             OnPropertyChanged();
         }
@@ -136,25 +140,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshState()
     {
-        var lines = _editorContent.Length == 0 ? 1 : _editorContent.Count(static c => c == '\n') + 1;
-        EditorStatsText = $"{lines} lines  |  {_editorContent.Length} characters";
-        Title = _hasDocumentOpen ? $"{GetDisplayName()} - Kodo" : "Kodo";
+        var lines = EditorContent.Length == 0 ? 1 : EditorContent.Count(static c => c == '\n') + 1;
+        EditorStatsText = $"{lines} lines  |  {EditorContent.Length} characters";
+        Title = HasFileOpen ? $"{Path.GetFileName(_currentFilePath!)} - Kodo" : "Kodo";
         OnPropertyChanged(nameof(HasFileOpen));
         OnPropertyChanged(nameof(IsEmptyStateVisible));
-        OnPropertyChanged(nameof(ShowTitleInput));
-        OnPropertyChanged(nameof(ShowReadOnlyTitle));
         OnPropertyChanged(nameof(FileSummaryText));
         OnPropertyChanged(nameof(FilePathText));
         OnPropertyChanged(nameof(ThemeStatusText));
     }
 
-    private string GetDisplayName()
-    {
-        if (_currentFilePath is not null)
-            return Path.GetFileName(_currentFilePath);
-        return string.IsNullOrWhiteSpace(_pendingFileName) ? "Untitled" : _pendingFileName;
-    }
-
+    // Light Mode and Dark Mode color definitions
     private void ApplyTheme(string themeName)
     {
         CurrentThemeName = themeName == "Light" ? "Light" : "Dark";
@@ -162,7 +158,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? ThemeVariant.Light
             : ThemeVariant.Dark;
 
-        if (CurrentThemeName == "Light")
+        if (CurrentThemeName == "Light") // Light mode colours
         {
             WindowBackgroundBrush = Brush.Parse("#F3F3F3");
             TopBarBrush = Brush.Parse("#FFFFFF");
@@ -176,7 +172,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SurfaceBorderBrush = Brush.Parse("#D7DCE5");
             AccentBrush = Brush.Parse("#0067C0");
         }
-        else
+        else // Dark mode colours
         {
             WindowBackgroundBrush = Brush.Parse("#1E1E1E");
             TopBarBrush = Brush.Parse("#181818");
@@ -191,6 +187,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AccentBrush = Brush.Parse("#0E639C");
         }
 
+        // Notify the UI that all the brushes have changed
         OnPropertyChanged(nameof(WindowBackgroundBrush));
         OnPropertyChanged(nameof(TopBarBrush));
         OnPropertyChanged(nameof(SidebarBrush));
@@ -204,7 +201,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(AccentBrush));
         RefreshState();
     }
-
+    
+    // Opens a file picker dialog and loads the selected file into the editor
     private async Task OpenFileAsync()
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -214,92 +212,142 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         });
 
         var file = files.Count > 0 ? files[0] : null;
-        if (file is null) return;
+        if (file is null)
+        {
+            return;
+        }
 
         var path = file.TryGetLocalPath();
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return;
+        }
 
         _currentFilePath = path;
-        _pendingFileName = Path.GetFileName(path);
-        _hasDocumentOpen = true;
         EditorContent = await File.ReadAllTextAsync(path);
         _isDirty = false;
         IsSettingsPageVisible = false;
-        RefreshState();
+        RefreshState();   
+        FocusEditor();
     }
 
-    // Opens a blank editor immediately. The header TextBox (FileNameTextBox) is
-    // automatically shown when HasFileOpen=true and _currentFilePath=null,
-    // and it gets focused so the user names the file before writing.
+    // Clears the editor and resets the state to allow creating a new file
+    // Currently is BROKEN, new file does not work
     private void NewFile()
     {
         _currentFilePath = null;
-        _pendingFileName = string.Empty;
-        _hasDocumentOpen = true;
-        _editorContent = string.Empty;
+        EditorContent = string.Empty;
         _isDirty = false;
         IsSettingsPageVisible = false;
-        // Notify EditorContent directly since we set the field to bypass the early-return guard
-        OnPropertyChanged(nameof(EditorContent));
         RefreshState();
-        // FileNameTextBox is in the always-visible header, so Focus() is safe here
-        FileNameTextBox.Focus();
+        EditorTextBox.Focus();
     }
 
+    // Saves the current editor content to the open file, or prompts for a file path if no file is open
     private async Task SaveAsync()
     {
         if (_currentFilePath is null)
         {
-            var suggestedName = string.IsNullOrWhiteSpace(_pendingFileName)
-                ? "untitled.txt"
-                : _pendingFileName.Trim();
-
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save File",
-                SuggestedFileName = suggestedName
+                SuggestedFileName = "untitled.txt"
             });
 
             var newPath = file?.TryGetLocalPath();
-            if (string.IsNullOrWhiteSpace(newPath)) return;
+            if (string.IsNullOrWhiteSpace(newPath))
+            {
+                return;
+            }
 
             _currentFilePath = newPath;
-            _pendingFileName = Path.GetFileName(newPath);
         }
 
-        await File.WriteAllTextAsync(_currentFilePath, _editorContent);
-        _hasDocumentOpen = true;
+        await File.WriteAllTextAsync(_currentFilePath, EditorContent);
         _isDirty = false;
         RefreshState();
     }
-
-    private void EditorButton_OnClick(object? sender, RoutedEventArgs e) =>
+    
+    // Event handlers for UI interactions
+    private void EditorButton_OnClick(object? sender, RoutedEventArgs e)
+    {
         IsSettingsPageVisible = false;
+        FocusEditor();
+    }
 
-    private async void OpenFileButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private async void OpenFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
         await OpenFileAsync();
+    }
 
-    private async void SaveButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private async void SaveButton_OnClick(object? sender, RoutedEventArgs e)
+    {
         await SaveAsync();
+    }
 
-    private void NewFileButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private void NewFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
         NewFile();
+    }
 
-    private void SettingsButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private void SettingsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
         IsSettingsPageVisible = true;
+    }
 
-    private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
+    {
         IsSettingsPageVisible = false;
+        FocusEditor();
+    }
 
+    // Handles theme selection buttons in the settings page
     private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { Tag: string themeName })
+        {
             ApplyTheme(themeName);
+        }
     }
 
+    // Marks the editor content as dirty (unsaved) whenever it changes
     private void EditorTextBox_OnTextChanged(object? sender, TextChangedEventArgs e)
     {
         _isDirty = true;
         RefreshState();
+    }
+
+    private void FocusEditor()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (IsEditorPageVisible && HasFileOpen)
+            {
+                EditorTextBox.Focus();
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    // Handles keyboard shortcuts for focusing the editor and opening files
+    private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        var requiredModifiers = KeyModifiers.Control | KeyModifiers.Shift;
+        if ((e.KeyModifiers & requiredModifiers) != requiredModifiers)
+        {
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.E:
+                IsSettingsPageVisible = false;
+                FocusEditor();
+                e.Handled = true;
+                break;
+            case Key.O:
+                e.Handled = true;
+                await OpenFileAsync();
+                break;
+        }
     }
 }
