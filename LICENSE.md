@@ -3,7 +3,7 @@
 KODO PUBLIC LICENSE
 Version 1.0
 
-Copyright (c) 2026 **KerbalMissile SS-YYC**
+Copyright (c) 2026 **KerbalMissile and SS-YYC**
 
 ---
 
