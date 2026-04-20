@@ -1,8 +1,6 @@
-### Kodo Public License v1.1
+# Kodo Public License v1.1
 
-**KODO PUBLIC LICENSE** **Version 1.1**
-
-**Copyright (c) 2026 KerbalMissile and SS-YYC**
+**KODO PUBLIC LICENSE** **Version 1.1** **Copyright (c) 2026 KerbalMissile and SS-YYC**
 
 ---
 
@@ -58,7 +56,7 @@ The User agrees to utilize the Software in good faith. The Software may not be u
 ---
 
 ### 9. PLATFORM SPECIFICITY & MODDING RIGHTS
-This Software is intended for use as a modification ("Mod") for third-party gaming platforms. The Licensor grants the original developers of the underlying Game a non-exclusive, perpetual right to integrate any logic or features from this Software into the official base game. For all other Users, this License remains in effect. This Software may not be redistributed on platforms that charge a fee for access to individual mods without express written consent.
+Where the Software is utilized as a modification ("Mod") for third-party gaming platforms, the Licensor grants the original developers of the underlying Game a non-exclusive, perpetual right to integrate any logic or features from this Software into the official base game. For all other Users and platforms, this License remains in full effect. This Software may not be redistributed on platforms that charge a fee for access to individual mods without express written consent.
 
 ---
 
