@@ -11,6 +11,8 @@
 
 "User" refers to any individual or entity exercising permissions granted by this License.
 
+"KPL-v1.1" is the official shorthand designation for the Kodo Public License v1.1. These terms may be used interchangeably throughout this document and associated project files.
+
 ---
 
 ### 2. GRANT OF RIGHTS
@@ -36,7 +38,7 @@ If the User distributes the Software, or any work containing protected portions 
 ---
 
 ### 5. COPYLEFT
-Any modified version of the Software that is distributed must be released under the terms of this Kodo Public License v1.1. The User may not impose further restrictions on the exercise of the rights granted herein.
+Any modified version of the Software that is distributed must be released under the terms of this KPL-v1.1. The User may not impose further restrictions on the exercise of the rights granted herein.
 
 ---
 
