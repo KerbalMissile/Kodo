@@ -3,9 +3,7 @@
 <!-- April 19th, 2026 - SS-YYC - Removed "Pick a Theme" from the top of the settings menu as this will be expanded. -->
 <!-- April 19th, 2026 - SS-YYC - Changed a couple emojis on the left sidebar -->
 <!-- April 19th, 2026 - KerbalMissile - Removed top right Open, Save, etc. buttons -->
-<!-- April 19th, 2026 - KerbalMissile - Re-added Save button to the top right -->
-<!-- April 19th, 2026 - KerbalMissile - Make Kodo start maximized -->
-<!-- April 19th, 2026 - KerbalMissile - Updated Editor Icon to Pen-->
+<!-- April 20th, 2026 - SS-YYC - Added collapsible file explorer panel -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -13,9 +11,8 @@
         mc:Ignorable="d"
         x:Class="Kodo.MainWindow"
         x:CompileBindings="False"
-        Width="1920"
-        Height="1080"
-        WindowState="Maximized"
+        Width="1100"
+        Height="760"
         MinWidth="900"
         MinHeight="620"
         Title="Kodo"
@@ -49,27 +46,38 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
 
+        <Style Selector="Button.fileitem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+
+        <Style Selector="Button.fileitem:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+        </Style>
+
         <Style Selector="TextBox.editor">
             <Setter Property="Background" Value="{Binding EditorBackgroundBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="20,18" />
             <Setter Property="FontSize" Value="15" />
             <Setter Property="FontFamily" Value="Cascadia Code,Consolas,Menlo,Monospace" />
             <Setter Property="TextWrapping" Value="NoWrap" />
             <Setter Property="AcceptsReturn" Value="True" />
             <Setter Property="AcceptsTab" Value="True" />
-            <Setter Property="FocusAdorner" Value="{x:Null}" />
-            <Setter Property="CornerRadius" Value="0" />
-        </Style>
-
-        <Style Selector="TextBox.editor:focus">
-            <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
     </Window.Styles>
 
-    <Grid ColumnDefinitions="60,*">
+    <!-- Root: activity bar | file explorer panel | editor/content area -->
+    <Grid ColumnDefinitions="60,Auto,*">
+
+        <!-- Activity bar (leftmost icon strip) -->
         <Border Grid.Column="0"
                 Background="{Binding SidebarBrush}"
                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -77,28 +85,118 @@
             <Grid RowDefinitions="Auto,*,Auto">
                 <StackPanel Margin="8,12,8,0" Spacing="4">
                     <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor (Ctrl+Shift+E)">
-                        <TextBlock FontSize="24" Text="✍︎" />
+                        <TextBlock FontSize="18" Text="&#x2318;" />
                     </Button>
                     <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="New File (Ctrl+N)">
-                        <TextBlock FontSize="18" Text="＋" />
+                        <TextBlock FontSize="18" Text="&#xFF0B;" />
                     </Button>
                     <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File (Ctrl+O)">
-                        <TextBlock FontSize="20" Text=" 🗎" />
+                        <TextBlock FontSize="20" Text="&#x2009;&#x1F5CE;" />
+                    </Button>
+                    <Button Classes="activity" Click="OpenFolderButton_OnClick" ToolTip.Tip="Open Folder">
+                        <TextBlock FontSize="18" Text="&#x1F4C2;" />
+                    </Button>
+                    <Button Classes="activity"
+                            Click="CloseFolderButton_OnClick"
+                            ToolTip.Tip="Close Folder"
+                            IsVisible="{Binding IsFolderOpen}">
+                        <TextBlock FontSize="18" Text="&#x1F4C1;" />
                     </Button>
                     <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File (Ctrl+S)" IsEnabled="{Binding IsSaveEnabled}">
-                        <TextBlock FontSize="18" Text=" ⭳" />
+                        <TextBlock FontSize="18" Text="&#x2009;&#x2B73;" />
                     </Button>
                 </StackPanel>
 
                 <StackPanel Grid.Row="2" Margin="8,0,8,12" Spacing="4">
                     <Button Classes="activity" Click="SettingsButton_OnClick" ToolTip.Tip="Settings">
-                        <TextBlock FontSize="18" Text="⚙" />
+                        <TextBlock FontSize="18" Text="&#x2699;" />
                     </Button>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <Grid Grid.Column="1">
+        <!-- Collapsible file explorer panel -->
+        <Border Grid.Column="1"
+                Width="240"
+                IsVisible="{Binding IsFileExplorerVisible}"
+                Background="{Binding SidebarBrush}"
+                BorderBrush="{Binding SurfaceBorderBrush}"
+                BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto,*">
+
+                <!-- Explorer header -->
+                <Border Grid.Row="0"
+                        Background="{Binding TopBarBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="12,8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{Binding MutedTextBrush}"
+                                   VerticalAlignment="Center"
+                                   Text="{Binding ExplorerHeaderText}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <Button Grid.Column="1"
+                                Classes="activity"
+                                Padding="4,2"
+                                Click="CollapseExplorerButton_OnClick"
+                                ToolTip.Tip="Collapse Explorer">
+                            <TextBlock FontSize="11" Text="&#x2715;" Foreground="{Binding MutedTextBrush}" />
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- File tree -->
+                <ScrollViewer Grid.Row="1"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding FileTreeItems}" Margin="4,4,4,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Classes="fileitem"
+                                        Tag="{Binding}"
+                                        Click="FileTreeItem_OnClick"
+                                        Margin="0,1">
+                                    <Grid ColumnDefinitions="Auto,Auto,*">
+                                        <!-- Indentation spacer -->
+                                        <Border Grid.Column="0" Width="{Binding IndentWidth}" />
+
+                                        <!-- Expand/collapse chevron -->
+                                        <TextBlock Grid.Column="1"
+                                                   FontSize="10"
+                                                   Width="16"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   Text="{Binding ChevronText}"
+                                                   Margin="0,0,2,0" />
+
+                                        <!-- Icon + name -->
+                                        <StackPanel Grid.Column="2"
+                                                    Orientation="Horizontal"
+                                                    Spacing="6"
+                                                    Margin="0,4">
+                                            <TextBlock FontSize="13"
+                                                       VerticalAlignment="Center"
+                                                       Text="{Binding Icon}" />
+                                            <TextBlock FontSize="13"
+                                                       VerticalAlignment="Center"
+                                                       Text="{Binding Name}"
+                                                       Foreground="{Binding NameColor}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       MaxWidth="148" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- Main content area (editor + settings) -->
+        <Grid Grid.Column="2">
             <Grid IsVisible="{Binding IsEditorPageVisible}" RowDefinitions="Auto,*,Auto">
                 <Border Grid.Row="0"
                         Background="{Binding TopBarBrush}"
@@ -133,24 +231,21 @@
                         <StackPanel Grid.Column="1"
                                     Orientation="Horizontal"
                                     Spacing="8">
-                                <Button Classes="chrome"
-                                Click="SaveButton_OnClick"
-                                Content="Save" />
+                            <Button Classes="chrome"
+                                    Click="SaveButton_OnClick"
+                                    Content="Save" />
                         </StackPanel>
                     </Grid>
                 </Border>
 
-                <Border Grid.Row="1"
-                        Background="{Binding CardBrush}"
-                        BorderBrush="{Binding SurfaceBorderBrush}"
-                        BorderThickness="0"
-                        IsVisible="{Binding HasDocumentOpen}">
+                <Grid Grid.Row="1"
+                      Background="{Binding EditorBackgroundBrush}"
+                      IsVisible="{Binding HasDocumentOpen}">
                     <TextBox x:Name="EditorTextBox"
                              Classes="editor"
-                             Background="{Binding CardBrush}"
                              Text="{Binding EditorContent, Mode=TwoWay}"
                              TextChanged="EditorTextBox_OnTextChanged" />
-                </Border>
+                </Grid>
 
                 <Border Grid.Row="1"
                         Background="{Binding EditorBackgroundBrush}"
