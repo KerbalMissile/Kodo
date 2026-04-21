@@ -4,11 +4,9 @@
 // April 19th, 2026 - KerbalMissile - Changed "No File Open" at top bar to be empty when no file is open, and to show the file name when a file is open, also shows "unsaved" if there are unsaved changes
 // April 19th, 2026 - KerbalMissile - Changed open file icon to fit in better
 // April 19th, 2026 - KerbalMissile - Re-added SS-YYC's changes to improve Kodo's UI, did some changes the New File buttons but they still do not work
-// April 19th, 2026 - SS-YYC - Added keybinds
-// April 19th, 2026 - KerbalMissile - Fixed lines and characters showning in the bottom right with no file. Fixed grammar if there is only 1 line or character too.
-// April 19th, 2026 - KerbalMissile - Changed logo colour
-// April 19th, 2026 - KerbalMissile - Added proper comments to SS-YYC's changes and improvements
+// April 20th, 2026 - SS-YYC - Added collapsible file explorer panel with folder tree and expand/collapse
 using System;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
@@ -25,17 +23,84 @@ using Avalonia.Threading;
 
 namespace Kodo;
 
+// Represents a single row in the file explorer tree
+public class FileTreeItem : INotifyPropertyChanged
+{
+    private bool _isExpanded;
+
+    public string Name { get; init; } = string.Empty;
+    public string FullPath { get; init; } = string.Empty;
+    public bool IsDirectory { get; init; }
+    public int Depth { get; init; }
+
+    // Pixel indentation based on nesting depth
+    public double IndentWidth => Depth * 14.0;
+
+    // Chevron shown next to directories; blank for files
+    public string ChevronText => IsDirectory ? (_isExpanded ? "▾" : "▸") : string.Empty;
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (_isExpanded == value) return;
+            _isExpanded = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ChevronText));
+            OnPropertyChanged(nameof(Icon));
+        }
+    }
+
+    // Icon varies between open/closed folder vs file
+    public string Icon => IsDirectory ? (_isExpanded ? "📂" : "📁") : GetFileIcon(Name);
+
+    // Muted colour for directories, normal text colour for files – resolved in AXAML via binding
+    public string NameColor => IsDirectory ? "#A0A0A0" : "#F4F4F4";
+    public string MutedTextBrush => "#A0A0A0";
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    // Returns a simple file-type icon based on extension
+    private static string GetFileIcon(string fileName)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        return ext switch
+        {
+            ".cs" => "📄",
+            ".axaml" or ".xaml" or ".xml" or ".html" or ".htm" => "📋",
+            ".json" or ".yaml" or ".yml" or ".toml" => "📝",
+            ".md" or ".txt" or ".rst" => "📃",
+            ".png" or ".jpg" or ".jpeg" or ".gif" or ".svg" or ".ico" => "🖼",
+            ".py" => "🐍",
+            ".js" or ".ts" or ".jsx" or ".tsx" => "📜",
+            ".css" or ".scss" or ".less" => "🎨",
+            ".sh" or ".bat" or ".ps1" => "⚡",
+            ".zip" or ".tar" or ".gz" or ".rar" => "📦",
+            _ => "📄",
+        };
+    }
+}
+
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private string? _currentFilePath;
+    private string? _currentFolderPath;
     private string _editorContent = string.Empty;
     private bool _isDirty;
     private bool _hasUntitledDocument;
     private bool _isSettingsPageVisible;
+    private bool _isFileExplorerVisible;
     private bool _suppressDirtyTracking;
     private string _currentThemeName = "Dark";
     private string _editorStatsText = "0 lines";
     private event PropertyChangedEventHandler? ViewModelPropertyChanged;
+
+    // Flat list that backs the ItemsControl – directories insert/remove their children in-place
+    public ObservableCollection<FileTreeItem> FileTreeItems { get; } = new();
 
     public MainWindow()
     {
@@ -50,11 +115,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _editorContent;
         set
         {
-            if (_editorContent == value)
-            {
-                return;
-            }
-
+            if (_editorContent == value) return;
             _editorContent = value;
             OnPropertyChanged();
         }
@@ -65,14 +126,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _isSettingsPageVisible;
         set
         {
-            if (_isSettingsPageVisible == value)
-            {
-                return;
-            }
-
+            if (_isSettingsPageVisible == value) return;
             _isSettingsPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
+        }
+    }
+
+    public bool IsFileExplorerVisible
+    {
+        get => _isFileExplorerVisible;
+        private set
+        {
+            if (_isFileExplorerVisible == value) return;
+            _isFileExplorerVisible = value;
+            OnPropertyChanged();
         }
     }
 
@@ -82,6 +150,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasFileOpen => _currentFilePath is not null;
 
+    public bool IsFolderOpen => _currentFolderPath is not null;
+
     public bool IsEmptyStateVisible => !HasDocumentOpen;
 
     public string CurrentThemeName
@@ -89,11 +159,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _currentThemeName;
         private set
         {
-            if (_currentThemeName == value)
-            {
-                return;
-            }
-
+            if (_currentThemeName == value) return;
             _currentThemeName = value;
             OnPropertyChanged();
         }
@@ -104,7 +170,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? $"{GetDocumentDisplayName()}{(_isDirty ? " • unsaved" : string.Empty)}"
         : "Open A File";
 
-    public string FilePathText => HasFileOpen ? _currentFilePath! : HasDocumentOpen ? "Unsaved file" : "No file open";
+    public string FilePathText => HasFileOpen
+        ? _currentFilePath!
+        : HasDocumentOpen ? "Unsaved file"
+        : IsFolderOpen ? $"📂 {_currentFolderPath}"
+        : "No file open";
+
+    // Header shown at the top of the file explorer panel
+    public string ExplorerHeaderText => IsFolderOpen
+        ? Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar)).ToUpperInvariant()
+        : "EXPLORER";
 
     public string ThemeStatusText => $"Current theme: {CurrentThemeName}";
 
@@ -113,11 +188,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _editorStatsText;
         private set
         {
-            if (_editorStatsText == value)
-            {
-                return;
-            }
-
+            if (_editorStatsText == value) return;
             _editorStatsText = value;
             OnPropertyChanged();
         }
@@ -133,7 +204,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush PrimaryTextBrush { get; private set; } = Brush.Parse("#F4F4F4");
     public IBrush MutedTextBrush { get; private set; } = Brush.Parse("#A0A0A0");
     public IBrush SurfaceBorderBrush { get; private set; } = Brush.Parse("#2B2B2B");
-    public IBrush AccentBrush { get; private set; } = Brush.Parse("#8400db");
+    public IBrush AccentBrush { get; private set; } = Brush.Parse("#0E639C");
 
     event PropertyChangedEventHandler? INotifyPropertyChanged.PropertyChanged
     {
@@ -148,22 +219,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshState()
     {
-        if (HasFileOpen)
-        {
-            var lines = EditorContent.Length == 0 ? 1 : EditorContent.Count(static c => c == '\n') + 1;
-            EditorStatsText = $"{lines} line(s)  |  {EditorContent.Length} character(s)";
-        }
-        else
-        {
-            EditorStatsText = string.Empty;
-        }
-
+        var lines = EditorContent.Length == 0 ? 1 : EditorContent.Count(static c => c == '\n') + 1;
+        EditorStatsText = $"{lines} lines  |  {EditorContent.Length} characters";
         Title = HasDocumentOpen ? $"{GetDocumentDisplayName()} - Kodo" : "Kodo";
         OnPropertyChanged(nameof(HasDocumentOpen));
         OnPropertyChanged(nameof(HasFileOpen));
+        OnPropertyChanged(nameof(IsFolderOpen));
         OnPropertyChanged(nameof(IsEmptyStateVisible));
         OnPropertyChanged(nameof(FileSummaryText));
         OnPropertyChanged(nameof(FilePathText));
+        OnPropertyChanged(nameof(ExplorerHeaderText));
         OnPropertyChanged(nameof(ThemeStatusText));
     }
 
@@ -187,7 +252,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             PrimaryTextBrush = Brush.Parse("#202124");
             MutedTextBrush = Brush.Parse("#5F6B7A");
             SurfaceBorderBrush = Brush.Parse("#D7DCE5");
-            AccentBrush = Brush.Parse("#9900ff");
+            AccentBrush = Brush.Parse("#0067C0");
         }
         else // Dark mode colours
         {
@@ -201,7 +266,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             PrimaryTextBrush = Brush.Parse("#F4F4F4");
             MutedTextBrush = Brush.Parse("#A0A0A0");
             SurfaceBorderBrush = Brush.Parse("#2B2B2B");
-            AccentBrush = Brush.Parse("#9900ff");
+            AccentBrush = Brush.Parse("#0E639C");
         }
 
         // Notify the UI that all the brushes have changed
@@ -218,7 +283,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(AccentBrush));
         RefreshState();
     }
-    
+
     // Opens a file picker dialog and loads the selected file into the editor
     private async Task OpenFileAsync()
     {
@@ -229,27 +294,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         });
 
         var file = files.Count > 0 ? files[0] : null;
-        if (file is null)
-        {
-            return;
-        }
+        if (file is null) return;
 
         var path = file.TryGetLocalPath();
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-        {
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
 
         _currentFilePath = path;
         _hasUntitledDocument = false;
         SetEditorContent(await File.ReadAllTextAsync(path));
         _isDirty = false;
         IsSettingsPageVisible = false;
-        RefreshState();   
+        RefreshState();
         FocusEditor();
     }
 
-    // Clears the editor and resets state to start a new file
     private void NewFile()
     {
         _currentFilePath = null;
@@ -261,7 +319,95 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FocusEditor();
     }
 
-    // Saves the current editor content to the open file, or prompts for a file path if no file is open
+    // Opens a folder picker, populates the file tree, and shows the explorer panel
+    private async Task OpenFolderAsync()
+    {
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Open Folder",
+            AllowMultiple = false
+        });
+
+        var folder = folders.Count > 0 ? folders[0] : null;
+        if (folder is null) return;
+
+        var path = folder.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
+
+        _currentFolderPath = path;
+        PopulateFileTree(path);
+        IsFileExplorerVisible = true;
+        RefreshState();
+    }
+
+    // Clears the folder, tree, and hides the explorer panel
+    private void CloseFolder()
+    {
+        _currentFolderPath = null;
+        FileTreeItems.Clear();
+        IsFileExplorerVisible = false;
+        RefreshState();
+    }
+
+    // Builds the top-level contents of the folder into FileTreeItems.
+    // Sub-directories start collapsed; their children are inserted lazily when expanded.
+    private void PopulateFileTree(string folderPath)
+    {
+        FileTreeItems.Clear();
+        AppendDirectoryContents(folderPath, depth: 0);
+    }
+
+    // Appends the immediate children of a directory into the flat list at the correct position.
+    // insertAfterIndex == -1 means append to the end of the list.
+    private void AppendDirectoryContents(string dirPath, int depth, int insertAfterIndex = -1)
+    {
+        var entries = GetSortedEntries(dirPath);
+        var pos = insertAfterIndex + 1;
+
+        foreach (var entry in entries)
+        {
+            var item = new FileTreeItem
+            {
+                Name = Path.GetFileName(entry),
+                FullPath = entry,
+                IsDirectory = Directory.Exists(entry),
+                Depth = depth,
+            };
+
+            if (insertAfterIndex < 0)
+                FileTreeItems.Add(item);
+            else
+            {
+                FileTreeItems.Insert(pos, item);
+                pos++;
+            }
+        }
+    }
+
+    // Returns subdirectories first (sorted), then files (sorted), skipping hidden entries
+    private static string[] GetSortedEntries(string dirPath)
+    {
+        try
+        {
+            var dirs = Directory.GetDirectories(dirPath)
+                .Where(d => !Path.GetFileName(d).StartsWith('.'))
+                .OrderBy(d => Path.GetFileName(d), StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            var files = Directory.GetFiles(dirPath)
+                .Where(f => !Path.GetFileName(f).StartsWith('.'))
+                .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            return [.. dirs, .. files];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    // Saves the current editor content, prompting for a path if needed
     private async Task SaveAsync()
     {
         if (_currentFilePath is null)
@@ -273,10 +419,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             });
 
             var newPath = file?.TryGetLocalPath();
-            if (string.IsNullOrWhiteSpace(newPath))
-            {
-                return;
-            }
+            if (string.IsNullOrWhiteSpace(newPath)) return;
 
             _currentFilePath = newPath;
             _hasUntitledDocument = false;
@@ -286,33 +429,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isDirty = false;
         RefreshState();
     }
-    
-    // Event handlers for UI interactions
+
+    // ── Event handlers ──────────────────────────────────────────────────────
+
     private void EditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsSettingsPageVisible = false;
         FocusEditor();
     }
 
-    private async void OpenFileButton_OnClick(object? sender, RoutedEventArgs e)
-    {
+    private async void OpenFileButton_OnClick(object? sender, RoutedEventArgs e) =>
         await OpenFileAsync();
-    }
 
-    private async void SaveButton_OnClick(object? sender, RoutedEventArgs e)
-    {
+    private async void SaveButton_OnClick(object? sender, RoutedEventArgs e) =>
         await SaveAsync();
-    }
 
-    private void NewFileButton_OnClick(object? sender, RoutedEventArgs e)
-    {
+    private void NewFileButton_OnClick(object? sender, RoutedEventArgs e) =>
         NewFile();
-    }
 
-    private void SettingsButton_OnClick(object? sender, RoutedEventArgs e)
-    {
+    private async void OpenFolderButton_OnClick(object? sender, RoutedEventArgs e) =>
+        await OpenFolderAsync();
+
+    private void CloseFolderButton_OnClick(object? sender, RoutedEventArgs e) =>
+        CloseFolder();
+
+    // Hides the explorer panel without closing the folder
+    private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e) =>
+        IsFileExplorerVisible = false;
+
+    private void SettingsButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsSettingsPageVisible = true;
-    }
 
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -320,47 +466,86 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FocusEditor();
     }
 
+    // Handles clicks on file tree rows.
+    // Directories toggle their children; files are opened in the editor.
+    private async void FileTreeItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: FileTreeItem item })
+        {
+            if (item.IsDirectory)
+                ToggleDirectoryExpansion(item);
+            else
+                await OpenFileFromTreeAsync(item.FullPath);
+        }
+    }
+
+    // Expands or collapses a directory row in the flat list
+    private void ToggleDirectoryExpansion(FileTreeItem dirItem)
+    {
+        var index = FileTreeItems.IndexOf(dirItem);
+        if (index < 0) return;
+
+        if (dirItem.IsExpanded)
+        {
+            // Collapse: remove all descendants (items with greater depth that follow consecutively)
+            dirItem.IsExpanded = false;
+            var toRemove = FileTreeItems
+                .Skip(index + 1)
+                .TakeWhile(i => i.Depth > dirItem.Depth)
+                .ToList();
+            foreach (var child in toRemove)
+                FileTreeItems.Remove(child);
+        }
+        else
+        {
+            // Expand: insert immediate children right after this item
+            dirItem.IsExpanded = true;
+            AppendDirectoryContents(dirItem.FullPath, dirItem.Depth + 1, insertAfterIndex: index);
+        }
+    }
+
+    // Opens a file from the tree into the editor
+    private async Task OpenFileFromTreeAsync(string filePath)
+    {
+        if (!File.Exists(filePath)) return;
+
+        _currentFilePath = filePath;
+        _hasUntitledDocument = false;
+        SetEditorContent(await File.ReadAllTextAsync(filePath));
+        _isDirty = false;
+        IsSettingsPageVisible = false;
+        RefreshState();
+        FocusEditor();
+    }
+
     // Handles theme selection buttons in the settings page
     private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { Tag: string themeName })
-        {
             ApplyTheme(themeName);
-        }
     }
 
     // Marks the editor content as dirty (unsaved) whenever it changes
     private void EditorTextBox_OnTextChanged(object? sender, TextChangedEventArgs e)
     {
-        if (_suppressDirtyTracking)
-        {
-            return;
-        }
-
+        if (_suppressDirtyTracking) return;
         _isDirty = true;
         RefreshState();
     }
 
-    // Focuses the editor text box, used after opening a file or switching back from settings
     private void FocusEditor()
     {
         Dispatcher.UIThread.Post(() =>
         {
             if (IsEditorPageVisible && HasDocumentOpen)
-            {
                 EditorTextBox.Focus();
-            }
         }, DispatcherPriority.Background);
     }
 
-    // Handles keyboard shortcuts for New File, Open, Save, and focusing the editor
     private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
     {
         var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
-        if (!hasControl)
-        {
-            return;
-        }
+        if (!hasControl) return;
 
         switch (e.Key)
         {
@@ -387,13 +572,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Returns the file name to display in the top bar, or "untitled.txt" if it's a new unsaved document
-    private string GetDocumentDisplayName()
-    {
-        return HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
-    }
+    private string GetDocumentDisplayName() =>
+        HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
 
-    // Sets the editor content while suppressing dirty tracking, used when loading a file or starting a new file
     private void SetEditorContent(string content)
     {
         _suppressDirtyTracking = true;
