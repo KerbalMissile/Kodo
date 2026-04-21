@@ -20,7 +20,7 @@ To download, run, and edit Kodo's source code, follow these steps:
 ---
 
 **Current Features:**
-- Extensions
+- Extensions (.kox file extension)
 - Dark / Light mode
 - Folder support
 - File Read / Write support
