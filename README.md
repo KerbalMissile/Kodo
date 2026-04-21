@@ -4,7 +4,7 @@
 
 **Description:**
 
-Kodo is a lightweight, simple, IDE made by two people, KerbalMissile and SS-YYC, it is meant to have compilers ready to install easily, as well as be lightweight, and a multi-person code editor, so you can see what anyone is coding in real time, no accounts, no ads, fully free, forever. It is licensed under a custom license, the [Kodo Public License v1.1](LICENSE.md).
+Kodo is a fast, lightweight IDE built by KerbalMissile and SS-YYC. It’s designed for simplicity - quick compiler setup, real-time collaborative editing, and zero friction: no accounts, no ads, completely free forever. Kodo is released under the [Kodo Public License v1.1](LICENSE.md).
 
 ---
 
