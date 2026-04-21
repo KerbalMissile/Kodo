@@ -16,3 +16,17 @@ To download, run, and edit Kodo's source code, follow these steps:
 2. Run `dotnet new install Avalonia.Templates`.
 3. Then change your directory to Kodo's Source folder `cd path\to\Kodo\Source`.
 4. To run it, do `dotnet run` and it should take a few seconds then open up.
+
+---
+
+**Current Features:**
+- Extensions
+- Dark / Light mode
+- Folder support
+- File Read / Write support
+- File Save / Load support
+- New File Creation Support
+
+**Planned Features:**
+- Multi-person file editing in real time, at the same time
+- Downloadable compilers
