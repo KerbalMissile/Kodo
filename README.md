@@ -30,3 +30,4 @@ To download, run, and edit Kodo's source code, follow these steps:
 **Planned Features:**
 - Multi-person file editing in real time, at the same time
 - Downloadable compilers
+- Discord Rich Presence Support
