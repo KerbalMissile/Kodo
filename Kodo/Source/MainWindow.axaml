@@ -102,7 +102,7 @@
                             IsVisible="{Binding IsFolderOpen}">
                         <TextBlock FontSize="18" Text="&#x1F4C1;" />
                     </Button>
-                    <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File (Ctrl+S)" IsEnabled="{Binding IsSaveEnabled}">
+                    <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File (Ctrl+S)">
                         <TextBlock FontSize="18" Text="&#x2009;&#x2B73;" />
                     </Button>
                 </StackPanel>
@@ -364,6 +364,42 @@
 
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        Text="{Binding ThemeStatusText}" />
+
+                            <Border Height="1"
+                                    Background="{Binding SurfaceBorderBrush}" />
+
+                            <TextBlock FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding PrimaryTextBrush}"
+                                       Text="Autosave" />
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <CheckBox IsChecked="{Binding IsAutoSaveEnabled, Mode=TwoWay}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock VerticalAlignment="Center"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Enable autosave" />
+                            </StackPanel>
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="{Binding AutoSaveStatusText}" />
+
+                            <Border Height="1"
+                                    Background="{Binding SurfaceBorderBrush}" />
+
+                            <TextBlock FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding PrimaryTextBrush}"
+                                       Text="Discord Rich Presence" />
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <CheckBox IsChecked="{Binding IsDiscordRichPresenceEnabled, Mode=TwoWay}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock VerticalAlignment="Center"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Enable Discord Rich Presence" />
+                            </StackPanel>
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="{Binding DiscordRichPresenceStatusText}" />
                         </StackPanel>
                     </Border>
                 </Grid>
