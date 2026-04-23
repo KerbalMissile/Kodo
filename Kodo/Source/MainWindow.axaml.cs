@@ -394,20 +394,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (HasFileOpen)
         {
-            return "Working in editor";
+            return GetDiscordWorkspaceLabel();
         }
 
         if (_hasUntitledDocument)
         {
-            return "Editing an unsaved file";
+            return GetDiscordWorkspaceLabel("Editing an unsaved file");
         }
 
         if (IsFolderOpen)
         {
-            return Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar));
+            return GetDiscordWorkspaceLabel();
         }
 
         return "Waiting for a file";
+    }
+
+    private string GetDiscordWorkspaceLabel(string fallback = "Working in editor")
+    {
+        if (!IsFolderOpen)
+        {
+            return fallback;
+        }
+
+        var folderName = Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar));
+        return string.IsNullOrWhiteSpace(folderName) ? fallback : $"Workspace: {folderName}";
     }
 
     private void DisposeDiscordPresence()
