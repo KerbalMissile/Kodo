@@ -26,8 +26,9 @@ To download, run, and edit Kodo's source code, follow these steps:
 - File Read / Write support
 - File Save / Load support
 - New File Creation Support
+- Discord Rich Presence Support
+- Autosave Functionality
 
 **Planned Features:**
 - Multi-person file editing in real time, at the same time
 - Downloadable compilers
-- Discord Rich Presence Support
