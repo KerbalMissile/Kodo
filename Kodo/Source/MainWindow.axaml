@@ -208,13 +208,9 @@
                             <Border Width="28"
                                     Height="28"
                                     CornerRadius="8"
-                                    Background="{Binding AccentBrush}">
-                                <TextBlock HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"
-                                           Foreground="White"
-                                           Text="K" />
+                                    ClipToBounds="True">
+                                <Image Source="/Assets/kodo-logo.png"
+                                       Stretch="UniformToFill" />
                             </Border>
 
                             <StackPanel Spacing="2">
