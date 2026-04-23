@@ -11,6 +11,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -84,6 +85,7 @@ public class FileTreeItem : INotifyPropertyChanged
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
+    private const string SettingsFileName = "settings.json";
     private string? _currentFilePath;
     private string? _currentFolderPath;
     private string _editorContent = string.Empty;
@@ -104,7 +106,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         InitializeComponent();
         LoadWindowIcon();
         DataContext = this;
-        ApplyTheme("Dark");
+        ApplyTheme(LoadSavedTheme());
         RefreshState();
     }
 
@@ -244,6 +246,47 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Icon = new WindowIcon(iconStream);
     }
 
+    private string SettingsFilePath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", SettingsFileName);
+
+    private string LoadSavedTheme()
+    {
+        try
+        {
+            if (!File.Exists(SettingsFilePath))
+            {
+                return "Dark";
+            }
+
+            var json = File.ReadAllText(SettingsFilePath);
+            var settings = JsonSerializer.Deserialize<AppSettings>(json);
+            return settings?.ThemeName is "Light" or "Dark" ? settings.ThemeName : "Dark";
+        }
+        catch
+        {
+            return "Dark";
+        }
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            var settingsDirectory = Path.GetDirectoryName(SettingsFilePath);
+            if (!string.IsNullOrWhiteSpace(settingsDirectory))
+            {
+                Directory.CreateDirectory(settingsDirectory);
+            }
+
+            var json = JsonSerializer.Serialize(new AppSettings(CurrentThemeName));
+            File.WriteAllText(SettingsFilePath, json);
+        }
+        catch
+        {
+            // Ignore settings persistence failures and keep the UI responsive.
+        }
+    }
+
     // Light Mode and Dark Mode color definitions
     private void ApplyTheme(string themeName)
     {
@@ -293,6 +336,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(MutedTextBrush));
         OnPropertyChanged(nameof(SurfaceBorderBrush));
         OnPropertyChanged(nameof(AccentBrush));
+        SaveSettings();
         RefreshState();
     }
 
@@ -593,4 +637,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorContent = content;
         _suppressDirtyTracking = false;
     }
+
+    private sealed record AppSettings(string ThemeName);
 }
