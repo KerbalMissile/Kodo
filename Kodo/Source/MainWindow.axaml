@@ -233,6 +233,7 @@
                                     Spacing="8">
                             <Button Classes="chrome"
                                     Click="SaveButton_OnClick"
+                                    IsVisible="{Binding HasDocumentOpen}"
                                     Content="Save" />
                         </StackPanel>
                     </Grid>
