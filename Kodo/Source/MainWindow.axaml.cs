@@ -56,10 +56,6 @@ public class FileTreeItem : INotifyPropertyChanged
     // Icon varies between open/closed folder vs file
     public string Icon => IsDirectory ? (_isExpanded ? "📂" : "📁") : GetFileIcon(Name);
 
-    // Muted colour for directories, normal text colour for files – resolved in AXAML via binding
-    public string NameColor => IsDirectory ? "#A0A0A0" : "#F4F4F4";
-    public string MutedTextBrush => "#A0A0A0";
-
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
