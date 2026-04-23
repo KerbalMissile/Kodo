@@ -321,6 +321,7 @@
                             CornerRadius="18"
                             Padding="22"
                             MaxWidth="620"
+                            Width="620"
                             HorizontalAlignment="Left"
                             VerticalAlignment="Top">
                         <StackPanel Spacing="16">
@@ -328,11 +329,14 @@
                                        FontWeight="SemiBold"
                                        Foreground="{Binding PrimaryTextBrush}"
                                        Text="Theme" />
-                            <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
+                            <Grid ColumnDefinitions="Auto,Auto"
+                                  ColumnSpacing="10"
+                                  HorizontalAlignment="Left">
                                 <Button Grid.Column="0"
                                         Classes="chrome"
                                         Click="ThemeButton_OnClick"
-                                        Tag="Dark">
+                                        Tag="Dark"
+                                        Width="170">
                                     <StackPanel Spacing="8">
                                         <Border Height="96"
                                                 CornerRadius="12"
@@ -348,7 +352,8 @@
                                 <Button Grid.Column="1"
                                         Classes="chrome"
                                         Click="ThemeButton_OnClick"
-                                        Tag="Light">
+                                        Tag="Light"
+                                        Width="170">
                                     <StackPanel Spacing="8">
                                         <Border Height="96"
                                                 CornerRadius="12"
