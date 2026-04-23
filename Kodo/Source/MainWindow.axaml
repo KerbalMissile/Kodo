@@ -167,7 +167,7 @@
                                                    FontSize="10"
                                                    Width="16"
                                                    VerticalAlignment="Center"
-                                                   Foreground="{Binding MutedTextBrush}"
+                                                   Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
                                                    Text="{Binding ChevronText}"
                                                    Margin="0,0,2,0" />
 
@@ -182,7 +182,7 @@
                                             <TextBlock FontSize="13"
                                                        VerticalAlignment="Center"
                                                        Text="{Binding Name}"
-                                                       Foreground="{Binding NameColor}"
+                                                       Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
                                                        TextTrimming="CharacterEllipsis"
                                                        MaxWidth="148" />
                                         </StackPanel>
