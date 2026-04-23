@@ -1,6 +1,6 @@
 # Kodo
 
----
+---![Termyx Banner](https://github.com/KerbalMissile/Kodo/blob/main/kodo_logo.png)
 
 **Description:**
 
