@@ -17,6 +17,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -105,6 +106,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public MainWindow()
     {
         InitializeComponent();
+        LoadWindowIcon();
         DataContext = this;
         ApplyTheme("Dark");
         RefreshState();
@@ -228,6 +230,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             EditorStatsText = string.Empty;
         }
+
         Title = HasDocumentOpen ? $"{GetDocumentDisplayName()} - Kodo" : "Kodo";
         OnPropertyChanged(nameof(HasDocumentOpen));
         OnPropertyChanged(nameof(HasFileOpen));
@@ -237,6 +240,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(FilePathText));
         OnPropertyChanged(nameof(ExplorerHeaderText));
         OnPropertyChanged(nameof(ThemeStatusText));
+    }
+
+    private void LoadWindowIcon()
+    {
+        using var iconStream = AssetLoader.Open(new Uri("avares://Kodo/Assets/kodo-logo.png"));
+        Icon = new WindowIcon(iconStream);
     }
 
     // Light Mode and Dark Mode color definitions
