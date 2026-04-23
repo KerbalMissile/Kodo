@@ -269,11 +269,11 @@
                                            Text="Open one file, edit it, save it. Or start a new file." />
                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                     <Button Classes="chrome"
-                                            Click="OpenFileButton_OnClick"
-                                            Content="Open File" />
-                                    <Button Classes="chrome"
                                             Click="NewFileButton_OnClick"
                                             Content="New File" />
+                                    <Button Classes="chrome"
+                                            Click="OpenFileButton_OnClick"
+                                            Content="Open File" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
