@@ -219,8 +219,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshState()
     {
-        var lines = EditorContent.Length == 0 ? 1 : EditorContent.Count(static c => c == '\n') + 1;
-        EditorStatsText = $"{lines} lines  |  {EditorContent.Length} characters";
+        if (HasDocumentOpen)
+        {
+            var lines = EditorContent.Length == 0 ? 1 : EditorContent.Count(static c => c == '\n') + 1;
+            EditorStatsText = $"{lines} lines  |  {EditorContent.Length} characters";
+        }
+        else
+        {
+            EditorStatsText = string.Empty;
+        }
         Title = HasDocumentOpen ? $"{GetDocumentDisplayName()} - Kodo" : "Kodo";
         OnPropertyChanged(nameof(HasDocumentOpen));
         OnPropertyChanged(nameof(HasFileOpen));
