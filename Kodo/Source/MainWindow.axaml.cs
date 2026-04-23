@@ -117,11 +117,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         InitializeComponent();
         LoadWindowIcon();
-        DataContext = this;
         var settings = LoadSettings();
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
+        DataContext = this;
         ApplyTheme(settings.ThemeName);
         UpdateDiscordRichPresenceLifecycle();
         Closed += MainWindow_OnClosed;
