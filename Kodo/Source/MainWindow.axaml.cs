@@ -22,6 +22,9 @@ using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using DiscordAssetsModel = DiscordRPC.Assets;
+using DiscordRpcClient = DiscordRPC.DiscordRpcClient;
+using DiscordRichPresenceModel = DiscordRPC.RichPresence;
 
 namespace Kodo;
 
@@ -85,11 +88,20 @@ public class FileTreeItem : INotifyPropertyChanged
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
+    private const string DefaultDiscordClientId = "1495509170756255744";
+    private const string DefaultDiscordLargeImageKey = "kodo_logo";
+    private const string DefaultDiscordLargeImageText = "Kodo";
     private const string SettingsFileName = "settings.json";
+    private const string DiscordClientIdEnvironmentVariable = "KODO_DISCORD_CLIENT_ID";
     private string? _currentFilePath;
     private string? _currentFolderPath;
+    private DiscordRpcClient? _discordRpcClient;
+    private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private string _editorContent = string.Empty;
+    private bool _isAutoSaveEnabled;
     private bool _isDirty;
+    private bool _isSaving;
+    private bool _isDiscordRichPresenceEnabled;
     private bool _hasUntitledDocument;
     private bool _isSettingsPageVisible;
     private bool _isFileExplorerVisible;
@@ -106,7 +118,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         InitializeComponent();
         LoadWindowIcon();
         DataContext = this;
-        ApplyTheme(LoadSavedTheme());
+        var settings = LoadSettings();
+        _isAutoSaveEnabled = settings.AutoSaveEnabled;
+        _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
+        _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
+        ApplyTheme(settings.ThemeName);
+        UpdateDiscordRichPresenceLifecycle();
+        Closed += MainWindow_OnClosed;
         RefreshState();
     }
 
@@ -154,6 +172,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsEmptyStateVisible => !HasDocumentOpen;
 
+    public bool IsDiscordRichPresenceEnabled
+    {
+        get => _isDiscordRichPresenceEnabled;
+        set
+        {
+            if (_isDiscordRichPresenceEnabled == value) return;
+            _isDiscordRichPresenceEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+            UpdateDiscordRichPresenceLifecycle();
+            OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
+        }
+    }
+
+    public bool IsAutoSaveEnabled
+    {
+        get => _isAutoSaveEnabled;
+        set
+        {
+            if (_isAutoSaveEnabled == value) return;
+            _isAutoSaveEnabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoSaveStatusText));
+            if (!_isAutoSaveEnabled)
+            {
+                _autoSaveTimer.Stop();
+            }
+            else
+            {
+                RestartAutoSaveTimerIfNeeded();
+            }
+
+            SaveSettings();
+        }
+    }
+
     public string CurrentThemeName
     {
         get => _currentThemeName;
@@ -182,6 +236,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         : "EXPLORER";
 
     public string ThemeStatusText => $"Current theme: {CurrentThemeName}";
+
+    public string DiscordRichPresenceStatusText
+    {
+        get
+        {
+            if (!IsDiscordRichPresenceEnabled)
+            {
+                return "Discord Rich Presence is turned off.";
+            }
+
+            return "Discord Rich Presence is on when the Discord desktop app is running.";
+        }
+    }
+
+    public string AutoSaveStatusText =>
+        !IsAutoSaveEnabled
+            ? "Autosave is turned off."
+            : HasFileOpen
+                ? "Changes are saved automatically a couple seconds after you stop typing."
+                : "Autosave will start working after the file has been saved once.";
 
     public string EditorStatsText
     {
@@ -238,6 +312,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(FilePathText));
         OnPropertyChanged(nameof(ExplorerHeaderText));
         OnPropertyChanged(nameof(ThemeStatusText));
+        OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
+        OnPropertyChanged(nameof(AutoSaveStatusText));
+        UpdateDiscordPresence();
     }
 
     private void LoadWindowIcon()
@@ -246,25 +323,140 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Icon = new WindowIcon(iconStream);
     }
 
+    private string? GetDiscordApplicationId()
+    {
+        var overrideClientId = Environment.GetEnvironmentVariable(DiscordClientIdEnvironmentVariable);
+        return string.IsNullOrWhiteSpace(overrideClientId) ? DefaultDiscordClientId : overrideClientId;
+    }
+
+    private void UpdateDiscordRichPresenceLifecycle()
+    {
+        try
+        {
+            var clientId = GetDiscordApplicationId();
+            if (!IsDiscordRichPresenceEnabled || string.IsNullOrWhiteSpace(clientId))
+            {
+                DisposeDiscordPresence();
+                return;
+            }
+
+            if (_discordRpcClient is null)
+            {
+                _discordRpcClient = new DiscordRpcClient(clientId);
+                _discordRpcClient.Initialize();
+            }
+
+            UpdateDiscordPresence();
+        }
+        catch
+        {
+            DisposeDiscordPresence();
+        }
+    }
+
+    private void UpdateDiscordPresence()
+    {
+        if (_discordRpcClient is null || !IsDiscordRichPresenceEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            _discordRpcClient.SetPresence(new DiscordRichPresenceModel
+            {
+                Details = GetDiscordPresenceDetails(),
+                State = GetDiscordPresenceState(),
+                Assets = new DiscordAssetsModel
+                {
+                    LargeImageKey = DefaultDiscordLargeImageKey,
+                    LargeImageText = DefaultDiscordLargeImageText
+                }
+            });
+        }
+        catch
+        {
+            DisposeDiscordPresence();
+        }
+    }
+
+    private string GetDiscordPresenceDetails()
+    {
+        if (HasDocumentOpen)
+        {
+            return $"Editing {GetDocumentDisplayName()}";
+        }
+
+        return IsFolderOpen ? "Browsing project files" : "Idle in Kodo";
+    }
+
+    private string GetDiscordPresenceState()
+    {
+        if (HasFileOpen)
+        {
+            return "Working in editor";
+        }
+
+        if (_hasUntitledDocument)
+        {
+            return "Editing an unsaved file";
+        }
+
+        if (IsFolderOpen)
+        {
+            return Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar));
+        }
+
+        return "Waiting for a file";
+    }
+
+    private void DisposeDiscordPresence()
+    {
+        if (_discordRpcClient is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _discordRpcClient.ClearPresence();
+            _discordRpcClient.Dispose();
+        }
+        catch
+        {
+            // Ignore cleanup failures on shutdown/disable.
+        }
+        finally
+        {
+            _discordRpcClient = null;
+        }
+    }
+
     private string SettingsFilePath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", SettingsFileName);
 
-    private string LoadSavedTheme()
+    private AppSettings LoadSettings()
     {
         try
         {
             if (!File.Exists(SettingsFilePath))
             {
-                return "Dark";
+                return new AppSettings();
             }
 
             var json = File.ReadAllText(SettingsFilePath);
             var settings = JsonSerializer.Deserialize<AppSettings>(json);
-            return settings?.ThemeName is "Light" or "Dark" ? settings.ThemeName : "Dark";
+            if (settings is null)
+            {
+                return new AppSettings();
+            }
+
+            settings.ThemeName = settings.ThemeName is "Light" or "Dark" ? settings.ThemeName : "Dark";
+            return settings;
         }
         catch
         {
-            return "Dark";
+            return new AppSettings();
         }
     }
 
@@ -278,7 +470,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Directory.CreateDirectory(settingsDirectory);
             }
 
-            var json = JsonSerializer.Serialize(new AppSettings(CurrentThemeName));
+            var json = JsonSerializer.Serialize(new AppSettings
+            {
+                ThemeName = CurrentThemeName,
+                AutoSaveEnabled = IsAutoSaveEnabled,
+                DiscordRichPresenceEnabled = IsDiscordRichPresenceEnabled
+            });
             File.WriteAllText(SettingsFilePath, json);
         }
         catch
@@ -357,6 +554,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _currentFilePath = path;
         _hasUntitledDocument = false;
+        _autoSaveTimer.Stop();
         SetEditorContent(await File.ReadAllTextAsync(path));
         _isDirty = false;
         IsSettingsPageVisible = false;
@@ -368,6 +566,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _currentFilePath = null;
         _hasUntitledDocument = true;
+        _autoSaveTimer.Stop();
         SetEditorContent(string.Empty);
         _isDirty = false;
         IsSettingsPageVisible = false;
@@ -464,10 +663,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // Saves the current editor content, prompting for a path if needed
-    private async Task SaveAsync()
+    private async Task SaveAsync(bool allowPromptForPath = true)
     {
+        _autoSaveTimer.Stop();
+
+        if (_isSaving)
+        {
+            return;
+        }
+
         if (_currentFilePath is null)
         {
+            if (!allowPromptForPath)
+            {
+                return;
+            }
+
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save File",
@@ -481,9 +692,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _hasUntitledDocument = false;
         }
 
-        await File.WriteAllTextAsync(_currentFilePath, EditorContent);
-        _isDirty = false;
-        RefreshState();
+        try
+        {
+            _isSaving = true;
+            await File.WriteAllTextAsync(_currentFilePath, EditorContent);
+            _isDirty = false;
+            RefreshState();
+        }
+        finally
+        {
+            _isSaving = false;
+        }
     }
 
     // ── Event handlers ──────────────────────────────────────────────────────
@@ -520,6 +739,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         IsSettingsPageVisible = false;
         FocusEditor();
+    }
+
+    private void MainWindow_OnClosed(object? sender, EventArgs e)
+    {
+        _autoSaveTimer.Stop();
+        DisposeDiscordPresence();
     }
 
     // Handles clicks on file tree rows.
@@ -567,6 +792,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _currentFilePath = filePath;
         _hasUntitledDocument = false;
+        _autoSaveTimer.Stop();
         SetEditorContent(await File.ReadAllTextAsync(filePath));
         _isDirty = false;
         IsSettingsPageVisible = false;
@@ -587,6 +813,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_suppressDirtyTracking) return;
         _isDirty = true;
         RefreshState();
+        RestartAutoSaveTimerIfNeeded();
+    }
+
+    private void RestartAutoSaveTimerIfNeeded()
+    {
+        if (IsAutoSaveEnabled && HasFileOpen && _isDirty)
+        {
+            _autoSaveTimer.Stop();
+            _autoSaveTimer.Start();
+        }
+    }
+
+    private async void AutoSaveTimer_OnTick(object? sender, EventArgs e)
+    {
+        _autoSaveTimer.Stop();
+
+        if (!IsAutoSaveEnabled || !HasFileOpen || !_isDirty)
+        {
+            return;
+        }
+
+        await SaveAsync(allowPromptForPath: false);
     }
 
     private void FocusEditor()
@@ -638,5 +886,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _suppressDirtyTracking = false;
     }
 
-    private sealed record AppSettings(string ThemeName);
+    private sealed class AppSettings
+    {
+        public string ThemeName { get; set; } = "Dark";
+        public bool AutoSaveEnabled { get; set; }
+        public bool DiscordRichPresenceEnabled { get; set; }
+    }
 }
