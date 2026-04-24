@@ -11,6 +11,11 @@ https://discord.gg/cUQ6C88Z9C
 
 ---
 
+**Release Status:**
+Kodo is currently in a Beta release, expect bugs, expect little features, we are slowly working upon it until it reaches a point where we can do a full release with many extensions, some compilers, and possibily even collaboration. If there are bugs, feel free to report them in the [Issues](issues) and we can try to fix them!
+
+---
+
 **Dev Info:**
 
 To download, run, and edit Kodo's source code, follow these steps:
