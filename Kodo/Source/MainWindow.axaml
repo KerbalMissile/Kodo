@@ -34,6 +34,65 @@
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
         </Style>
 
+        <Style Selector="Button.chrome:disabled">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+        </Style>
+
+        <Style Selector="Button.marketaction">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="MinWidth" Value="88" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Button.marketaction:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+        </Style>
+
+        <Style Selector="Button.marketaction:disabled">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+        </Style>
+
+        <Style Selector="Button.uninstall">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="MinWidth" Value="92" />
+        </Style>
+
+        <Style Selector="Button.uninstall:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+        </Style>
+
+        <Style Selector="Button.tab">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="14,8" />
+        </Style>
+
+        <Style Selector="Button.tab:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+        </Style>
+
         <Style Selector="Button.recent">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
@@ -208,7 +267,8 @@
                                                     Margin="0,4">
                                             <TextBlock FontSize="13"
                                                        VerticalAlignment="Center"
-                                                       Text="{Binding Icon}" />
+                                                       Text="{Binding Icon}"
+                                                       Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                                             <TextBlock FontSize="13"
                                                        VerticalAlignment="Center"
                                                        Text="{Binding Name}"
@@ -388,7 +448,10 @@
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                            <Button Classes="chrome" Click="RefreshExtensionsButton_OnClick" Content="Refresh" />
+                            <Button Classes="chrome"
+                                    Click="RefreshExtensionsButton_OnClick"
+                                    IsEnabled="{Binding !IsRefreshingExtensions}"
+                                    Content="{Binding RefreshExtensionsButtonText}" />
                             <Button Classes="chrome" Click="BackToEditorButton_OnClick" Content="Back" />
                         </StackPanel>
                     </Grid>
@@ -396,42 +459,133 @@
 
                 <ScrollViewer Grid.Row="1" Padding="24">
                     <StackPanel Spacing="12">
-                        <TextBlock Foreground="{Binding MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,8">
-                            Drop .kox extension files into the Extensions folder to install them.
-                        </TextBlock>
-                        <ItemsControl ItemsSource="{Binding LoadedExtensions}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{Binding CardBrush}"
-                                            BorderBrush="{Binding SurfaceBorderBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="12"
-                                            Padding="16"
-                                            Margin="0,0,0,8">
-                                        <Grid ColumnDefinitions="Auto,*,Auto">
-                                            <Border Width="48" Height="48" CornerRadius="8" Background="{Binding AccentBrush}" Margin="0,0,16,0">
-                                                <TextBlock HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center"
-                                                           FontSize="14"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="White"
-                                                           Text="{Binding Name}" />
-                                            </Border>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" Text="{Binding Name}" />
-                                                <TextBlock FontSize="12" Foreground="{Binding MutedTextBrush}" Text="{Binding Description}" TextWrapping="Wrap" />
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="2" VerticalAlignment="Center" Foreground="{Binding MutedTextBrush}" Text="{Binding Version}" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+                            <Panel>
+                                <Button Classes="tab"
+                                        Click="InstalledTabButton_OnClick"
+                                        Content="Installed"
+                                        IsVisible="{Binding !IsInstalledTabSelected}" />
+                                <Button Classes="tab"
+                                        Click="InstalledTabButton_OnClick"
+                                        Content="Installed"
+                                        IsVisible="{Binding IsInstalledTabSelected}"
+                                        Background="{Binding AccentBrush}"
+                                        Foreground="{Binding PrimaryTextBrush}" />
+                            </Panel>
+                            <Panel>
+                                <Button Classes="tab"
+                                        Click="MarketplaceTabButton_OnClick"
+                                        Content="Marketplace"
+                                        IsVisible="{Binding !IsMarketplaceTabSelected}" />
+                                <Button Classes="tab"
+                                        Click="MarketplaceTabButton_OnClick"
+                                        Content="Marketplace"
+                                        IsVisible="{Binding IsMarketplaceTabSelected}"
+                                        Background="{Binding AccentBrush}"
+                                        Foreground="{Binding PrimaryTextBrush}" />
+                            </Panel>
+                        </StackPanel>
+
                         <TextBlock Foreground="{Binding MutedTextBrush}"
-                                   FontStyle="Italic"
-                                   Margin="0,16,0,0"
-                                   Text="No extensions installed."
-                                   IsVisible="{Binding IsNoExtensionsVisible}" />
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,8"
+                                   Text="{Binding ExtensionsStatusText}" />
+
+                        <StackPanel IsVisible="{Binding IsInstalledTabSelected}">
+                            <ItemsControl ItemsSource="{Binding LoadedExtensions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding CardBrush}"
+                                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="12"
+                                                Padding="16"
+                                                Margin="0,0,0,8">
+                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                                <Border Width="48" Height="48" CornerRadius="8" Background="{Binding AccentBrush}" Margin="0,0,16,0">
+                                                    <TextBlock HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="14"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="White"
+                                                               Text="{Binding Name}" />
+                                                </Border>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                                    <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" Text="{Binding Name}" />
+                                                    <TextBlock FontSize="12" Foreground="{Binding MutedTextBrush}" Text="{Binding Description}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2"
+                                                            Spacing="8"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center">
+                                                    <TextBlock HorizontalAlignment="Right"
+                                                               Foreground="{Binding MutedTextBrush}"
+                                                               Text="{Binding Version}" />
+                                                    <Button Classes="uninstall"
+                                                            Tag="{Binding}"
+                                                            Click="UninstallExtensionButton_OnClick"
+                                                            Content="Uninstall" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       FontStyle="Italic"
+                                       Margin="0,16,0,0"
+                                       Text="No extensions installed."
+                                       IsVisible="{Binding IsNoExtensionsVisible}" />
+                        </StackPanel>
+
+                        <StackPanel IsVisible="{Binding IsMarketplaceTabSelected}">
+                            <ItemsControl ItemsSource="{Binding MarketplaceExtensions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding DataContext.CardBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                BorderBrush="{Binding DataContext.SurfaceBorderBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                BorderThickness="1"
+                                                CornerRadius="12"
+                                                Padding="16"
+                                                Margin="0,0,0,8">
+                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Text="{Binding Name}" />
+                                                    <TextBlock FontSize="12"
+                                                               Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Text="{Binding Description}"
+                                                               TextWrapping="Wrap" />
+                                                    <TextBlock FontSize="12"
+                                                               Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Text="{Binding Author}" />
+                                                </StackPanel>
+
+                                                <StackPanel Grid.Column="1"
+                                                            Spacing="8"
+                                                            HorizontalAlignment="Right">
+                                                    <TextBlock HorizontalAlignment="Right"
+                                                               Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Text="{Binding Version}" />
+                                                    <Button Classes="marketaction"
+                                                            Tag="{Binding}"
+                                                            Click="InstallMarketplaceExtensionButton_OnClick"
+                                                            IsEnabled="{Binding IsInstallEnabled}"
+                                                            Content="{Binding InstallButtonText}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       FontStyle="Italic"
+                                       Margin="0,16,0,0"
+                                       Text="No marketplace extensions found."
+                                       IsVisible="{Binding IsMarketplaceEmptyVisible}" />
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
@@ -511,6 +665,49 @@
                                     </StackPanel>
                                 </Button>
                             </Grid>
+
+                            <StackPanel Spacing="10"
+                                        IsVisible="{Binding HasThemeExtensions}">
+                                <TextBlock FontSize="16"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Installed Theme Extensions" />
+                                <ItemsControl ItemsSource="{Binding ThemeExtensions}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal" ItemWidth="170" ItemHeight="144" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Classes="chrome"
+                                                    Click="ThemeButton_OnClick"
+                                                    Tag="{Binding ThemeDefinition.ThemeId}"
+                                                    Width="170"
+                                                    Margin="0,0,10,0">
+                                                <StackPanel Spacing="8">
+                                                    <Border Height="96"
+                                                            CornerRadius="12"
+                                                            Background="{Binding ThemeDefinition.PreviewBackground}"
+                                                            BorderBrush="{Binding ThemeDefinition.PreviewBorder}"
+                                                            BorderThickness="1">
+                                                        <Border Width="42"
+                                                                Height="10"
+                                                                Margin="12"
+                                                                HorizontalAlignment="Left"
+                                                                VerticalAlignment="Top"
+                                                                CornerRadius="999"
+                                                                Background="{Binding ThemeDefinition.Accent}" />
+                                                    </Border>
+                                                    <TextBlock HorizontalAlignment="Center"
+                                                               Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Text="{Binding ThemeDefinition.DisplayName}" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
 
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        Text="{Binding ThemeStatusText}" />

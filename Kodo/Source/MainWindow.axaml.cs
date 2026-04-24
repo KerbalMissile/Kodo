@@ -14,6 +14,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -86,7 +87,8 @@ public class FileTreeItem : INotifyPropertyChanged
             ".css" or ".scss" or ".less" => "🎨",
             ".sh" or ".bat" or ".ps1" => "⚡",
             ".zip" or ".tar" or ".gz" or ".rar" => "📦",
-            _ => "📄",
+            ".csv" or ".tsv" => "📊",
+            _ => "?",
         };
     }
 }
@@ -106,11 +108,14 @@ public class LoadedExtension : INotifyPropertyChanged
     public string CommentBlockStart { get; set; } = "/*";
     public string CommentBlockEnd { get; set; } = "*/";
     public Dictionary<string, string> ColorTokens { get; set; } = new();
-    public IBrush AccentBrush { get; set; } = Brush.Parse("#0E639C");
+    public IBrush AccentBrush { get; set; } = Brush.Parse("#8C00FF");
     public IBrush CardBrush { get; set; } = Brush.Parse("#252526");
     public IBrush PrimaryTextBrush { get; set; } = Brush.Parse("#F4F4F4");
     public IBrush SurfaceBorderBrush { get; set; } = Brush.Parse("#2B2B2B");
     public IBrush MutedTextBrush { get; set; } = Brush.Parse("#A0A0A0");
+    public string SourcePath { get; set; } = string.Empty;
+    public bool IsDirectorySource { get; set; }
+    public ExtensionThemeDefinition? ThemeDefinition { get; set; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -124,6 +129,88 @@ public class LoadedExtension : INotifyPropertyChanged
     }
 }
 
+public class ExtensionThemeDefinition
+{
+    public string ThemeId { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string BaseTheme { get; init; } = "Dark";
+    public string WindowBackground { get; init; } = "#000000";
+    public string TopBar { get; init; } = "#0E0E0E";
+    public string Sidebar { get; init; } = "#0E0E0E";
+    public string Button { get; init; } = "#242424";
+    public string ButtonHover { get; init; } = "#343434";
+    public string EditorBackground { get; init; } = "#000000";
+    public string Card { get; init; } = "#121212";
+    public string PrimaryText { get; init; } = "#FFFFFF";
+    public string MutedText { get; init; } = "#BDBDBD";
+    public string SurfaceBorder { get; init; } = "#4A4A4A";
+    public string Accent { get; init; } = "#8C00FF";
+    public string PreviewBackground { get; init; } = "#000000";
+    public string PreviewBorder { get; init; } = "#4A4A4A";
+}
+
+public class MarketplaceExtension : INotifyPropertyChanged
+{
+    private bool _isInstalling;
+    private string _installButtonText = "Install";
+
+    public string Id { get; init; } = string.Empty;
+    public string Version { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string Type { get; init; } = string.Empty;
+    public string Author { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public string DownloadUrl { get; init; } = string.Empty;
+    public string FileName { get; init; } = string.Empty;
+
+    public bool IsInstalling
+    {
+        get => _isInstalling;
+        set
+        {
+            if (_isInstalling == value) return;
+            _isInstalling = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsInstallEnabled));
+        }
+    }
+
+    public bool IsInstalled { get; private set; }
+
+    public bool IsInstallEnabled => !IsInstalling && !IsInstalled && !string.IsNullOrWhiteSpace(DownloadUrl);
+
+    public string InstallButtonText
+    {
+        get => _installButtonText;
+        set
+        {
+            if (_installButtonText == value) return;
+            _installButtonText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public void SetInstalledState(bool isInstalled)
+    {
+        if (IsInstalled == isInstalled)
+        {
+            if (!isInstalled && !IsInstalling && InstallButtonText != "Install")
+                InstallButtonText = "Install";
+            return;
+        }
+
+        IsInstalled = isInstalled;
+        InstallButtonText = isInstalled ? "Installed" : "Install";
+        OnPropertyChanged(nameof(IsInstalled));
+        OnPropertyChanged(nameof(IsInstallEnabled));
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+}
+
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private const int MaxRecentFiles = 5;
@@ -134,6 +221,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string DiscordClientIdEnvironmentVariable = "KODO_DISCORD_CLIENT_ID";
     private const string AutoSaveSavedMessage = "Saved.";
     private const string AutoSaveSavingMessage = "Saving...";
+    private const string DefaultMarketplaceIndexUrl = "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Indexs/ExtensionsIndex.json";
 
     private string? _currentFilePath;
     private string? _currentFolderPath;
@@ -146,21 +234,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isSaving;
     private bool _isDiscordRichPresenceEnabled;
     private bool _hasUntitledDocument;
+    private bool _isRefreshingExtensions;
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
     private bool _isFileExplorerVisible;
+    private bool _isMarketplaceTabSelected;
     private bool _suppressDirtyTracking;
     private string _currentThemeName = "Dark";
+    private string _requestedThemeName = "Dark";
     private string _editorStatsText = "0 lines";
+    private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
     private LoadedExtension? _currentLanguageExtension;
     private event PropertyChangedEventHandler? ViewModelPropertyChanged;
+    private static readonly HttpClient MarketplaceHttpClient = new();
 
     private string ExtensionsFolderPath => Path.Combine(Directory.GetCurrentDirectory(), "Extensions");
+    private string IndexFolderPath => Path.Combine(Directory.GetCurrentDirectory(), "Indexs");
+    private string ProjectExtensionsFolderPath =>
+        Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Extensions"));
 
     // Flat list that backs the ItemsControl – directories insert/remove their children in-place
     public ObservableCollection<FileTreeItem> FileTreeItems { get; } = new();
     public ObservableCollection<RecentFileItem> RecentFiles { get; } = new();
     public ObservableCollection<LoadedExtension> LoadedExtensions { get; } = new();
+    public ObservableCollection<MarketplaceExtension> MarketplaceExtensions { get; } = new();
     public ObservableCollection<string> ExtensionLoadErrors { get; } = new();
 
     public LoadedExtension? CurrentLanguageExtension
@@ -181,15 +278,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
         var settings = LoadSettings();
+        _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
         LoadRecentFiles(settings.RecentFiles);
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
         DataContext = this;
-        ApplyTheme(settings.ThemeName);
+        ApplyTheme(_requestedThemeName);
         EnsureExtensionsFolder();
-        LoadExtensions();
+        _ = RefreshExtensionsDataAsync();
         UpdateDiscordRichPresenceLifecycle();
         Closed += MainWindow_OnClosed;
         RefreshState();
@@ -201,6 +299,37 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (!Directory.Exists(ExtensionsFolderPath))
             Directory.CreateDirectory(ExtensionsFolderPath);
+    }
+
+    private async Task RefreshExtensionsDataAsync()
+    {
+        if (_isRefreshingExtensions)
+            return;
+
+        IsRefreshingExtensions = true;
+        ExtensionsStatusText = "Refreshing installed extensions and marketplace...";
+
+        try
+        {
+            LoadExtensions();
+            await LoadMarketplaceExtensionsAsync();
+            if (!string.Equals(CurrentThemeName, _requestedThemeName, StringComparison.OrdinalIgnoreCase) &&
+                (string.Equals(_requestedThemeName, "Light", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(_requestedThemeName, "Dark", StringComparison.OrdinalIgnoreCase) ||
+                 ThemeExtensions.Any(t => string.Equals(t.ThemeDefinition!.ThemeId, _requestedThemeName, StringComparison.OrdinalIgnoreCase))))
+            {
+                ApplyTheme(_requestedThemeName);
+            }
+            ExtensionsStatusText = $"Refreshed {LoadedExtensions.Count} installed and {MarketplaceExtensions.Count} marketplace extension(s).";
+        }
+        catch (Exception ex)
+        {
+            ExtensionsStatusText = $"Refresh failed: {ex.Message}";
+        }
+        finally
+        {
+            IsRefreshingExtensions = false;
+        }
     }
 
     private void LoadExtensions()
@@ -261,7 +390,187 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         OnPropertyChanged(nameof(ExtensionLoadErrors));
         OnPropertyChanged(nameof(IsNoExtensionsVisible));
+        OnPropertyChanged(nameof(ThemeExtensions));
+        OnPropertyChanged(nameof(HasThemeExtensions));
         RefreshExtensionTheme();
+        SyncMarketplaceInstallStates();
+    }
+
+    private async Task LoadMarketplaceExtensionsAsync()
+    {
+        MarketplaceExtensions.Clear();
+        var loadedAny = false;
+
+        foreach (var indexPath in GetExtensionsIndexSearchPaths())
+        {
+            if (!File.Exists(indexPath))
+                continue;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(indexPath));
+                if (!doc.RootElement.TryGetProperty("extensions", out var extensionsElement) ||
+                    extensionsElement.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                foreach (var item in extensionsElement.EnumerateArray())
+                {
+                    var entry = ParseMarketplaceExtension(item);
+                    if (string.IsNullOrWhiteSpace(entry.Id) || MarketplaceExtensions.Any(e => e.Id == entry.Id))
+                        continue;
+
+                    MarketplaceExtensions.Add(entry);
+                }
+
+                loadedAny = MarketplaceExtensions.Count > 0;
+                break;
+            }
+            catch (Exception ex)
+            {
+                ExtensionLoadErrors.Add($"Failed to load marketplace index '{Path.GetFileName(indexPath)}': {ex.Message}");
+            }
+        }
+
+        if (!loadedAny)
+        {
+            try
+            {
+                var remoteJson = await MarketplaceHttpClient.GetStringAsync(DefaultMarketplaceIndexUrl);
+                using var doc = JsonDocument.Parse(remoteJson);
+                if (doc.RootElement.TryGetProperty("extensions", out var extensionsElement) &&
+                    extensionsElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in extensionsElement.EnumerateArray())
+                    {
+                        var entry = ParseMarketplaceExtension(item);
+                        if (string.IsNullOrWhiteSpace(entry.Id) || MarketplaceExtensions.Any(e => e.Id == entry.Id))
+                            continue;
+
+                        MarketplaceExtensions.Add(entry);
+                    }
+
+                    if (MarketplaceExtensions.Count > 0)
+                        ExtensionsStatusText = $"Loaded marketplace from {DefaultMarketplaceIndexUrl}";
+                }
+            }
+            catch (Exception ex)
+            {
+                ExtensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
+            }
+        }
+
+        SyncMarketplaceInstallStates();
+        OnPropertyChanged(nameof(ExtensionLoadErrors));
+        OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
+    }
+
+    private IEnumerable<string> GetExtensionsIndexSearchPaths()
+    {
+        yield return Path.Combine(IndexFolderPath, "ExtensionsIndex.json");
+
+        var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
+        yield return Path.GetFullPath(Path.Combine(projectRoot, "Indexs", "ExtensionsIndex.json"));
+    }
+
+    private static MarketplaceExtension ParseMarketplaceExtension(JsonElement item) => new()
+    {
+        Id = item.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty,
+        Version = item.TryGetProperty("version", out var version) ? version.GetString() ?? string.Empty : string.Empty,
+        Name = item.TryGetProperty("name", out var name) ? name.GetString() ?? string.Empty : string.Empty,
+        Type = item.TryGetProperty("type", out var type) ? type.GetString() ?? string.Empty : string.Empty,
+        Author = item.TryGetProperty("author", out var author) ? author.GetString() ?? string.Empty : string.Empty,
+        Description = item.TryGetProperty("description", out var description) ? description.GetString() ?? string.Empty : string.Empty,
+        DownloadUrl = item.TryGetProperty("downloadUrl", out var downloadUrl) ? downloadUrl.GetString() ?? string.Empty : string.Empty,
+        FileName = item.TryGetProperty("fileName", out var fileName) ? fileName.GetString() ?? string.Empty : string.Empty
+    };
+
+    private void SyncMarketplaceInstallStates()
+    {
+        foreach (var entry in MarketplaceExtensions)
+            entry.SetInstalledState(LoadedExtensions.Any(ext => ext.Id.Equals(entry.Id, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private async Task InstallMarketplaceExtensionAsync(MarketplaceExtension marketplaceExtension)
+    {
+        if (marketplaceExtension.IsInstalling || marketplaceExtension.IsInstalled)
+            return;
+
+        marketplaceExtension.IsInstalling = true;
+        marketplaceExtension.InstallButtonText = "Installing...";
+        ExtensionsStatusText = $"Installing {marketplaceExtension.Name}...";
+
+        try
+        {
+            EnsureExtensionsFolder();
+
+            var fileName = string.IsNullOrWhiteSpace(marketplaceExtension.FileName)
+                ? Path.GetFileName(new Uri(marketplaceExtension.DownloadUrl).AbsolutePath)
+                : marketplaceExtension.FileName;
+
+            var outputPath = Path.Combine(ExtensionsFolderPath, fileName);
+            var bytes = await MarketplaceHttpClient.GetByteArrayAsync(marketplaceExtension.DownloadUrl);
+            await File.WriteAllBytesAsync(outputPath, bytes);
+
+            await RefreshExtensionsDataAsync();
+            ExtensionsStatusText = $"{marketplaceExtension.Name} installed.";
+        }
+        catch (Exception ex)
+        {
+            marketplaceExtension.SetInstalledState(false);
+            ExtensionsStatusText = $"Failed to install {marketplaceExtension.Name}: {ex.Message}";
+        }
+        finally
+        {
+            marketplaceExtension.IsInstalling = false;
+            if (!marketplaceExtension.IsInstalled)
+                marketplaceExtension.InstallButtonText = "Install";
+        }
+    }
+
+    private async Task UninstallExtensionAsync(LoadedExtension extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension.SourcePath))
+        {
+            ExtensionsStatusText = $"Cannot uninstall {extension.Name}: missing source path.";
+            return;
+        }
+
+        try
+        {
+            var resolvedPath = Path.GetFullPath(extension.SourcePath);
+            if (!IsPathInsideDirectory(resolvedPath, ExtensionsFolderPath) &&
+                !IsPathInsideDirectory(resolvedPath, ProjectExtensionsFolderPath))
+            {
+                ExtensionsStatusText = $"Cannot uninstall {extension.Name}: source is outside the Extensions folders.";
+                return;
+            }
+
+            if (extension.IsDirectorySource)
+            {
+                if (Directory.Exists(resolvedPath))
+                    Directory.Delete(resolvedPath, recursive: true);
+            }
+            else
+            {
+                if (File.Exists(resolvedPath))
+                    File.Delete(resolvedPath);
+            }
+
+            await RefreshExtensionsDataAsync();
+            ExtensionsStatusText = $"{extension.Name} uninstalled.";
+        }
+        catch (Exception ex)
+        {
+            ExtensionsStatusText = $"Failed to uninstall {extension.Name}: {ex.Message}";
+        }
+    }
+
+    private static bool IsPathInsideDirectory(string path, string directory)
+    {
+        var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedDirectory = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return normalizedPath.StartsWith(normalizedDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalizedPath, normalizedDirectory, StringComparison.OrdinalIgnoreCase);
     }
 
     private LoadedExtension? LoadExtensionFromFolder(string folderPath)
@@ -279,6 +588,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ParseLanguage(langDoc.RootElement, ext);
         }
 
+        var themePath = Path.Combine(folderPath, "theme.json");
+        if (File.Exists(themePath))
+        {
+            using var themeDoc = JsonDocument.Parse(File.ReadAllText(themePath));
+            ext.ThemeDefinition = ParseTheme(themeDoc.RootElement, ext);
+        }
+
+        ext.SourcePath = folderPath;
+        ext.IsDirectorySource = true;
         return ext;
     }
 
@@ -300,6 +618,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ParseLanguage(langDoc.RootElement, ext);
         }
 
+        var themeEntry = archive.GetEntry("theme.json");
+        if (themeEntry is not null)
+        {
+            using var themeStream = themeEntry.Open();
+            using var themeDoc = JsonDocument.Parse(themeStream);
+            ext.ThemeDefinition = ParseTheme(themeDoc.RootElement, ext);
+        }
+
+        ext.SourcePath = koxPath;
+        ext.IsDirectorySource = false;
         return ext;
     }
 
@@ -328,6 +656,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             foreach (var prop in ct.EnumerateObject())
                 ext.ColorTokens[prop.Name] = prop.Value.GetString() ?? "#FFFFFF";
     }
+
+    private static ExtensionThemeDefinition ParseTheme(JsonElement theme, LoadedExtension ext) => new()
+    {
+        ThemeId = theme.TryGetProperty("themeId", out var themeId) ? themeId.GetString() ?? ext.Id : ext.Id,
+        DisplayName = theme.TryGetProperty("displayName", out var displayName) ? displayName.GetString() ?? ext.Name : ext.Name,
+        BaseTheme = theme.TryGetProperty("baseTheme", out var baseTheme) ? baseTheme.GetString() ?? "Dark" : "Dark",
+        WindowBackground = GetThemeColor(theme, "windowBackground", "#000000"),
+        TopBar = GetThemeColor(theme, "topBar", "#0E0E0E"),
+        Sidebar = GetThemeColor(theme, "sidebar", "#0E0E0E"),
+        Button = GetThemeColor(theme, "button", "#242424"),
+        ButtonHover = GetThemeColor(theme, "buttonHover", "#343434"),
+        EditorBackground = GetThemeColor(theme, "editorBackground", "#000000"),
+        Card = GetThemeColor(theme, "card", "#121212"),
+        PrimaryText = GetThemeColor(theme, "primaryText", "#FFFFFF"),
+        MutedText = GetThemeColor(theme, "mutedText", "#BDBDBD"),
+        SurfaceBorder = GetThemeColor(theme, "surfaceBorder", "#4A4A4A"),
+        Accent = GetThemeColor(theme, "accent", "#8C00FF"),
+        PreviewBackground = GetThemeColor(theme, "previewBackground", GetThemeColor(theme, "editorBackground", "#000000")),
+        PreviewBorder = GetThemeColor(theme, "previewBorder", GetThemeColor(theme, "surfaceBorder", "#4A4A4A"))
+    };
+
+    private static string GetThemeColor(JsonElement theme, string propertyName, string fallback) =>
+        theme.TryGetProperty(propertyName, out var value) ? value.GetString() ?? fallback : fallback;
 
     private void RefreshExtensionTheme()
     {
@@ -360,7 +711,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.LineNumbersForeground = MutedTextBrush;
         EditorTextBox.TextArea.SelectionBrush = AccentBrush.ToImmutable() is ISolidColorBrush b
             ? new SolidColorBrush(b.Color, 0.3)
-            : new SolidColorBrush(Color.Parse("#0E639C"), 0.3);
+            : new SolidColorBrush(Color.Parse("#8C00FF"), 0.3);
         EditorTextBox.TextArea.SelectionForeground = PrimaryTextBrush;
     }
 
@@ -420,6 +771,63 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool HasRecentFiles => RecentFiles.Count > 0;
 
     public bool IsNoExtensionsVisible => LoadedExtensions.Count == 0;
+
+    public IEnumerable<LoadedExtension> ThemeExtensions =>
+        LoadedExtensions.Where(e => e.Type.Equals("theme", StringComparison.OrdinalIgnoreCase) && e.ThemeDefinition is not null);
+
+    public bool HasThemeExtensions => ThemeExtensions.Any();
+
+    public bool IsRefreshingExtensions
+    {
+        get => _isRefreshingExtensions;
+        private set
+        {
+            if (_isRefreshingExtensions == value) return;
+            _isRefreshingExtensions = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(RefreshExtensionsButtonText));
+        }
+    }
+
+    public bool IsInstalledTabSelected
+    {
+        get => !_isMarketplaceTabSelected;
+        private set
+        {
+            var shouldSelectMarketplace = !value;
+            if (_isMarketplaceTabSelected == shouldSelectMarketplace) return;
+            _isMarketplaceTabSelected = shouldSelectMarketplace;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsMarketplaceTabSelected));
+        }
+    }
+
+    public bool IsMarketplaceTabSelected
+    {
+        get => _isMarketplaceTabSelected;
+        private set
+        {
+            if (_isMarketplaceTabSelected == value) return;
+            _isMarketplaceTabSelected = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsInstalledTabSelected));
+        }
+    }
+
+    public string ExtensionsStatusText
+    {
+        get => _extensionsStatusText;
+        private set
+        {
+            if (_extensionsStatusText == value) return;
+            _extensionsStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string RefreshExtensionsButtonText => IsRefreshingExtensions ? "Refreshing..." : "Refresh";
+
+    public bool IsMarketplaceEmptyVisible => MarketplaceExtensions.Count == 0;
 
     public bool IsDiscordRichPresenceEnabled
     {
@@ -512,7 +920,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush PrimaryTextBrush      { get; private set; } = Brush.Parse("#F4F4F4");
     public IBrush MutedTextBrush        { get; private set; } = Brush.Parse("#A0A0A0");
     public IBrush SurfaceBorderBrush    { get; private set; } = Brush.Parse("#2B2B2B");
-    public IBrush AccentBrush           { get; private set; } = Brush.Parse("#0E639C");
+    public IBrush AccentBrush           { get; private set; } = Brush.Parse("#8C00FF");
 
     event PropertyChangedEventHandler? INotifyPropertyChanged.PropertyChanged
     {
@@ -548,6 +956,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(FilePathText));
         OnPropertyChanged(nameof(ExplorerHeaderText));
         OnPropertyChanged(nameof(ThemeStatusText));
+        OnPropertyChanged(nameof(ThemeExtensions));
+        OnPropertyChanged(nameof(HasThemeExtensions));
         OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
         OnPropertyChanged(nameof(AutoSaveStatusText));
         UpdateDiscordPresence();
@@ -680,7 +1090,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsFilePath));
             if (settings is null) return new AppSettings();
 
-            settings.ThemeName = settings.ThemeName is "Light" or "Dark" ? settings.ThemeName : "Dark";
+            settings.ThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
             settings.RecentFiles = settings.RecentFiles?
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -712,38 +1122,65 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ApplyTheme(string themeName)
     {
-        CurrentThemeName = themeName == "Light" ? "Light" : "Dark";
-        Application.Current!.RequestedThemeVariant = CurrentThemeName == "Light"
-            ? ThemeVariant.Light
-            : ThemeVariant.Dark;
+        _requestedThemeName = themeName;
+        var extensionTheme = ThemeExtensions
+            .Select(e => e.ThemeDefinition!)
+            .FirstOrDefault(t => string.Equals(t.ThemeId, themeName, StringComparison.OrdinalIgnoreCase));
 
-        if (CurrentThemeName == "Light")
+        if (extensionTheme is not null)
         {
-            WindowBackgroundBrush = Brush.Parse("#F3F3F3");
-            TopBarBrush           = Brush.Parse("#FFFFFF");
-            SidebarBrush          = Brush.Parse("#EFF2F7");
-            ButtonBrush           = Brush.Parse("#E3E8F1");
-            ButtonHoverBrush      = Brush.Parse("#D5DDE9");
-            EditorBackgroundBrush = Brush.Parse("#FFFFFF");
-            CardBrush             = Brush.Parse("#F7F9FC");
-            PrimaryTextBrush      = Brush.Parse("#202124");
-            MutedTextBrush        = Brush.Parse("#5F6B7A");
-            SurfaceBorderBrush    = Brush.Parse("#D7DCE5");
-            AccentBrush           = Brush.Parse("#0067C0");
+            CurrentThemeName = extensionTheme.ThemeId;
+            Application.Current!.RequestedThemeVariant = string.Equals(extensionTheme.BaseTheme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? ThemeVariant.Light
+                : ThemeVariant.Dark;
+
+            WindowBackgroundBrush = Brush.Parse(extensionTheme.WindowBackground);
+            TopBarBrush           = Brush.Parse(extensionTheme.TopBar);
+            SidebarBrush          = Brush.Parse(extensionTheme.Sidebar);
+            ButtonBrush           = Brush.Parse(extensionTheme.Button);
+            ButtonHoverBrush      = Brush.Parse(extensionTheme.ButtonHover);
+            EditorBackgroundBrush = Brush.Parse(extensionTheme.EditorBackground);
+            CardBrush             = Brush.Parse(extensionTheme.Card);
+            PrimaryTextBrush      = Brush.Parse(extensionTheme.PrimaryText);
+            MutedTextBrush        = Brush.Parse(extensionTheme.MutedText);
+            SurfaceBorderBrush    = Brush.Parse(extensionTheme.SurfaceBorder);
+            AccentBrush           = Brush.Parse(extensionTheme.Accent);
         }
         else
         {
-            WindowBackgroundBrush = Brush.Parse("#1E1E1E");
-            TopBarBrush           = Brush.Parse("#181818");
-            SidebarBrush          = Brush.Parse("#181818");
-            ButtonBrush           = Brush.Parse("#252526");
-            ButtonHoverBrush      = Brush.Parse("#313437");
-            EditorBackgroundBrush = Brush.Parse("#1E1E1E");
-            CardBrush             = Brush.Parse("#252526");
-            PrimaryTextBrush      = Brush.Parse("#F4F4F4");
-            MutedTextBrush        = Brush.Parse("#A0A0A0");
-            SurfaceBorderBrush    = Brush.Parse("#2B2B2B");
-            AccentBrush           = Brush.Parse("#0E639C");
+            CurrentThemeName = themeName == "Light" ? "Light" : "Dark";
+            Application.Current!.RequestedThemeVariant = CurrentThemeName == "Light"
+                ? ThemeVariant.Light
+                : ThemeVariant.Dark;
+
+            if (CurrentThemeName == "Light")
+            {
+                WindowBackgroundBrush = Brush.Parse("#F3F3F3");
+                TopBarBrush           = Brush.Parse("#FFFFFF");
+                SidebarBrush          = Brush.Parse("#EFF2F7");
+                ButtonBrush           = Brush.Parse("#E3E8F1");
+                ButtonHoverBrush      = Brush.Parse("#D5DDE9");
+                EditorBackgroundBrush = Brush.Parse("#FFFFFF");
+                CardBrush             = Brush.Parse("#F7F9FC");
+                PrimaryTextBrush      = Brush.Parse("#202124");
+                MutedTextBrush        = Brush.Parse("#5F6B7A");
+                SurfaceBorderBrush    = Brush.Parse("#D7DCE5");
+                AccentBrush           = Brush.Parse("#8C00FF");
+            }
+            else
+            {
+                WindowBackgroundBrush = Brush.Parse("#1E1E1E");
+                TopBarBrush           = Brush.Parse("#181818");
+                SidebarBrush          = Brush.Parse("#181818");
+                ButtonBrush           = Brush.Parse("#252526");
+                ButtonHoverBrush      = Brush.Parse("#313437");
+                EditorBackgroundBrush = Brush.Parse("#1E1E1E");
+                CardBrush             = Brush.Parse("#252526");
+                PrimaryTextBrush      = Brush.Parse("#F4F4F4");
+                MutedTextBrush        = Brush.Parse("#A0A0A0");
+                SurfaceBorderBrush    = Brush.Parse("#2B2B2B");
+                AccentBrush           = Brush.Parse("#8C00FF");
+            }
         }
 
         OnPropertyChanged(nameof(WindowBackgroundBrush));
@@ -1089,10 +1526,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         IsSettingsPageVisible = false;
         IsExtensionsPageVisible = true;
+        _ = RefreshExtensionsDataAsync();
     }
 
-    private void RefreshExtensionsButton_OnClick(object? sender, RoutedEventArgs e) =>
-        LoadExtensions();
+    private async void RefreshExtensionsButton_OnClick(object? sender, RoutedEventArgs e) =>
+        await RefreshExtensionsDataAsync();
+
+    private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
+        IsMarketplaceTabSelected = false;
+
+    private void MarketplaceTabButton_OnClick(object? sender, RoutedEventArgs e) =>
+        IsMarketplaceTabSelected = true;
 
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -1129,6 +1573,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             await OpenFileFromPathAsync(filePath);
         }
+    }
+
+    private async void InstallMarketplaceExtensionButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: MarketplaceExtension marketplaceExtension })
+            await InstallMarketplaceExtensionAsync(marketplaceExtension);
+    }
+
+    private async void UninstallExtensionButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: LoadedExtension extension })
+            await UninstallExtensionAsync(extension);
     }
 
     // TextEditor fires EventHandler (not RoutedEventHandler) — signature must match exactly
