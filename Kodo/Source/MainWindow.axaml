@@ -4,7 +4,6 @@
 <!-- April 19th, 2026 - SS-YYC - Changed a couple emojis on the left sidebar -->
 <!-- April 19th, 2026 - KerbalMissile - Removed top right Open, Save, etc. buttons -->
 <!-- April 20th, 2026 - SS-YYC - Added collapsible file explorer panel -->
-<!-- April 20th, 2026 - KerbalMissile - Added extension support, re-added full screen by default-->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -32,6 +31,21 @@
         </Style>
 
         <Style Selector="Button.chrome:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+        </Style>
+
+        <Style Selector="Button.recent">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+        </Style>
+
+        <Style Selector="Button.recent:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
         </Style>
 
@@ -97,16 +111,20 @@
                         <TextBlock FontSize="20" Text="&#x2009;&#x1F5CE;" />
                     </Button>
                     <Panel>
-                        <Button Classes="activity" Click="OpenFolderButton_OnClick" ToolTip.Tip="Open Folder"
+                        <Button Classes="activity"
+                                Click="OpenFolderButton_OnClick"
+                                ToolTip.Tip="Open Folder"
                                 IsVisible="{Binding !IsFolderOpen}">
                             <TextBlock FontSize="18" Text="&#x1F5C0;" />
                         </Button>
-                        <Button Classes="activity" Click="CloseFolderButton_OnClick" ToolTip.Tip="Close Folder"
+                        <Button Classes="activity"
+                                Click="CloseFolderButton_OnClick"
+                                ToolTip.Tip="Close Folder"
                                 IsVisible="{Binding IsFolderOpen}">
                             <TextBlock FontSize="18" Text="&#x1F5C1;" />
                         </Button>
                     </Panel>
-                    <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File (Ctrl+S)" IsEnabled="{Binding IsSaveEnabled}">
+                    <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File (Ctrl+S)">
                         <TextBlock FontSize="18" Text="&#x2009;&#x2B73;" />
                     </Button>
                     <Button Classes="activity" Click="ExtensionsButton_OnClick" ToolTip.Tip="Extensions">
@@ -179,7 +197,7 @@
                                                    FontSize="10"
                                                    Width="16"
                                                    VerticalAlignment="Center"
-                                                   Foreground="{Binding MutedTextBrush}"
+                                                   Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
                                                    Text="{Binding ChevronText}"
                                                    Margin="0,0,2,0" />
 
@@ -194,7 +212,7 @@
                                             <TextBlock FontSize="13"
                                                        VerticalAlignment="Center"
                                                        Text="{Binding Name}"
-                                                       Foreground="{Binding NameColor}"
+                                                       Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
                                                        TextTrimming="CharacterEllipsis"
                                                        MaxWidth="148" />
                                         </StackPanel>
@@ -220,13 +238,9 @@
                             <Border Width="28"
                                     Height="28"
                                     CornerRadius="8"
-                                    Background="{Binding AccentBrush}">
-                                <TextBlock HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"
-                                           Foreground="White"
-                                           Text="K" />
+                                    ClipToBounds="True">
+                                <Image Source="/Assets/kodo-logo.png"
+                                       Stretch="UniformToFill" />
                             </Border>
 
                             <StackPanel Spacing="2">
@@ -245,6 +259,7 @@
                                     Spacing="8">
                             <Button Classes="chrome"
                                     Click="SaveButton_OnClick"
+                                    IsVisible="{Binding HasDocumentOpen}"
                                     Content="Save" />
                         </StackPanel>
                     </Grid>
@@ -254,46 +269,87 @@
                       Background="{Binding EditorBackgroundBrush}"
                       IsVisible="{Binding HasDocumentOpen}">
                     <avaloniaEdit:TextEditor x:Name="EditorTextBox"
-                             Background="{Binding EditorBackgroundBrush}"
-                             Foreground="{Binding PrimaryTextBrush}"
-                             FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
-                             FontSize="15"
-                             Padding="20,18"
-                             ShowLineNumbers="False"
-                             WordWrap="False"
-                             HorizontalScrollBarVisibility="Auto"
-                             VerticalScrollBarVisibility="Auto" />
+                                             Background="{Binding EditorBackgroundBrush}"
+                                             Foreground="{Binding PrimaryTextBrush}"
+                                             FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                                             FontSize="15"
+                                             Padding="20,18"
+                                             ShowLineNumbers="False"
+                                             WordWrap="False"
+                                             HorizontalScrollBarVisibility="Auto"
+                                             VerticalScrollBarVisibility="Auto" />
                 </Grid>
 
                 <Border Grid.Row="1"
                         Background="{Binding EditorBackgroundBrush}"
                         IsVisible="{Binding IsEmptyStateVisible}">
                     <Grid Margin="48">
-                        <Border Width="480"
-                                Padding="26"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Background="{Binding CardBrush}"
-                                BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="18">
-                            <StackPanel Spacing="12">
-                                <TextBlock FontSize="26"
-                                           FontWeight="SemiBold"
-                                           Foreground="{Binding PrimaryTextBrush}"
-                                           Text="Get Started!" />
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           Text="Open one file, edit it, save it. Or start a new file." />
-                                <StackPanel Orientation="Horizontal" Spacing="10">
-                                    <Button Classes="chrome"
-                                            Click="OpenFileButton_OnClick"
-                                            Content="Open File" />
-                                    <Button Classes="chrome"
-                                            Click="NewFileButton_OnClick"
-                                            Content="New File" />
+                        <StackPanel Width="480"
+                                    Spacing="14"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                            <Border Padding="26"
+                                    Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="18">
+                                <StackPanel Spacing="12">
+                                    <TextBlock FontSize="26"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Get Started!" />
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               Text="Open a folder or file, edit it, save it. Or start a new file." />
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Button Classes="chrome"
+                                                Click="NewFileButton_OnClick"
+                                                Content="New File" />
+                                        <Button Classes="chrome"
+                                                Click="OpenFileButton_OnClick"
+                                                Content="Open File" />
+                                        <Button Classes="chrome"
+                                                Click="OpenFolderButton_OnClick"
+                                                Content="Open Folder" />
+                                    </StackPanel>
                                 </StackPanel>
-                            </StackPanel>
-                        </Border>
+                            </Border>
+
+                            <Border Padding="22"
+                                    Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="18"
+                                    IsVisible="{Binding HasRecentFiles}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock FontSize="22"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Recently Edited" />
+                                    <ItemsControl ItemsSource="{Binding RecentFiles}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Classes="recent"
+                                                        Tag="{Binding Path}"
+                                                        Click="RecentFileButton_OnClick"
+                                                        Margin="0,0,0,8">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock FontSize="14"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Text="{Binding DisplayName}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock FontSize="12"
+                                                                   Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Text="{Binding DirectoryPath}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
@@ -307,7 +363,7 @@
                                    Text="{Binding FilePathText}" />
                         <TextBlock Grid.Column="1"
                                    Foreground="{Binding MutedTextBrush}"
-                                   Text="{Binding EditorStatsTextFinal}" />
+                                   Text="{Binding EditorStatsText}" />
                     </Grid>
                 </Border>
             </Grid>
@@ -354,11 +410,16 @@
                                             Margin="0,0,0,8">
                                         <Grid ColumnDefinitions="Auto,*,Auto">
                                             <Border Width="48" Height="48" CornerRadius="8" Background="{Binding AccentBrush}" Margin="0,0,16,0">
-                                                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14" FontWeight="SemiBold" Foreground="White" Text="{Binding Name}" />
+                                                <TextBlock HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="14"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="White"
+                                                           Text="{Binding Name}" />
                                             </Border>
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                                 <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" Text="{Binding Name}" />
-                                                <TextBlock FontSize="12" Foreground="{Binding MutedTextBrush}" Text="{Binding Description}" />
+                                                <TextBlock FontSize="12" Foreground="{Binding MutedTextBrush}" Text="{Binding Description}" TextWrapping="Wrap" />
                                             </StackPanel>
                                             <TextBlock Grid.Column="2" VerticalAlignment="Center" Foreground="{Binding MutedTextBrush}" Text="{Binding Version}" />
                                         </Grid>
@@ -366,8 +427,11 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock x:Name="NoExtensionsText" Foreground="{Binding MutedTextBrush}" FontStyle="Italic" Margin="0,16,0,0"
-                                   Text="No extensions installed." IsVisible="{Binding !LoadedExtensions.Count}" />
+                        <TextBlock Foreground="{Binding MutedTextBrush}"
+                                   FontStyle="Italic"
+                                   Margin="0,16,0,0"
+                                   Text="No extensions installed."
+                                   IsVisible="{Binding IsNoExtensionsVisible}" />
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
@@ -402,6 +466,7 @@
                             CornerRadius="18"
                             Padding="22"
                             MaxWidth="620"
+                            Width="620"
                             HorizontalAlignment="Left"
                             VerticalAlignment="Top">
                         <StackPanel Spacing="16">
@@ -409,11 +474,14 @@
                                        FontWeight="SemiBold"
                                        Foreground="{Binding PrimaryTextBrush}"
                                        Text="Theme" />
-                            <Grid ColumnDefinitions="*,14,*">
+                            <Grid ColumnDefinitions="Auto,Auto"
+                                  ColumnSpacing="10"
+                                  HorizontalAlignment="Left">
                                 <Button Grid.Column="0"
                                         Classes="chrome"
                                         Click="ThemeButton_OnClick"
-                                        Tag="Dark">
+                                        Tag="Dark"
+                                        Width="170">
                                     <StackPanel Spacing="8">
                                         <Border Height="96"
                                                 CornerRadius="12"
@@ -426,10 +494,11 @@
                                     </StackPanel>
                                 </Button>
 
-                                <Button Grid.Column="2"
+                                <Button Grid.Column="1"
                                         Classes="chrome"
                                         Click="ThemeButton_OnClick"
-                                        Tag="Light">
+                                        Tag="Light"
+                                        Width="170">
                                     <StackPanel Spacing="8">
                                         <Border Height="96"
                                                 CornerRadius="12"
@@ -445,6 +514,42 @@
 
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        Text="{Binding ThemeStatusText}" />
+
+                            <Border Height="1"
+                                    Background="{Binding SurfaceBorderBrush}" />
+
+                            <TextBlock FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding PrimaryTextBrush}"
+                                       Text="Autosave" />
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <CheckBox IsChecked="{Binding IsAutoSaveEnabled, Mode=TwoWay}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock VerticalAlignment="Center"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Enable autosave" />
+                            </StackPanel>
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="{Binding AutoSaveStatusText}" />
+
+                            <Border Height="1"
+                                    Background="{Binding SurfaceBorderBrush}" />
+
+                            <TextBlock FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding PrimaryTextBrush}"
+                                       Text="Discord Rich Presence" />
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <CheckBox IsChecked="{Binding IsDiscordRichPresenceEnabled, Mode=TwoWay}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock VerticalAlignment="Center"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Enable Discord Rich Presence" />
+                            </StackPanel>
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="{Binding DiscordRichPresenceStatusText}" />
                         </StackPanel>
                     </Border>
                 </Grid>

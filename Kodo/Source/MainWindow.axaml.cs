@@ -7,6 +7,7 @@
 // April 20th, 2026 - SS-YYC - Added collapsible file explorer panel with folder tree and expand/collapse
 // April 20th, 2026 - KerbalMissile - Added extension support, re-added full screen by default, updated open / close folder icon
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
@@ -14,7 +15,6 @@ using System.IO.Compression;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Avalonia;
@@ -22,11 +22,14 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using AvaloniaEdit.Highlighting;
-
+using DiscordAssetsModel = DiscordRPC.Assets;
+using DiscordRpcClient = DiscordRPC.DiscordRpcClient;
+using DiscordRichPresenceModel = DiscordRPC.RichPresence;
 
 namespace Kodo;
 
@@ -60,11 +63,7 @@ public class FileTreeItem : INotifyPropertyChanged
     }
 
     // Icon varies between open/closed folder vs file
-    public string Icon => IsDirectory ? (_isExpanded ? "❒" : "❑") : GetFileIcon(Name);
-
-    // Muted colour for directories, normal text colour for files – resolved in AXAML via binding
-    public string NameColor => IsDirectory ? "#A0A0A0" : "#F4F4F4";
-    public string MutedTextBrush => "#A0A0A0";
+    public string Icon => IsDirectory ? (_isExpanded ? "📂" : "📁") : GetFileIcon(Name);
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -101,14 +100,12 @@ public class LoadedExtension : INotifyPropertyChanged
     public string Author { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public string[] Extensions { get; init; } = [];
-
     public string[] Keywords { get; set; } = [];
     public string[] Types { get; set; } = [];
     public string CommentLine { get; set; } = "//";
     public string CommentBlockStart { get; set; } = "/*";
     public string CommentBlockEnd { get; set; } = "*/";
     public Dictionary<string, string> ColorTokens { get; set; } = new();
-
     public IBrush AccentBrush { get; set; } = Brush.Parse("#0E639C");
     public IBrush CardBrush { get; set; } = Brush.Parse("#252526");
     public IBrush PrimaryTextBrush { get; set; } = Brush.Parse("#F4F4F4");
@@ -129,10 +126,25 @@ public class LoadedExtension : INotifyPropertyChanged
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
+    private const int MaxRecentFiles = 5;
+    private const string DefaultDiscordClientId = "1495509170756255744";
+    private const string DefaultDiscordLargeImageKey = "kodo_logo";
+    private const string DefaultDiscordLargeImageText = "Kodo";
+    private const string SettingsFileName = "settings.json";
+    private const string DiscordClientIdEnvironmentVariable = "KODO_DISCORD_CLIENT_ID";
+    private const string AutoSaveSavedMessage = "Saved.";
+    private const string AutoSaveSavingMessage = "Saving...";
+
     private string? _currentFilePath;
     private string? _currentFolderPath;
-    private string _editorContent = string.Empty;
+    private DiscordRpcClient? _discordRpcClient;
+    private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _autoSaveStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+    private string? _autoSaveStatusMessage;
+    private bool _isAutoSaveEnabled;
     private bool _isDirty;
+    private bool _isSaving;
+    private bool _isDiscordRichPresenceEnabled;
     private bool _hasUntitledDocument;
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
@@ -140,17 +152,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _suppressDirtyTracking;
     private string _currentThemeName = "Dark";
     private string _editorStatsText = "0 lines";
+    private LoadedExtension? _currentLanguageExtension;
     private event PropertyChangedEventHandler? ViewModelPropertyChanged;
+
+    private string ExtensionsFolderPath => Path.Combine(Directory.GetCurrentDirectory(), "Extensions");
 
     // Flat list that backs the ItemsControl – directories insert/remove their children in-place
     public ObservableCollection<FileTreeItem> FileTreeItems { get; } = new();
+    public ObservableCollection<RecentFileItem> RecentFiles { get; } = new();
     public ObservableCollection<LoadedExtension> LoadedExtensions { get; } = new();
-
-    // Collects human-readable errors from the last LoadExtensions() call
     public ObservableCollection<string> ExtensionLoadErrors { get; } = new();
 
-    private string ExtensionsFolderPath => Path.Combine(Directory.GetCurrentDirectory(), "Extensions");
-    private LoadedExtension? _currentLanguageExtension;
     public LoadedExtension? CurrentLanguageExtension
     {
         get => _currentLanguageExtension;
@@ -165,45 +177,53 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public MainWindow()
     {
         InitializeComponent();
-        DataContext = this;
-        // TextEditor uses EventHandler, not RoutedEventHandler, so hook up in code
+        LoadWindowIcon();
+        // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
-        ApplyTheme("Dark");
+        var settings = LoadSettings();
+        _isAutoSaveEnabled = settings.AutoSaveEnabled;
+        _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
+        LoadRecentFiles(settings.RecentFiles);
+        _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
+        _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
+        DataContext = this;
+        ApplyTheme(settings.ThemeName);
         EnsureExtensionsFolder();
         LoadExtensions();
+        UpdateDiscordRichPresenceLifecycle();
+        Closed += MainWindow_OnClosed;
         RefreshState();
     }
 
+    // ── Extension loading ────────────────────────────────────────────────────
+
     private void EnsureExtensionsFolder()
     {
-        var folder = ExtensionsFolderPath;
-        if (!Directory.Exists(folder))
-        {
-            Directory.CreateDirectory(folder);
-        }
+        if (!Directory.Exists(ExtensionsFolderPath))
+            Directory.CreateDirectory(ExtensionsFolderPath);
     }
 
     private void LoadExtensions()
     {
         LoadedExtensions.Clear();
         ExtensionLoadErrors.Clear();
-        
-        var searchPaths = new List<string>();
-        
-        var binExtensionsPath = Path.Combine(Directory.GetCurrentDirectory(), "Extensions");
-        searchPaths.Add(binExtensionsPath);
-        
-        var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
-        var srcExtensionsPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions"));
-        if (!string.Equals(srcExtensionsPath, binExtensionsPath, StringComparison.OrdinalIgnoreCase))
-            searchPaths.Add(srcExtensionsPath);
 
-        bool anyFolderFound = false;
+        var searchPaths = new List<string>();
+        var binPath = ExtensionsFolderPath;
+        searchPaths.Add(binPath);
+
+        // Also search the project source tree when running from the build output directory
+        var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
+        var srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions"));
+        if (!string.Equals(srcPath, binPath, StringComparison.OrdinalIgnoreCase))
+            searchPaths.Add(srcPath);
+
+        var anyFolderFound = false;
         foreach (var searchPath in searchPaths)
         {
             if (!Directory.Exists(searchPath)) continue;
             anyFolderFound = true;
-            
+
             foreach (var koxFile in Directory.GetFiles(searchPath, "*.kox"))
             {
                 try
@@ -217,13 +237,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     ExtensionLoadErrors.Add($"Failed to load '{Path.GetFileName(koxFile)}': {ex.Message}");
                 }
             }
-            
+
             foreach (var dir in Directory.GetDirectories(searchPath))
             {
                 try
                 {
-                    var manifestPath = Path.Combine(dir, "manifest.json");
-                    if (File.Exists(manifestPath))
+                    if (File.Exists(Path.Combine(dir, "manifest.json")))
                     {
                         var ext = LoadExtensionFromFolder(dir);
                         if (ext is not null && !LoadedExtensions.Any(e => e.Id == ext.Id))
@@ -238,128 +257,120 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         if (!anyFolderFound)
-            ExtensionLoadErrors.Add($"Extensions folder not found. Expected: {binExtensionsPath}");
+            ExtensionLoadErrors.Add($"Extensions folder not found. Expected: {binPath}");
 
         OnPropertyChanged(nameof(ExtensionLoadErrors));
+        OnPropertyChanged(nameof(IsNoExtensionsVisible));
         RefreshExtensionTheme();
     }
 
     private LoadedExtension? LoadExtensionFromFolder(string folderPath)
     {
         var manifestPath = Path.Combine(folderPath, "manifest.json");
-        var languagePath = Path.Combine(folderPath, "language.json");
-        
         if (!File.Exists(manifestPath)) return null;
-        
-        var manifestJson = File.ReadAllText(manifestPath);
-        using var manifestDoc = JsonDocument.Parse(manifestJson);
-        var manifest = manifestDoc.RootElement;
 
-        var ext = new LoadedExtension
-        {
-            Id = manifest.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "",
-            Version = manifest.TryGetProperty("version", out var ver) ? ver.GetString() ?? "" : "",
-            Name = manifest.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "",
-            Type = manifest.TryGetProperty("type", out var type) ? type.GetString() ?? "" : "",
-            Author = manifest.TryGetProperty("author", out var author) ? author.GetString() ?? "" : "",
-            Description = manifest.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
-            Extensions = manifest.TryGetProperty("extensions", out var exts) ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray() : []
-        };
+        using var manifestDoc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+        var ext = ParseManifest(manifestDoc.RootElement);
 
+        var languagePath = Path.Combine(folderPath, "language.json");
         if (File.Exists(languagePath))
         {
-            var langJson = File.ReadAllText(languagePath);
-            using var langDoc = JsonDocument.Parse(langJson);
-            var lang = langDoc.RootElement;
-
-            ext.Keywords = lang.TryGetProperty("keywords", out var kw) ? kw.EnumerateArray().Select(e => e.GetString() ?? "").ToArray() : [];
-            ext.Types = lang.TryGetProperty("types", out var tp) ? tp.EnumerateArray().Select(e => e.GetString() ?? "").ToArray() : [];
-            ext.CommentLine = lang.TryGetProperty("commentLine", out var cl) ? cl.GetString() ?? "//" : "//";
-            ext.CommentBlockStart = lang.TryGetProperty("commentBlockStart", out var cbs) ? cbs.GetString() ?? "/*" : "/*";
-            ext.CommentBlockEnd = lang.TryGetProperty("commentBlockEnd", out var cbe) ? cbe.GetString() ?? "*/" : "*/";
-
-            if (lang.TryGetProperty("colorTokens", out var ct))
-            {
-                foreach (var prop in ct.EnumerateObject())
-                    ext.ColorTokens[prop.Name] = prop.Value.GetString() ?? "#FFFFFF";
-            }
+            using var langDoc = JsonDocument.Parse(File.ReadAllText(languagePath));
+            ParseLanguage(langDoc.RootElement, ext);
         }
 
         return ext;
-    }
-
-    private void RefreshExtensionTheme()
-    {
-        foreach (var ext in LoadedExtensions)
-        {
-            ext.AccentBrush = AccentBrush;
-            ext.CardBrush = CardBrush;
-            ext.PrimaryTextBrush = PrimaryTextBrush;
-            ext.SurfaceBorderBrush = SurfaceBorderBrush;
-            ext.MutedTextBrush = MutedTextBrush;
-            ext.NotifyAllBrushesChanged();
-        }
     }
 
     private LoadedExtension? LoadExtensionFromKox(string koxPath)
     {
         using var archive = ZipFile.OpenRead(koxPath);
         var manifestEntry = archive.GetEntry("manifest.json");
-        var languageEntry = archive.GetEntry("language.json");
-        
         if (manifestEntry is null) return null;
 
         using var manifestStream = manifestEntry.Open();
-        using var manifestReader = new StreamReader(manifestStream);
-        var manifestJson = manifestReader.ReadToEnd();
-        using var manifestDoc = JsonDocument.Parse(manifestJson);
-        var manifest = manifestDoc.RootElement;
+        using var manifestDoc = JsonDocument.Parse(manifestStream);
+        var ext = ParseManifest(manifestDoc.RootElement);
 
-        var ext = new LoadedExtension
-        {
-            Id = manifest.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "",
-            Version = manifest.TryGetProperty("version", out var ver) ? ver.GetString() ?? "" : "",
-            Name = manifest.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "",
-            Type = manifest.TryGetProperty("type", out var type) ? type.GetString() ?? "" : "",
-            Author = manifest.TryGetProperty("author", out var author) ? author.GetString() ?? "" : "",
-            Description = manifest.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
-            Extensions = manifest.TryGetProperty("extensions", out var exts) ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray() : []
-        };
-
+        var languageEntry = archive.GetEntry("language.json");
         if (languageEntry is not null)
         {
             using var langStream = languageEntry.Open();
-            using var langReader = new StreamReader(langStream);
-            var langJson = langReader.ReadToEnd();
-            using var langDoc = JsonDocument.Parse(langJson);
-            var lang = langDoc.RootElement;
-
-            ext.Keywords = lang.TryGetProperty("keywords", out var kw) ? kw.EnumerateArray().Select(e => e.GetString() ?? "").ToArray() : [];
-            ext.Types = lang.TryGetProperty("types", out var tp) ? tp.EnumerateArray().Select(e => e.GetString() ?? "").ToArray() : [];
-            ext.CommentLine = lang.TryGetProperty("commentLine", out var cl) ? cl.GetString() ?? "//" : "//";
-            ext.CommentBlockStart = lang.TryGetProperty("commentBlockStart", out var cbs) ? cbs.GetString() ?? "/*" : "/*";
-            ext.CommentBlockEnd = lang.TryGetProperty("commentBlockEnd", out var cbe) ? cbe.GetString() ?? "*/" : "*/";
-
-            if (lang.TryGetProperty("colorTokens", out var ct))
-            {
-                foreach (var prop in ct.EnumerateObject())
-                    ext.ColorTokens[prop.Name] = prop.Value.GetString() ?? "#FFFFFF";
-            }
+            using var langDoc = JsonDocument.Parse(langStream);
+            ParseLanguage(langDoc.RootElement, ext);
         }
 
         return ext;
     }
 
-    public string EditorContent
+    private static LoadedExtension ParseManifest(JsonElement manifest) => new()
     {
-        get => _editorContent;
-        set
+        Id          = manifest.TryGetProperty("id",          out var id)   ? id.GetString()   ?? "" : "",
+        Version     = manifest.TryGetProperty("version",     out var ver)  ? ver.GetString()  ?? "" : "",
+        Name        = manifest.TryGetProperty("name",        out var name) ? name.GetString() ?? "" : "",
+        Type        = manifest.TryGetProperty("type",        out var type) ? type.GetString() ?? "" : "",
+        Author      = manifest.TryGetProperty("author",      out var auth) ? auth.GetString() ?? "" : "",
+        Description = manifest.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+        Extensions  = manifest.TryGetProperty("extensions",  out var exts)
+            ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray()
+            : []
+    };
+
+    private static void ParseLanguage(JsonElement lang, LoadedExtension ext)
+    {
+        ext.Keywords          = lang.TryGetProperty("keywords",          out var kw)  ? kw.EnumerateArray().Select(e => e.GetString() ?? "").ToArray() : [];
+        ext.Types             = lang.TryGetProperty("types",             out var tp)  ? tp.EnumerateArray().Select(e => e.GetString() ?? "").ToArray() : [];
+        ext.CommentLine       = lang.TryGetProperty("commentLine",       out var cl)  ? cl.GetString()  ?? "//" : "//";
+        ext.CommentBlockStart = lang.TryGetProperty("commentBlockStart", out var cbs) ? cbs.GetString() ?? "/*" : "/*";
+        ext.CommentBlockEnd   = lang.TryGetProperty("commentBlockEnd",   out var cbe) ? cbe.GetString() ?? "*/" : "*/";
+
+        if (lang.TryGetProperty("colorTokens", out var ct))
+            foreach (var prop in ct.EnumerateObject())
+                ext.ColorTokens[prop.Name] = prop.Value.GetString() ?? "#FFFFFF";
+    }
+
+    private void RefreshExtensionTheme()
+    {
+        foreach (var ext in LoadedExtensions)
         {
-            if (_editorContent == value) return;
-            _editorContent = value;
-            OnPropertyChanged();
+            ext.AccentBrush        = AccentBrush;
+            ext.CardBrush          = CardBrush;
+            ext.PrimaryTextBrush   = PrimaryTextBrush;
+            ext.SurfaceBorderBrush = SurfaceBorderBrush;
+            ext.MutedTextBrush     = MutedTextBrush;
+            ext.NotifyAllBrushesChanged();
         }
     }
+
+    private LoadedExtension? GetLanguageExtension(string filePath)
+    {
+        var fileExt = Path.GetExtension(filePath).ToLowerInvariant();
+        return LoadedExtensions.FirstOrDefault(e =>
+            e.Type == "language" &&
+            e.Extensions.Any(ex => ex.Equals(fileExt, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    // ── Theme / editor appearance ────────────────────────────────────────────
+
+    private void ApplyThemeToEditor()
+    {
+        if (EditorTextBox is null) return;
+        EditorTextBox.Background = EditorBackgroundBrush;
+        EditorTextBox.Foreground = PrimaryTextBrush;
+        EditorTextBox.LineNumbersForeground = MutedTextBrush;
+        EditorTextBox.TextArea.SelectionBrush = AccentBrush.ToImmutable() is ISolidColorBrush b
+            ? new SolidColorBrush(b.Color, 0.3)
+            : new SolidColorBrush(Color.Parse("#0E639C"), 0.3);
+        EditorTextBox.TextArea.SelectionForeground = PrimaryTextBrush;
+    }
+
+    private void ApplySyntaxHighlighting(LoadedExtension ext)
+    {
+        if (EditorTextBox is null) return;
+        EditorTextBox.SyntaxHighlighting = new KodoHighlightingDefinition(ext);
+    }
+
+    // ── Properties ───────────────────────────────────────────────────────────
 
     public bool IsSettingsPageVisible
     {
@@ -368,6 +379,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (_isSettingsPageVisible == value) return;
             _isSettingsPageVisible = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsEditorPageVisible));
+        }
+    }
+
+    public bool IsExtensionsPageVisible
+    {
+        get => _isExtensionsPageVisible;
+        set
+        {
+            if (_isExtensionsPageVisible == value) return;
+            _isExtensionsPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
         }
@@ -384,18 +407,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public bool IsExtensionsPageVisible
-    {
-        get => _isExtensionsPageVisible;
-        set
-        {
-            if (_isExtensionsPageVisible == value) return;
-            _isExtensionsPageVisible = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsEditorPageVisible));
-        }
-    }
-
     public bool IsEditorPageVisible => !IsSettingsPageVisible && !IsExtensionsPageVisible;
 
     public bool HasDocumentOpen => _currentFilePath is not null || _hasUntitledDocument;
@@ -405,6 +416,41 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsFolderOpen => _currentFolderPath is not null;
 
     public bool IsEmptyStateVisible => !HasDocumentOpen;
+
+    public bool HasRecentFiles => RecentFiles.Count > 0;
+
+    public bool IsNoExtensionsVisible => LoadedExtensions.Count == 0;
+
+    public bool IsDiscordRichPresenceEnabled
+    {
+        get => _isDiscordRichPresenceEnabled;
+        set
+        {
+            if (_isDiscordRichPresenceEnabled == value) return;
+            _isDiscordRichPresenceEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+            UpdateDiscordRichPresenceLifecycle();
+            OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
+        }
+    }
+
+    public bool IsAutoSaveEnabled
+    {
+        get => _isAutoSaveEnabled;
+        set
+        {
+            if (_isAutoSaveEnabled == value) return;
+            _isAutoSaveEnabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoSaveStatusText));
+            if (!_isAutoSaveEnabled)
+                _autoSaveTimer.Stop();
+            else
+                RestartAutoSaveTimerIfNeeded();
+            SaveSettings();
+        }
+    }
 
     public string CurrentThemeName
     {
@@ -417,9 +463,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Displays the file name and unsaved status in the top bar
+    // Displays the file name and unsaved/autosave status in the top bar
     public string FileSummaryText => HasDocumentOpen
-        ? $"{GetDocumentDisplayName()}{(_isDirty ? " • unsaved" : string.Empty)}"
+        ? $"{GetDocumentDisplayName()}{GetDocumentStatusSuffix()}"
         : "Open A File";
 
     public string FilePathText => HasFileOpen
@@ -428,12 +474,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         : IsFolderOpen ? $"📂 {_currentFolderPath}"
         : "No file open";
 
-    // Header shown at the top of the file explorer panel
     public string ExplorerHeaderText => IsFolderOpen
         ? Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar)).ToUpperInvariant()
         : "EXPLORER";
 
     public string ThemeStatusText => $"Current theme: {CurrentThemeName}";
+
+    public string DiscordRichPresenceStatusText => !IsDiscordRichPresenceEnabled
+        ? "Discord Rich Presence is turned off."
+        : "Discord Rich Presence is on when the Discord desktop app is running.";
+
+    public string AutoSaveStatusText =>
+        !IsAutoSaveEnabled
+            ? "Autosave is turned off."
+            : HasFileOpen
+                ? "Changes are saved automatically a couple seconds after you stop typing."
+                : "Autosave will start working after the file has been saved once.";
 
     public string EditorStatsText
     {
@@ -446,48 +502,214 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public string EditorStatsTextFinal => HasDocumentOpen ? _editorStatsText : string.Empty;
-
     public IBrush WindowBackgroundBrush { get; private set; } = Brush.Parse("#1E1E1E");
-    public IBrush TopBarBrush { get; private set; } = Brush.Parse("#181818");
-    public IBrush SidebarBrush { get; private set; } = Brush.Parse("#181818");
-    public IBrush ButtonBrush { get; private set; } = Brush.Parse("#252526");
-    public IBrush ButtonHoverBrush { get; private set; } = Brush.Parse("#313437");
+    public IBrush TopBarBrush           { get; private set; } = Brush.Parse("#181818");
+    public IBrush SidebarBrush          { get; private set; } = Brush.Parse("#181818");
+    public IBrush ButtonBrush           { get; private set; } = Brush.Parse("#252526");
+    public IBrush ButtonHoverBrush      { get; private set; } = Brush.Parse("#313437");
     public IBrush EditorBackgroundBrush { get; private set; } = Brush.Parse("#1E1E1E");
-    public IBrush CardBrush { get; private set; } = Brush.Parse("#252526");
-    public IBrush PrimaryTextBrush { get; private set; } = Brush.Parse("#F4F4F4");
-    public IBrush MutedTextBrush { get; private set; } = Brush.Parse("#A0A0A0");
-    public IBrush SurfaceBorderBrush { get; private set; } = Brush.Parse("#2B2B2B");
-    public IBrush AccentBrush { get; private set; } = Brush.Parse("#0E639C");
+    public IBrush CardBrush             { get; private set; } = Brush.Parse("#252526");
+    public IBrush PrimaryTextBrush      { get; private set; } = Brush.Parse("#F4F4F4");
+    public IBrush MutedTextBrush        { get; private set; } = Brush.Parse("#A0A0A0");
+    public IBrush SurfaceBorderBrush    { get; private set; } = Brush.Parse("#2B2B2B");
+    public IBrush AccentBrush           { get; private set; } = Brush.Parse("#0E639C");
 
     event PropertyChangedEventHandler? INotifyPropertyChanged.PropertyChanged
     {
-        add => ViewModelPropertyChanged += value;
+        add    => ViewModelPropertyChanged += value;
         remove => ViewModelPropertyChanged -= value;
     }
 
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         ViewModelPropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
+
+    // ── State management ─────────────────────────────────────────────────────
 
     private void RefreshState()
     {
-        var lines = EditorContent.Length == 0 ? 1 : EditorContent.Count(static c => c == '\n') + 1;
-        EditorStatsText = $"{lines} lines  |  {EditorContent.Length} characters";
+        var content = EditorTextBox?.Document?.Text ?? string.Empty;
+        if (HasDocumentOpen)
+        {
+            var lines = content.Length == 0 ? 1 : content.Count(static c => c == '\n') + 1;
+            EditorStatsText = $"{lines} lines  |  {content.Length} characters";
+        }
+        else
+        {
+            EditorStatsText = string.Empty;
+        }
+
         Title = HasDocumentOpen ? $"{GetDocumentDisplayName()} - Kodo" : "Kodo";
         OnPropertyChanged(nameof(HasDocumentOpen));
         OnPropertyChanged(nameof(HasFileOpen));
         OnPropertyChanged(nameof(IsFolderOpen));
         OnPropertyChanged(nameof(IsEmptyStateVisible));
+        OnPropertyChanged(nameof(HasRecentFiles));
         OnPropertyChanged(nameof(FileSummaryText));
         OnPropertyChanged(nameof(FilePathText));
         OnPropertyChanged(nameof(ExplorerHeaderText));
         OnPropertyChanged(nameof(ThemeStatusText));
-        OnPropertyChanged(nameof(EditorStatsTextFinal));
+        OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
+        OnPropertyChanged(nameof(AutoSaveStatusText));
+        UpdateDiscordPresence();
     }
 
-    // Light Mode and Dark Mode color definitions
+    private string GetDocumentStatusSuffix()
+    {
+        var text = GetDocumentStatusText();
+        return string.IsNullOrWhiteSpace(text) ? string.Empty : $" • {text}";
+    }
+
+    private string? GetDocumentStatusText()
+    {
+        if (!HasDocumentOpen) return null;
+
+        if (IsAutoSaveEnabled && HasFileOpen)
+        {
+            if (!string.IsNullOrWhiteSpace(_autoSaveStatusMessage))
+                return _autoSaveStatusMessage;
+
+            if (_isSaving || _isDirty || _autoSaveTimer.IsEnabled)
+                return AutoSaveSavingMessage;
+        }
+
+        return _isDirty ? "unsaved" : null;
+    }
+
+    // ── Window icon ──────────────────────────────────────────────────────────
+
+    private void LoadWindowIcon()
+    {
+        using var iconStream = AssetLoader.Open(new Uri("avares://Kodo/Assets/kodo-logo.png"));
+        Icon = new WindowIcon(iconStream);
+    }
+
+    // ── Discord Rich Presence ────────────────────────────────────────────────
+
+    private string? GetDiscordApplicationId()
+    {
+        var overrideClientId = Environment.GetEnvironmentVariable(DiscordClientIdEnvironmentVariable);
+        return string.IsNullOrWhiteSpace(overrideClientId) ? DefaultDiscordClientId : overrideClientId;
+    }
+
+    private void UpdateDiscordRichPresenceLifecycle()
+    {
+        try
+        {
+            var clientId = GetDiscordApplicationId();
+            if (!IsDiscordRichPresenceEnabled || string.IsNullOrWhiteSpace(clientId))
+            {
+                DisposeDiscordPresence();
+                return;
+            }
+
+            if (_discordRpcClient is null)
+            {
+                _discordRpcClient = new DiscordRpcClient(clientId);
+                _discordRpcClient.Initialize();
+            }
+
+            UpdateDiscordPresence();
+        }
+        catch { DisposeDiscordPresence(); }
+    }
+
+    private void UpdateDiscordPresence()
+    {
+        if (_discordRpcClient is null || !IsDiscordRichPresenceEnabled) return;
+
+        try
+        {
+            _discordRpcClient.SetPresence(new DiscordRichPresenceModel
+            {
+                Details = GetDiscordPresenceDetails(),
+                State   = GetDiscordPresenceState(),
+                Assets  = new DiscordAssetsModel
+                {
+                    LargeImageKey  = DefaultDiscordLargeImageKey,
+                    LargeImageText = DefaultDiscordLargeImageText
+                }
+            });
+        }
+        catch { DisposeDiscordPresence(); }
+    }
+
+    private string GetDiscordPresenceDetails()
+    {
+        if (HasDocumentOpen) return $"Editing {GetDocumentDisplayName()}";
+        return IsFolderOpen ? "Browsing project files" : "Idle in Kodo";
+    }
+
+    private string GetDiscordPresenceState()
+    {
+        if (HasFileOpen)          return GetDiscordWorkspaceLabel();
+        if (_hasUntitledDocument) return GetDiscordWorkspaceLabel("Editing an unsaved file");
+        if (IsFolderOpen)         return GetDiscordWorkspaceLabel();
+        return "Waiting for a file";
+    }
+
+    private string GetDiscordWorkspaceLabel(string fallback = "Working in editor")
+    {
+        if (!IsFolderOpen) return fallback;
+        var folderName = Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar));
+        return string.IsNullOrWhiteSpace(folderName) ? fallback : $"Workspace: {folderName}";
+    }
+
+    private void DisposeDiscordPresence()
+    {
+        if (_discordRpcClient is null) return;
+        try
+        {
+            _discordRpcClient.ClearPresence();
+            _discordRpcClient.Dispose();
+        }
+        catch { /* Ignore cleanup failures. */ }
+        finally { _discordRpcClient = null; }
+    }
+
+    // ── Settings persistence ─────────────────────────────────────────────────
+
+    private string SettingsFilePath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", SettingsFileName);
+
+    private AppSettings LoadSettings()
+    {
+        try
+        {
+            if (!File.Exists(SettingsFilePath)) return new AppSettings();
+
+            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsFilePath));
+            if (settings is null) return new AppSettings();
+
+            settings.ThemeName = settings.ThemeName is "Light" or "Dark" ? settings.ThemeName : "Dark";
+            settings.RecentFiles = settings.RecentFiles?
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? [];
+            return settings;
+        }
+        catch { return new AppSettings(); }
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(SettingsFilePath);
+            if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
+
+            File.WriteAllText(SettingsFilePath, JsonSerializer.Serialize(new AppSettings
+            {
+                ThemeName                  = CurrentThemeName,
+                AutoSaveEnabled            = IsAutoSaveEnabled,
+                DiscordRichPresenceEnabled = IsDiscordRichPresenceEnabled,
+                RecentFiles                = RecentFiles.Select(f => f.Path).ToList()
+            }));
+        }
+        catch { /* Ignore settings persistence failures. */ }
+    }
+
+    // ── Theme application ────────────────────────────────────────────────────
+
     private void ApplyTheme(string themeName)
     {
         CurrentThemeName = themeName == "Light" ? "Light" : "Dark";
@@ -495,36 +717,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? ThemeVariant.Light
             : ThemeVariant.Dark;
 
-        if (CurrentThemeName == "Light") // Light mode colours
+        if (CurrentThemeName == "Light")
         {
             WindowBackgroundBrush = Brush.Parse("#F3F3F3");
-            TopBarBrush = Brush.Parse("#FFFFFF");
-            SidebarBrush = Brush.Parse("#EFF2F7");
-            ButtonBrush = Brush.Parse("#E3E8F1");
-            ButtonHoverBrush = Brush.Parse("#D5DDE9");
+            TopBarBrush           = Brush.Parse("#FFFFFF");
+            SidebarBrush          = Brush.Parse("#EFF2F7");
+            ButtonBrush           = Brush.Parse("#E3E8F1");
+            ButtonHoverBrush      = Brush.Parse("#D5DDE9");
             EditorBackgroundBrush = Brush.Parse("#FFFFFF");
-            CardBrush = Brush.Parse("#F7F9FC");
-            PrimaryTextBrush = Brush.Parse("#202124");
-            MutedTextBrush = Brush.Parse("#5F6B7A");
-            SurfaceBorderBrush = Brush.Parse("#D7DCE5");
-            AccentBrush = Brush.Parse("#0067C0");
+            CardBrush             = Brush.Parse("#F7F9FC");
+            PrimaryTextBrush      = Brush.Parse("#202124");
+            MutedTextBrush        = Brush.Parse("#5F6B7A");
+            SurfaceBorderBrush    = Brush.Parse("#D7DCE5");
+            AccentBrush           = Brush.Parse("#0067C0");
         }
-        else // Dark mode colours
+        else
         {
             WindowBackgroundBrush = Brush.Parse("#1E1E1E");
-            TopBarBrush = Brush.Parse("#181818");
-            SidebarBrush = Brush.Parse("#181818");
-            ButtonBrush = Brush.Parse("#252526");
-            ButtonHoverBrush = Brush.Parse("#313437");
+            TopBarBrush           = Brush.Parse("#181818");
+            SidebarBrush          = Brush.Parse("#181818");
+            ButtonBrush           = Brush.Parse("#252526");
+            ButtonHoverBrush      = Brush.Parse("#313437");
             EditorBackgroundBrush = Brush.Parse("#1E1E1E");
-            CardBrush = Brush.Parse("#252526");
-            PrimaryTextBrush = Brush.Parse("#F4F4F4");
-            MutedTextBrush = Brush.Parse("#A0A0A0");
-            SurfaceBorderBrush = Brush.Parse("#2B2B2B");
-            AccentBrush = Brush.Parse("#0E639C");
+            CardBrush             = Brush.Parse("#252526");
+            PrimaryTextBrush      = Brush.Parse("#F4F4F4");
+            MutedTextBrush        = Brush.Parse("#A0A0A0");
+            SurfaceBorderBrush    = Brush.Parse("#2B2B2B");
+            AccentBrush           = Brush.Parse("#0E639C");
         }
 
-        // Notify the UI that all the brushes have changed
         OnPropertyChanged(nameof(WindowBackgroundBrush));
         OnPropertyChanged(nameof(TopBarBrush));
         OnPropertyChanged(nameof(SidebarBrush));
@@ -537,38 +758,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(SurfaceBorderBrush));
         OnPropertyChanged(nameof(AccentBrush));
         ApplyThemeToEditor();
+        SaveSettings();
         RefreshState();
         RefreshExtensionTheme();
     }
 
-    private LoadedExtension? GetLanguageExtension(string filePath)
-    {
-        var ext = Path.GetExtension(filePath).ToLowerInvariant();
-        return LoadedExtensions.FirstOrDefault(e => 
-            e.Type == "language" && 
-            e.Extensions.Any(ex => ex.Equals(ext, StringComparison.OrdinalIgnoreCase)));
-    }
+    // ── File operations ──────────────────────────────────────────────────────
 
-    private void ApplyThemeToEditor()
-    {
-        if (EditorTextBox is null) return;
-        EditorTextBox.Background = EditorBackgroundBrush;
-        EditorTextBox.Foreground = PrimaryTextBrush;
-        EditorTextBox.LineNumbersForeground = MutedTextBrush;
-        // The TextArea's selection and caret colors
-        EditorTextBox.TextArea.SelectionBrush = AccentBrush.ToImmutable() is ISolidColorBrush b
-            ? new SolidColorBrush(b.Color, 0.3)
-            : new SolidColorBrush(Color.Parse("#0E639C"), 0.3);
-        EditorTextBox.TextArea.SelectionForeground = PrimaryTextBrush;
-    }
-
-    private void ApplySyntaxHighlighting(LoadedExtension ext)
-    {
-        if (EditorTextBox is null) return;
-        EditorTextBox.SyntaxHighlighting = new KodoHighlightingDefinition(ext);
-    }
-
-    // Opens a file picker dialog and loads the selected file into the editor
     private async Task OpenFileAsync()
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -586,24 +782,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await OpenFileFromPathAsync(path);
     }
 
+    // Central method used by Open File, Open From Tree, and Open Recent
     private async Task OpenFileFromPathAsync(string path)
     {
         _currentFilePath = path;
         _hasUntitledDocument = false;
-        var content = await File.ReadAllTextAsync(path);
-        
+        _autoSaveTimer.Stop();
+        ClearAutoSaveStatus();
+
         var langExt = GetLanguageExtension(path);
         CurrentLanguageExtension = langExt;
-        
         if (langExt is not null)
             ApplySyntaxHighlighting(langExt);
         else
             EditorTextBox.SyntaxHighlighting = null;
 
-        SetEditorContent(content);
-        
+        SetEditorContent(await File.ReadAllTextAsync(path));
         _isDirty = false;
         IsSettingsPageVisible = false;
+        IsExtensionsPageVisible = false;
         RefreshState();
         FocusEditor();
     }
@@ -612,16 +809,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _currentFilePath = null;
         _hasUntitledDocument = true;
-        SetEditorContent(string.Empty);
+        _autoSaveTimer.Stop();
+        ClearAutoSaveStatus();
         CurrentLanguageExtension = null;
         EditorTextBox.SyntaxHighlighting = null;
+        SetEditorContent(string.Empty);
         _isDirty = false;
         IsSettingsPageVisible = false;
+        IsExtensionsPageVisible = false;
         RefreshState();
         FocusEditor();
     }
 
-    // Opens a folder picker, populates the file tree, and shows the explorer panel
     private async Task OpenFolderAsync()
     {
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -642,7 +841,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshState();
     }
 
-    // Clears the folder, tree, and hides the explorer panel
     private void CloseFolder()
     {
         _currentFolderPath = null;
@@ -651,16 +849,68 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshState();
     }
 
-    // Builds the top-level contents of the folder into FileTreeItems.
-    // Sub-directories start collapsed; their children are inserted lazily when expanded.
+    private async Task SaveAsync(bool allowPromptForPath = true)
+    {
+        _autoSaveTimer.Stop();
+        if (_isSaving) return;
+
+        if (_currentFilePath is null)
+        {
+            if (!allowPromptForPath) return;
+
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save File",
+                SuggestedFileName = "untitled.txt"
+            });
+
+            var newPath = file?.TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(newPath)) return;
+
+            _currentFilePath = newPath;
+            _hasUntitledDocument = false;
+            ClearAutoSaveStatus();
+        }
+
+        try
+        {
+            _isSaving = true;
+            if (IsAutoSaveEnabled && HasFileOpen)
+            {
+                _autoSaveStatusMessage = AutoSaveSavingMessage;
+                _autoSaveStatusTimer.Stop();
+                OnPropertyChanged(nameof(FileSummaryText));
+            }
+
+            // Read content directly from the TextEditor document
+            await File.WriteAllTextAsync(_currentFilePath, EditorTextBox.Document.Text);
+            _isDirty = false;
+            AddRecentFile(_currentFilePath);
+
+            if (IsAutoSaveEnabled && HasFileOpen)
+            {
+                _autoSaveStatusMessage = AutoSaveSavedMessage;
+                _autoSaveStatusTimer.Stop();
+                _autoSaveStatusTimer.Start();
+            }
+
+            RefreshState();
+        }
+        finally
+        {
+            _isSaving = false;
+            OnPropertyChanged(nameof(FileSummaryText));
+        }
+    }
+
+    // ── File tree ────────────────────────────────────────────────────────────
+
     private void PopulateFileTree(string folderPath)
     {
         FileTreeItems.Clear();
         AppendDirectoryContents(folderPath, depth: 0);
     }
 
-    // Appends the immediate children of a directory into the flat list at the correct position.
-    // insertAfterIndex == -1 means append to the end of the list.
     private void AppendDirectoryContents(string dirPath, int depth, int insertAfterIndex = -1)
     {
         var entries = GetSortedEntries(dirPath);
@@ -670,10 +920,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var item = new FileTreeItem
             {
-                Name = Path.GetFileName(entry),
-                FullPath = entry,
+                Name        = Path.GetFileName(entry),
+                FullPath    = entry,
                 IsDirectory = Directory.Exists(entry),
-                Depth = depth,
+                Depth       = depth,
             };
 
             if (insertAfterIndex < 0)
@@ -686,7 +936,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Returns subdirectories first (sorted), then files (sorted), skipping hidden entries
     private static string[] GetSortedEntries(string dirPath)
     {
         try
@@ -703,36 +952,107 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             return [.. dirs, .. files];
         }
-        catch
-        {
-            return [];
-        }
+        catch { return []; }
     }
 
-    // Saves the current editor content, prompting for a path if needed
-    private async Task SaveAsync()
+    private void ToggleDirectoryExpansion(FileTreeItem dirItem)
     {
-        if (_currentFilePath is null)
+        var index = FileTreeItems.IndexOf(dirItem);
+        if (index < 0) return;
+
+        if (dirItem.IsExpanded)
         {
-            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-            {
-                Title = "Save File",
-                SuggestedFileName = "untitled.txt"
-            });
-
-            var newPath = file?.TryGetLocalPath();
-            if (string.IsNullOrWhiteSpace(newPath)) return;
-
-            _currentFilePath = newPath;
-            _hasUntitledDocument = false;
+            dirItem.IsExpanded = false;
+            var toRemove = FileTreeItems
+                .Skip(index + 1)
+                .TakeWhile(i => i.Depth > dirItem.Depth)
+                .ToList();
+            foreach (var child in toRemove)
+                FileTreeItems.Remove(child);
         }
-
-        await File.WriteAllTextAsync(_currentFilePath, EditorContent);
-        _isDirty = false;
-        RefreshState();
+        else
+        {
+            dirItem.IsExpanded = true;
+            AppendDirectoryContents(dirItem.FullPath, dirItem.Depth + 1, insertAfterIndex: index);
+        }
     }
 
-    // ── Event handlers ──────────────────────────────────────────────────────
+    // ── Recent files ─────────────────────────────────────────────────────────
+
+    private void LoadRecentFiles(IEnumerable<string>? recentFiles)
+    {
+        RecentFiles.Clear();
+        foreach (var path in (recentFiles ?? []).Take(MaxRecentFiles))
+            if (File.Exists(path))
+                RecentFiles.Add(new RecentFileItem(path));
+    }
+
+    private void AddRecentFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        var existing = RecentFiles.FirstOrDefault(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null) RecentFiles.Remove(existing);
+
+        RecentFiles.Insert(0, new RecentFileItem(path));
+        while (RecentFiles.Count > MaxRecentFiles)
+            RecentFiles.RemoveAt(RecentFiles.Count - 1);
+
+        SaveSettings();
+        OnPropertyChanged(nameof(HasRecentFiles));
+    }
+
+    private void RemoveRecentFile(string path)
+    {
+        var existing = RecentFiles.FirstOrDefault(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (existing is null) return;
+        RecentFiles.Remove(existing);
+        SaveSettings();
+        OnPropertyChanged(nameof(HasRecentFiles));
+    }
+
+    // ── Autosave helpers ─────────────────────────────────────────────────────
+
+    private void RestartAutoSaveTimerIfNeeded()
+    {
+        if (IsAutoSaveEnabled && HasFileOpen && _isDirty)
+        {
+            _autoSaveTimer.Stop();
+            _autoSaveTimer.Start();
+        }
+    }
+
+    private void ClearAutoSaveStatus()
+    {
+        if (string.IsNullOrWhiteSpace(_autoSaveStatusMessage)) return;
+        _autoSaveStatusTimer.Stop();
+        _autoSaveStatusMessage = null;
+        OnPropertyChanged(nameof(FileSummaryText));
+    }
+
+    // ── Editor helpers ───────────────────────────────────────────────────────
+
+    private string GetDocumentDisplayName() =>
+        HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
+
+    // Writes content into the TextEditor document without triggering dirty tracking
+    private void SetEditorContent(string content)
+    {
+        _suppressDirtyTracking = true;
+        EditorTextBox.Document.Text = content;
+        _suppressDirtyTracking = false;
+    }
+
+    private void FocusEditor()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (IsEditorPageVisible && HasDocumentOpen)
+                EditorTextBox.TextArea.Focus();
+        }, DispatcherPriority.Background);
+    }
+
+    // ── Event handlers ───────────────────────────────────────────────────────
 
     private void EditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -756,20 +1076,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void CloseFolderButton_OnClick(object? sender, RoutedEventArgs e) =>
         CloseFolder();
 
-    // Hides the explorer panel without closing the folder
     private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsFileExplorerVisible = false;
 
-    private void SettingsButton_OnClick(object? sender, RoutedEventArgs e) =>
-        IsSettingsPageVisible = true;
-
-    private void ExtensionsButton_OnClick(object? sender, RoutedEventArgs e) =>
-        IsExtensionsPageVisible = true;
-
-    private void RefreshExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
+    private void SettingsButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        LoadExtensions();
+        IsExtensionsPageVisible = false;
+        IsSettingsPageVisible = true;
     }
+
+    private void ExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        IsSettingsPageVisible = false;
+        IsExtensionsPageVisible = true;
+    }
+
+    private void RefreshExtensionsButton_OnClick(object? sender, RoutedEventArgs e) =>
+        LoadExtensions();
 
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -778,8 +1101,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FocusEditor();
     }
 
-    // Handles clicks on file tree rows.
-    // Directories toggle their children; files are opened in the editor.
+    private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { Tag: string themeName })
+            ApplyTheme(themeName);
+    }
+
     private async void FileTreeItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: FileTreeItem item })
@@ -787,65 +1114,51 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (item.IsDirectory)
                 ToggleDirectoryExpansion(item);
             else
-                await OpenFileFromTreeAsync(item.FullPath);
+                await OpenFileFromPathAsync(item.FullPath);
         }
     }
 
-    // Expands or collapses a directory row in the flat list
-    private void ToggleDirectoryExpansion(FileTreeItem dirItem)
+    private async void RecentFileButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        var index = FileTreeItems.IndexOf(dirItem);
-        if (index < 0) return;
-
-        if (dirItem.IsExpanded)
+        if (sender is Button { Tag: string filePath })
         {
-            // Collapse: remove all descendants (items with greater depth that follow consecutively)
-            dirItem.IsExpanded = false;
-            var toRemove = FileTreeItems
-                .Skip(index + 1)
-                .TakeWhile(i => i.Depth > dirItem.Depth)
-                .ToList();
-            foreach (var child in toRemove)
-                FileTreeItems.Remove(child);
-        }
-        else
-        {
-            // Expand: insert immediate children right after this item
-            dirItem.IsExpanded = true;
-            AppendDirectoryContents(dirItem.FullPath, dirItem.Depth + 1, insertAfterIndex: index);
+            if (!File.Exists(filePath))
+            {
+                RemoveRecentFile(filePath);
+                return;
+            }
+            await OpenFileFromPathAsync(filePath);
         }
     }
 
-    // Opens a file from the tree into the editor
-    private async Task OpenFileFromTreeAsync(string filePath)
-    {
-        if (!File.Exists(filePath)) return;
-        await OpenFileFromPathAsync(filePath);
-    }
-
-    // Handles theme selection buttons in the settings page
-    private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Control { Tag: string themeName })
-            ApplyTheme(themeName);
-    }
-
-    // Marks the editor content as dirty (unsaved) whenever it changes
+    // TextEditor fires EventHandler (not RoutedEventHandler) — signature must match exactly
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
         if (_suppressDirtyTracking) return;
-        _editorContent = EditorTextBox.Text ?? string.Empty;
+        ClearAutoSaveStatus();
         _isDirty = true;
         RefreshState();
+        RestartAutoSaveTimerIfNeeded();
     }
 
-    private void FocusEditor()
+    private async void AutoSaveTimer_OnTick(object? sender, EventArgs e)
     {
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (IsEditorPageVisible && HasDocumentOpen)
-                EditorTextBox.TextArea.Focus();
-        }, DispatcherPriority.Background);
+        _autoSaveTimer.Stop();
+        if (!IsAutoSaveEnabled || !HasFileOpen || !_isDirty) return;
+        await SaveAsync(allowPromptForPath: false);
+    }
+
+    private void AutoSaveStatusTimer_OnTick(object? sender, EventArgs e)
+    {
+        _autoSaveStatusTimer.Stop();
+        ClearAutoSaveStatus();
+    }
+
+    private void MainWindow_OnClosed(object? sender, EventArgs e)
+    {
+        _autoSaveTimer.Stop();
+        _autoSaveStatusTimer.Stop();
+        DisposeDiscordPresence();
     }
 
     private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
@@ -863,6 +1176,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if ((e.KeyModifiers & KeyModifiers.Shift) == KeyModifiers.Shift)
                 {
                     IsSettingsPageVisible = false;
+                    IsExtensionsPageVisible = false;
                     FocusEditor();
                     e.Handled = true;
                 }
@@ -878,19 +1192,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private string GetDocumentDisplayName() =>
-        HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
+    // ── Nested types ─────────────────────────────────────────────────────────
 
-    private void SetEditorContent(string content)
+    private sealed class AppSettings
     {
-        _suppressDirtyTracking = true;
-        _editorContent = content;
-        EditorTextBox.Text = content;
-        _suppressDirtyTracking = false;
+        public string ThemeName { get; set; } = "Dark";
+        public bool AutoSaveEnabled { get; set; }
+        public bool DiscordRichPresenceEnabled { get; set; }
+        public List<string> RecentFiles { get; set; } = [];
     }
 }
 
-// ── Syntax highlighting ─────────────────────────────────────────────────────
+public sealed class RecentFileItem
+{
+    public RecentFileItem(string path) => Path = path;
+    public string Path { get; }
+    public string DisplayName  => System.IO.Path.GetFileName(Path);
+    public string DirectoryPath => System.IO.Path.GetDirectoryName(Path) ?? string.Empty;
+}
+
+// ── Syntax highlighting ──────────────────────────────────────────────────────
 // Builds an AvaloniaEdit IHighlightingDefinition at runtime from the data
 // declared in a LoadedExtension (keywords, types, comment markers, color tokens).
 public sealed class KodoHighlightingDefinition : IHighlightingDefinition
@@ -911,10 +1232,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
     private static HighlightingColor ColorFor(LoadedExtension ext, string tokenName, string fallback)
     {
         var hex = ext.ColorTokens.TryGetValue(tokenName, out var h) ? h : fallback;
-        return new HighlightingColor
-        {
-            Foreground = new SimpleHighlightingBrush(Color.Parse(hex))
-        };
+        return new HighlightingColor { Foreground = new SimpleHighlightingBrush(Color.Parse(hex)) };
     }
 
     private static HighlightingRuleSet BuildRuleSet(LoadedExtension ext)
@@ -927,8 +1245,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         var typeColor    = ColorFor(ext, "type",     "#4EC9B0");
         var numberColor  = ColorFor(ext, "number",   "#B5CEA8");
 
-        // ── Spans (multi-character constructs, evaluated before word rules) ──
-
         // Single-line comment  e.g.  // ...
         if (!string.IsNullOrEmpty(ext.CommentLine))
         {
@@ -939,7 +1255,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 SpanColor              = commentColor,
                 SpanColorIncludesStart = true,
                 SpanColorIncludesEnd   = true,
-                RuleSet                = new HighlightingRuleSet() // no nested rules inside comments
+                RuleSet                = new HighlightingRuleSet()
             });
         }
 
@@ -979,15 +1295,12 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             RuleSet                = new HighlightingRuleSet()
         });
 
-        // ── Word rules ───────────────────────────────────────────────────────
-
-        // Keywords  — only match whole words so "string" != "substring"
+        // Keywords — only match whole words so "string" != "substring"
         if (ext.Keywords.Length > 0)
         {
-            var pattern = @"\b(" + string.Join("|", ext.Keywords.Select(Regex.Escape)) + @")\b";
             ruleSet.Rules.Add(new HighlightingRule
             {
-                Regex = new Regex(pattern, RegexOptions.Compiled),
+                Regex = new Regex(@"\b(" + string.Join("|", ext.Keywords.Select(Regex.Escape)) + @")\b", RegexOptions.Compiled),
                 Color = keywordColor
             });
         }
@@ -995,10 +1308,9 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         // Types
         if (ext.Types.Length > 0)
         {
-            var pattern = @"\b(" + string.Join("|", ext.Types.Select(Regex.Escape)) + @")\b";
             ruleSet.Rules.Add(new HighlightingRule
             {
-                Regex = new Regex(pattern, RegexOptions.Compiled),
+                Regex = new Regex(@"\b(" + string.Join("|", ext.Types.Select(Regex.Escape)) + @")\b", RegexOptions.Compiled),
                 Color = typeColor
             });
         }
@@ -1013,7 +1325,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         return ruleSet;
     }
 
-    // IHighlightingDefinition plumbing
     public HighlightingColor GetNamedColor(string name) => new();
     public HighlightingRuleSet GetNamedRuleSet(string name) =>
         name == string.Empty ? _mainRuleSet : throw new KeyNotFoundException(name);
