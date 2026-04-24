@@ -23,7 +23,7 @@ To download, run, and edit Kodo's source code, follow these steps:
 ---
 
 **Current Features:**
-- Extensions (.kox file extension)
+- Extensions (`.kox` file extension)
 - Dark / Light mode
 - Folder support
 - File Read / Write support
@@ -31,7 +31,7 @@ To download, run, and edit Kodo's source code, follow these steps:
 - New File Creation Support
 - Discord Rich Presence Support
 - Autosave Functionality
-- Syntax Highlighting via Extensions
+- Syntax Highlighting via `.kox` extensions (currently only C# but will be expanded in the future.)
 
 **Planned Features:**
 - Multi-person file editing in real time, at the same time
