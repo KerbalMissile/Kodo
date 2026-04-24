@@ -9,6 +9,16 @@
       "description": "Syntax highlighting for C# files",
       "fileName": "C#-Kodo-Extension-v1.0.1.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.0.1.kox"
+    },
+    {
+      "id": "high-contrast-themes",
+      "version": "v1.0.0",
+      "name": "High Contrast Themes",
+      "type": "theme",
+      "author": "Kodo Team",
+      "description": "Adds a high contrast dark theme with a purple accent.",
+      "fileName": "High-Contrast-Themes-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/High-Contrast-Themes-v1.0.0.kox"
     }
   ]
 }
