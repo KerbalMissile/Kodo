@@ -6,6 +6,9 @@
 
 Kodo is a fast, lightweight IDE built by KerbalMissile and SS-YYC. It’s designed for simplicity - quick compiler setup, real-time collaborative editing, and zero friction: no accounts, no ads, completely free forever. Kodo is released under the [Kodo Public License v1.1](LICENSE.md).
 
+**Join the Discord Server!**
+https://discord.gg/cUQ6C88Z9C
+
 ---
 
 **Dev Info:**
