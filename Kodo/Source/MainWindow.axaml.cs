@@ -76,20 +76,32 @@ public class FileTreeItem : INotifyPropertyChanged
     {
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
         return ext switch
-        {
-            ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "📄",
-            ".axaml" or ".xaml" or ".xml" or ".html" or ".htm" => "📋",
-            ".json" or ".yaml" or ".yml" or ".toml" => "📝",
-            ".md" or ".txt" or ".rst" => "📃",
-            ".png" or ".jpg" or ".jpeg" or ".gif" or ".svg" or ".ico" => "🖼",
-            ".py" => "🐍",
-            ".js" or ".ts" or ".jsx" or ".tsx" => "📜",
-            ".css" or ".scss" or ".less" => "🎨",
-            ".sh" or ".bat" or ".ps1" => "⚡",
-            ".zip" or ".tar" or ".gz" or ".rar" => "📦",
-            ".csv" or ".tsv" => "📊",
-            _ => "?",
-        };
+			{
+			    ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "📄",
+			    ".axaml" or ".xaml" => "🪟",
+			    ".xml" or ".html" or ".htm" => "📋",
+			    ".json" or ".yaml" or ".yml" or ".toml" => "📝",
+			    ".md" or ".txt" or ".rst" => "📃",
+			    ".png" or ".jpg" or ".jpeg" or ".gif" or ".svg" or ".ico" => "🖼",
+			    ".py" => "🐍",
+			    ".js" or ".ts" or ".jsx" or ".tsx" => "📜",
+			    ".vue" or ".svelte" => "📜",
+			    ".css" or ".scss" or ".less" => "🎨",
+			    ".sh" or ".bat" or ".ps1" => "⚡",
+			    ".zip" or ".tar" or ".gz" or ".rar" => "📦",
+			    ".cpp" or ".c" or ".h" or ".hpp" => "📄",
+			    ".rs" => "📄",
+			    ".go" => "📄",
+			    ".rb" => "📄",
+			    ".java" or ".kt" or ".kts" => "📄",
+			    ".swift" => "📄",
+			    ".fs" or ".fsi" or ".fsx" => "📄",
+			    ".sql" => "🗃",
+			    ".lua" => "📄",
+			    ".r" => "📄",
+			    ".lock" => "🔒",
+			    _ => "📄",
+			};
     }
 }
 
