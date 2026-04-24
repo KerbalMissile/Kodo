@@ -1,0 +1,14 @@
+{
+  "extensions": [
+    {
+      "id": "csharp-kodo-extension",
+      "version": "v1.0.1",
+      "name": "C# Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for C# files",
+      "fileName": "C#-Kodo-Extension-v1.0.1.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.0.1.kox"
+    }
+  ]
+}
