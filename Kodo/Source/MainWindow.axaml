@@ -262,7 +262,7 @@
                                            Foreground="{Binding PrimaryTextBrush}"
                                            Text="Get Started!" />
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           Text="Open one file, edit it, save it. Or start a new file." />
+                                           Text="Open a folder or file, edit it, save it. Or start a new file." />
                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                     <Button Classes="chrome"
                                             Click="NewFileButton_OnClick"
@@ -270,6 +270,9 @@
                                     <Button Classes="chrome"
                                             Click="OpenFileButton_OnClick"
                                             Content="Open File" />
+                                    <Button Classes="chrome"
+                                            Click="OpenFolderButton_OnClick"
+                                            Content="Open Folder" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
