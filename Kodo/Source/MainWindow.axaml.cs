@@ -100,7 +100,7 @@ public class FileTreeItem : INotifyPropertyChanged
 			    ".lua" => "📄",
 			    ".r" => "📄",
 			    ".lock" => "🔒",
-				".csv" or ".tsv" => "📊"
+				".csv" or ".tsv" => "📊",
 			    _ => "📄",
 			};
     }
