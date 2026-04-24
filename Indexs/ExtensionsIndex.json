@@ -19,6 +19,16 @@
       "description": "Adds a high contrast dark theme with a purple accent.",
       "fileName": "High-Contrast-Themes-v1.0.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/High-Contrast-Themes-v1.0.0.kox"
+    },
+    {
+      "id": "cpp-kodo-extension",
+      "version": "v1.0.0",
+      "name": "C++ Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for C and C++ files.",
+      "fileName": "C++-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%2B%2B-Kodo-Extension-v1.0.0.kox"
     }
   ]
 }
