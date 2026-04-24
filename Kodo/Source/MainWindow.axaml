@@ -492,7 +492,7 @@
                                    Text="{Binding ExtensionsStatusText}" />
 
                         <StackPanel IsVisible="{Binding IsInstalledTabSelected}">
-                            <ItemsControl ItemsSource="{Binding LoadedExtensions}">
+                            <ItemsControl ItemsSource="{Binding VisibleLoadedExtensions}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Background="{Binding CardBrush}"

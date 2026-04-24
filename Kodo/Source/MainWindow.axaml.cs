@@ -1,4 +1,5 @@
 // Licensed under the Kodo Public License v1.0
+// April 24th, 2026 - SS-YYC - Fixed multi-theme support: theme.json arrays now create one LoadedExtension per theme entry
 // April 19th, 2026 - KerbalMissile - Changed "One file at a time" note to "No file open"
 // April 19th, 2026 - KerbalMissile - Added proper comments
 // April 19th, 2026 - KerbalMissile - Changed "No File Open" at top bar to be empty when no file is open, and to show the file name when a file is open, also shows "unsaved" if there are unsaved changes
@@ -106,7 +107,7 @@ public class FileTreeItem : INotifyPropertyChanged
     }
 }
 
-public class LoadedExtension : INotifyPropertyChanged
+public record class LoadedExtension : INotifyPropertyChanged
 {
     public string Id { get; init; } = string.Empty;
     public string Version { get; init; } = string.Empty;
@@ -129,6 +130,9 @@ public class LoadedExtension : INotifyPropertyChanged
     public string SourcePath { get; set; } = string.Empty;
     public bool IsDirectorySource { get; set; }
     public ExtensionThemeDefinition? ThemeDefinition { get; set; }
+    // True for the 2nd, 3rd, etc. entries split out of a multi-theme array —
+    // they appear in ThemeExtensions but are hidden from the Installed list.
+    public bool IsThemeSubEntry { get; init; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -370,9 +374,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 try
                 {
-                    var ext = LoadExtensionFromKox(koxFile);
-                    if (ext is not null && !LoadedExtensions.Any(e => e.Id == ext.Id))
-                        LoadedExtensions.Add(ext);
+                    foreach (var ext in LoadExtensionsFromKox(koxFile))
+                    {
+                        if (!LoadedExtensions.Any(e => e.Id == ext.Id))
+                            LoadedExtensions.Add(ext);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -386,9 +392,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     if (File.Exists(Path.Combine(dir, "manifest.json")))
                     {
-                        var ext = LoadExtensionFromFolder(dir);
-                        if (ext is not null && !LoadedExtensions.Any(e => e.Id == ext.Id))
-                            LoadedExtensions.Add(ext);
+                        foreach (var ext in LoadExtensionsFromFolder(dir))
+                        {
+                            if (!LoadedExtensions.Any(e => e.Id == ext.Id))
+                                LoadedExtensions.Add(ext);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -402,6 +410,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ExtensionLoadErrors.Add($"Extensions folder not found. Expected: {binPath}");
 
         OnPropertyChanged(nameof(ExtensionLoadErrors));
+        OnPropertyChanged(nameof(VisibleLoadedExtensions));
         OnPropertyChanged(nameof(IsNoExtensionsVisible));
         OnPropertyChanged(nameof(ThemeExtensions));
         OnPropertyChanged(nameof(HasThemeExtensions));
@@ -586,62 +595,133 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             || string.Equals(normalizedPath, normalizedDirectory, StringComparison.OrdinalIgnoreCase);
     }
 
-    private LoadedExtension? LoadExtensionFromFolder(string folderPath)
+    private IEnumerable<LoadedExtension> LoadExtensionsFromFolder(string folderPath)
     {
         var manifestPath = Path.Combine(folderPath, "manifest.json");
-        if (!File.Exists(manifestPath)) return null;
+        if (!File.Exists(manifestPath)) yield break;
 
         using var manifestDoc = JsonDocument.Parse(File.ReadAllText(manifestPath));
-        var ext = ParseManifest(manifestDoc.RootElement);
+        var baseExt = ParseManifest(manifestDoc.RootElement);
+        baseExt.SourcePath = folderPath;
+        baseExt.IsDirectorySource = true;
 
         var languagePath = Path.Combine(folderPath, "language.json");
         if (File.Exists(languagePath))
         {
             using var langDoc = JsonDocument.Parse(File.ReadAllText(languagePath));
-            ParseLanguage(langDoc.RootElement, ext);
+            ParseLanguage(langDoc.RootElement, baseExt);
         }
 
         var themePath = Path.Combine(folderPath, "theme.json");
-        if (File.Exists(themePath))
+        if (!File.Exists(themePath))
         {
-            using var themeDoc = JsonDocument.Parse(File.ReadAllText(themePath));
-            ext.ThemeDefinition = ParseTheme(themeDoc.RootElement, ext);
+            // No theme file — yield the extension as-is (language extension, etc.)
+            yield return baseExt;
+            yield break;
         }
 
-        ext.SourcePath = folderPath;
-        ext.IsDirectorySource = true;
-        return ext;
+        using var themeDoc = JsonDocument.Parse(File.ReadAllText(themePath));
+        var root = themeDoc.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            // One LoadedExtension per theme entry in the array
+            var index = 0;
+            foreach (var themeElement in root.EnumerateArray())
+            {
+                var def = ParseTheme(themeElement, baseExt);
+                var entry = CloneBaseExtension(baseExt);
+                entry.ThemeDefinition = def;
+                // Make the Id unique so duplicate-checking works correctly.
+                // Mark index > 0 entries so they're hidden from the Installed list.
+                if (index > 0)
+                    entry = entry with { Id = $"{baseExt.Id}_{def.ThemeId}", IsThemeSubEntry = true };
+                yield return entry;
+                index++;
+            }
+        }
+        else
+        {
+            baseExt.ThemeDefinition = ParseTheme(root, baseExt);
+            yield return baseExt;
+        }
     }
 
-    private LoadedExtension? LoadExtensionFromKox(string koxPath)
+    // Shallow-clones a LoadedExtension so each theme entry gets its own object
+    private static LoadedExtension CloneBaseExtension(LoadedExtension src) => new()
+    {
+        Id                = src.Id,
+        Version           = src.Version,
+        Name              = src.Name,
+        Type              = src.Type,
+        Author            = src.Author,
+        Description       = src.Description,
+        Extensions        = src.Extensions,
+        Keywords          = src.Keywords,
+        Types             = src.Types,
+        CommentLine       = src.CommentLine,
+        CommentBlockStart = src.CommentBlockStart,
+        CommentBlockEnd   = src.CommentBlockEnd,
+        ColorTokens       = src.ColorTokens,
+        SourcePath        = src.SourcePath,
+        IsDirectorySource = src.IsDirectorySource,
+    };
+
+    private IEnumerable<LoadedExtension> LoadExtensionsFromKox(string koxPath)
     {
         using var archive = ZipFile.OpenRead(koxPath);
         var manifestEntry = archive.GetEntry("manifest.json");
-        if (manifestEntry is null) return null;
+        if (manifestEntry is null) yield break;
 
         using var manifestStream = manifestEntry.Open();
         using var manifestDoc = JsonDocument.Parse(manifestStream);
-        var ext = ParseManifest(manifestDoc.RootElement);
+        var baseExt = ParseManifest(manifestDoc.RootElement);
+        baseExt.SourcePath = koxPath;
+        baseExt.IsDirectorySource = false;
 
         var languageEntry = archive.GetEntry("language.json");
         if (languageEntry is not null)
         {
             using var langStream = languageEntry.Open();
             using var langDoc = JsonDocument.Parse(langStream);
-            ParseLanguage(langDoc.RootElement, ext);
+            ParseLanguage(langDoc.RootElement, baseExt);
         }
 
         var themeEntry = archive.GetEntry("theme.json");
-        if (themeEntry is not null)
+        if (themeEntry is null)
         {
-            using var themeStream = themeEntry.Open();
-            using var themeDoc = JsonDocument.Parse(themeStream);
-            ext.ThemeDefinition = ParseTheme(themeDoc.RootElement, ext);
+            yield return baseExt;
+            yield break;
         }
 
-        ext.SourcePath = koxPath;
-        ext.IsDirectorySource = false;
-        return ext;
+        // ZipArchiveEntry streams are forward-only — read to memory first so we can
+        // enumerate the JSON array without the stream closing under us.
+        using var themeStream = themeEntry.Open();
+        using var ms = new MemoryStream();
+        themeStream.CopyTo(ms);
+        ms.Position = 0;
+        using var themeDoc = JsonDocument.Parse(ms);
+        var root = themeDoc.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            var index = 0;
+            foreach (var themeElement in root.EnumerateArray())
+            {
+                var def = ParseTheme(themeElement, baseExt);
+                var entry = CloneBaseExtension(baseExt);
+                entry.ThemeDefinition = def;
+                if (index > 0)
+                    entry = entry with { Id = $"{baseExt.Id}_{def.ThemeId}", IsThemeSubEntry = true };
+                yield return entry;
+                index++;
+            }
+        }
+        else
+        {
+            baseExt.ThemeDefinition = ParseTheme(root, baseExt);
+            yield return baseExt;
+        }
     }
 
     private static LoadedExtension ParseManifest(JsonElement manifest) => new()
@@ -783,7 +863,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasRecentFiles => RecentFiles.Count > 0;
 
-    public bool IsNoExtensionsVisible => LoadedExtensions.Count == 0;
+    // Sub-entries from multi-theme arrays are hidden from the Installed list
+    public IEnumerable<LoadedExtension> VisibleLoadedExtensions =>
+        LoadedExtensions.Where(e => !e.IsThemeSubEntry);
+
+    public bool IsNoExtensionsVisible => !VisibleLoadedExtensions.Any();
 
     public IEnumerable<LoadedExtension> ThemeExtensions =>
         LoadedExtensions.Where(e => e.Type.Equals("theme", StringComparison.OrdinalIgnoreCase) && e.ThemeDefinition is not null);
