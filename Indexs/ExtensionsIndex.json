@@ -12,12 +12,12 @@
     },
     {
       "id": "high-contrast-themes",
-      "version": "v1.0.0",
+      "version": "v1.1.0",
       "name": "High Contrast Themes",
       "type": "theme",
       "author": "Kodo Team",
-      "description": "Adds a high contrast dark theme with a purple accent.",
-      "fileName": "High-Contrast-Themes-v1.0.0.kox",
+      "description": "Adds a high contrast dark and light theme with a purple accent.",
+      "fileName": "High-Contrast-Themes-v1.1.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/High-Contrast-Themes-v1.0.0.kox"
     },
     {
