@@ -76,7 +76,7 @@ public class FileTreeItem : INotifyPropertyChanged
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
         return ext switch
         {
-            ".cs" => "📄",
+            ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "📄",
             ".axaml" or ".xaml" or ".xml" or ".html" or ".htm" => "📋",
             ".json" or ".yaml" or ".yml" or ".toml" => "📝",
             ".md" or ".txt" or ".rst" => "📃",
