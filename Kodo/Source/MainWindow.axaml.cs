@@ -1,5 +1,4 @@
 // Licensed under the Kodo Public License v1.0
-// April 25th, 2026 - Auto-completion for brackets, quotes, and <> added
 // April 24th, 2026 - SS-YYC - Fixed multi-theme support: theme.json arrays now create one LoadedExtension per theme entry
 // April 19th, 2026 - KerbalMissile - Changed "One file at a time" note to "No file open"
 // April 19th, 2026 - KerbalMissile - Added proper comments
@@ -80,33 +79,33 @@ public class FileTreeItem : INotifyPropertyChanged
     {
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
         return ext switch
-        {
-            ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "📄",
-            ".axaml" or ".xaml" => "🪟",
-            ".xml" or ".html" or ".htm" => "📋",
-            ".json" or ".yaml" or ".yml" or ".toml" => "📝",
-            ".md" or ".txt" or ".rst" => "📃",
-            ".png" or ".jpg" or ".jpeg" or ".gif" or ".svg" or ".ico" => "🖼",
-            ".py" => "🐍",
-            ".js" or ".ts" or ".jsx" or ".tsx" => "📜",
-            ".vue" or ".svelte" => "📜",
-            ".css" or ".scss" or ".less" => "🎨",
-            ".sh" or ".bat" or ".ps1" => "⚡",
-            ".zip" or ".tar" or ".gz" or ".rar" => "📦",
-            ".cpp" or ".c" or ".h" or ".hpp" => "📄",
-            ".rs" => "📄",
-            ".go" => "📄",
-            ".rb" => "📄",
-            ".java" or ".kt" or ".kts" => "📄",
-            ".swift" => "📄",
-            ".fs" or ".fsi" or ".fsx" => "📄",
-            ".sql" => "🗃",
-            ".lua" => "📄",
-            ".r" => "📄",
-            ".lock" => "🔒",
-            ".csv" or ".tsv" => "📊",
-            _ => "📄",
-        };
+			{
+			    ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "📄",
+			    ".axaml" or ".xaml" => "🪟",
+			    ".xml" or ".html" or ".htm" => "📋",
+			    ".json" or ".yaml" or ".yml" or ".toml" => "📝",
+			    ".md" or ".txt" or ".rst" => "📃",
+			    ".png" or ".jpg" or ".jpeg" or ".gif" or ".svg" or ".ico" => "🖼",
+			    ".py" => "🐍",
+			    ".js" or ".ts" or ".jsx" or ".tsx" => "📜",
+			    ".vue" or ".svelte" => "📜",
+			    ".css" or ".scss" or ".less" => "🎨",
+			    ".sh" or ".bat" or ".ps1" => "⚡",
+			    ".zip" or ".tar" or ".gz" or ".rar" => "📦",
+			    ".cpp" or ".c" or ".h" or ".hpp" => "📄",
+			    ".rs" => "📄",
+			    ".go" => "📄",
+			    ".rb" => "📄",
+			    ".java" or ".kt" or ".kts" => "📄",
+			    ".swift" => "📄",
+			    ".fs" or ".fsi" or ".fsx" => "📄",
+			    ".sql" => "🗃",
+			    ".lua" => "📄",
+			    ".r" => "📄",
+			    ".lock" => "🔒",
+				".csv" or ".tsv" => "📊",
+			    _ => "📄",
+			};
     }
 }
 
@@ -290,22 +289,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private event PropertyChangedEventHandler? ViewModelPropertyChanged;
     private static readonly HttpClient MarketplaceHttpClient = CreateHttpClient();
 
-    // ── Auto-completion ──────────────────────────────────────────────────────
-
-    // Maps each opening character to its closing pair
-    private static readonly Dictionary<char, char> BracketPairs = new()
-    {
-        { '(', ')' },
-        { '[', ']' },
-        { '{', '}' },
-        { '<', '>' },
-        { '"', '"' },
-        { '\'', '\'' },
-    };
-
-    // Closing characters — when typed over an existing auto-inserted closer, skip past it
-    private static readonly HashSet<char> ClosingChars = new() { ')', ']', '}', '>', '"', '\'' };
-
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient();
@@ -342,9 +325,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         LoadWindowIcon();
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
-        // Auto-completion: insert closing bracket/quote after opener, skip-over when typing a closer
-        EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
-        EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
         var settings = LoadSettings();
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
@@ -1747,8 +1727,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsMarketplaceTabSelected = false;
 
+    // Used by the tab strip inside the Extensions page — only switches the tab
     private void MarketplaceTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsMarketplaceTabSelected = true;
+
+    // Used by the "Visit Marketplace" button on the home screen —
+    // opens the Extensions page AND switches to the Marketplace tab
+    private void OpenMarketplaceButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        IsSettingsPageVisible = false;
+        IsMarketplaceTabSelected = true;
+        IsExtensionsPageVisible = true;
+        _ = RefreshExtensionsDataAsync();
+    }
 
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -1775,7 +1766,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ExtensionsStatusText = $"Could not open extensions folder: {ex.Message}";
         }
     }
-
     private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { Tag: string themeName })
@@ -1826,64 +1816,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isDirty = true;
         RefreshState();
         RestartAutoSaveTimerIfNeeded();
-    }
-
-    // Fires BEFORE the character is written into the document.
-    // Used to skip-over an already-present auto-inserted closing character
-    // instead of inserting a duplicate.
-    private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
-    {
-        if (string.IsNullOrEmpty(e.Text)) return;
-        var ch     = e.Text[0];
-        var caret  = EditorTextBox.TextArea.Caret;
-        var doc    = EditorTextBox.Document;
-        var offset = caret.Offset;
-
-        if (!ClosingChars.Contains(ch)) return;
-        if (offset >= doc.TextLength) return;
-        if (doc.GetCharAt(offset) != ch) return;
-
-        // Asymmetric pairs (closing char differs from opener): always safe to skip.
-        // Symmetric pairs (" and '): only skip when the char immediately behind the
-        // caret is the same quote, meaning we auto-inserted it and the caret is
-        // sitting between the pair.
-        bool skip = ch is ')' or ']' or '}' or '>';
-        if (!skip && (ch == '"' || ch == '\''))
-            skip = offset > 0 && doc.GetCharAt(offset - 1) == ch;
-
-        if (skip)
-        {
-            caret.Offset = offset + 1;
-            e.Handled = true;
-        }
-    }
-
-    // Fires AFTER the character has been written into the document.
-    // Used to insert the matching closing character right after the opener.
-    private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
-    {
-        if (string.IsNullOrEmpty(e.Text)) return;
-        var ch = e.Text[0];
-
-        if (!BracketPairs.TryGetValue(ch, out var closing)) return;
-
-        var caret  = EditorTextBox.TextArea.Caret;
-        var doc    = EditorTextBox.Document;
-        var offset = caret.Offset;
-
-        // For symmetric pairs, don't auto-close when the next char is alphanumeric
-        // (avoids nuisance completions mid-word, e.g. typing " in  it's).
-        if (ch == '"' || ch == '\'')
-        {
-            if (offset < doc.TextLength)
-            {
-                var next = doc.GetCharAt(offset);
-                if (char.IsLetterOrDigit(next) || next == ch) return;
-            }
-        }
-
-        // Insert the closer without moving the caret — it stays between the pair.
-        doc.Insert(offset, closing.ToString());
     }
 
     private async void AutoSaveTimer_OnTick(object? sender, EventArgs e)
