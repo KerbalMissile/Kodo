@@ -69,6 +69,16 @@
       "description": "Syntax highlighting for JavaScript files.",
       "fileName": "JavaScript-Kodo-Extension-v1.0.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JavaScript-Kodo-Extension-v1.0.0.kox"
+    },
+    {
+      "id": "HolyC-kodo-extension",
+      "version": "v1.0.0",
+      "name": "HolyC Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for HolyC files.",
+      "fileName": "HolyC-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/HolyC-Kodo-Extension-v1.0.0.kox"
     }
   ]
 }
