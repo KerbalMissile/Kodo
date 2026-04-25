@@ -289,6 +289,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private event PropertyChangedEventHandler? ViewModelPropertyChanged;
     private static readonly HttpClient MarketplaceHttpClient = CreateHttpClient();
 
+    // ── Auto-completion ──────────────────────────────────────────────────────
+
+    // Maps each opening character to its closing pair
+    private static readonly Dictionary<char, char> BracketPairs = new()
+    {
+        { '(', ')' },
+        { '[', ']' },
+        { '{', '}' },
+        { '<', '>' },
+        { '"', '"' },
+        { '\'', '\'' },
+    };
+
+    // Closing characters — when typed over an existing auto-inserted closer, skip past it
+    private static readonly HashSet<char> ClosingChars = new() { ')', ']', '}', '>', '"', '\'' };
+
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient();
@@ -325,6 +341,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         LoadWindowIcon();
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
+		// Auto-completion: insert closing bracket/quote after opener, skip-over when typing a closer
+        EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
+        EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
         var settings = LoadSettings();
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
@@ -1816,6 +1835,64 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isDirty = true;
         RefreshState();
         RestartAutoSaveTimerIfNeeded();
+    }
+
+	// Fires BEFORE the character is written into the document.
+    // Used to skip-over an already-present auto-inserted closing character
+    // instead of inserting a duplicate.
+    private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
+    {
+        if (string.IsNullOrEmpty(e.Text)) return;
+        var ch     = e.Text[0];
+        var caret  = EditorTextBox.TextArea.Caret;
+        var doc    = EditorTextBox.Document;
+        var offset = caret.Offset;
+
+        if (!ClosingChars.Contains(ch)) return;
+        if (offset >= doc.TextLength) return;
+        if (doc.GetCharAt(offset) != ch) return;
+
+        // Asymmetric pairs (closing char differs from opener): always safe to skip.
+        // Symmetric pairs (" and '): only skip when the char immediately behind the
+        // caret is the same quote, meaning we auto-inserted it and the caret is
+        // sitting between the pair.
+        bool skip = ch is ')' or ']' or '}' or '>';
+        if (!skip && (ch == '"' || ch == '\''))
+            skip = offset > 0 && doc.GetCharAt(offset - 1) == ch;
+
+        if (skip)
+        {
+            caret.Offset = offset + 1;
+            e.Handled = true;
+        }
+    }
+
+    // Fires AFTER the character has been written into the document.
+    // Used to insert the matching closing character right after the opener.
+    private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
+    {
+        if (string.IsNullOrEmpty(e.Text)) return;
+        var ch = e.Text[0];
+
+        if (!BracketPairs.TryGetValue(ch, out var closing)) return;
+
+        var caret  = EditorTextBox.TextArea.Caret;
+        var doc    = EditorTextBox.Document;
+        var offset = caret.Offset;
+
+        // For symmetric pairs, don't auto-close when the next char is alphanumeric
+        // (avoids nuisance completions mid-word, e.g. typing " in  it's).
+        if (ch == '"' || ch == '\'')
+        {
+            if (offset < doc.TextLength)
+            {
+                var next = doc.GetCharAt(offset);
+                if (char.IsLetterOrDigit(next) || next == ch) return;
+            }
+        }
+
+        // Insert the closer without moving the caret — it stays between the pair.
+        doc.Insert(offset, closing.ToString());
     }
 
     private async void AutoSaveTimer_OnTick(object? sender, EventArgs e)
