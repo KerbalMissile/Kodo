@@ -389,7 +389,7 @@
                                                Text="Visit the Marketplace to explore extensions, syntax highlighting, and themes." />
                                     <StackPanel Orientation="Horizontal" Spacing="10">
                                         <Button Classes="chrome"
-                                                Click="OpenMarketplaceButton_OnClick"
+                                                Click="MarketplaceTabButton_OnClick"
                                                 Content="Visit Marketplace" />
                                     </StackPanel>
                                 </StackPanel>
@@ -800,6 +800,36 @@
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        TextWrapping="Wrap"
                                        Text="{Binding DiscordRichPresenceStatusText}" />
+
+                            <Border Height="1"
+                                    Background="{Binding SurfaceBorderBrush}" />
+
+                            <TextBlock FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding PrimaryTextBrush}"
+                                       Text="About" />
+
+                            <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                                <Border Width="48"
+                                        Height="48"
+                                        CornerRadius="12"
+                                        ClipToBounds="True">
+                                    <Image Source="/Assets/kodo-logo.png"
+                                           Stretch="UniformToFill" />
+                                </Border>
+                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Kodo" />
+                                    <TextBlock FontSize="13"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Text="Version 1.1.0-BETA" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       Text="Built by KerbalMissile and SS-YYC." />
                         </StackPanel>
                     </Border>
                 </Grid>
