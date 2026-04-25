@@ -40,5 +40,35 @@
       "fileName": "Py-Kodo-Extension-v1.0.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Py-Kodo-Extension-v1.0.0.kox"
     }
+    {
+      "id": "HTML-kodo-extension",
+      "version": "v1.0.0",
+      "name": "HTML Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for HTML files.",
+      "fileName": "HTML-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/HTML-Kodo-Extension-v1.0.0.kox"
+    }
+    {
+      "id": "CSS-kodo-extension",
+      "version": "v1.0.0",
+      "name": "CSS Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for CSS files.",
+      "fileName": "CSS-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/CSS-Kodo-Extension-v1.0.0.kox"
+    }
+    {
+      "id": "JavaScript-kodo-extension",
+      "version": "v1.0.0",
+      "name": "JavaScript Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for JavaScript files.",
+      "fileName": "JavaScript-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JavaScript-Kodo-Extension-v1.0.0.kox"
+    }
   ]
 }
