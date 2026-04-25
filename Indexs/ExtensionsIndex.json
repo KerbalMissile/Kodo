@@ -29,6 +29,16 @@
       "description": "Syntax highlighting for C and C++ files.",
       "fileName": "C++-Kodo-Extension-v1.0.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%2B%2B-Kodo-Extension-v1.0.0.kox"
+    },
+    {
+      "id": "py-kodo-extension",
+      "version": "v1.0.0",
+      "name": "Python Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for Python files.",
+      "fileName": "Py-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Py-Kodo-Extension-v1.0.0.kox"
     }
   ]
 }
