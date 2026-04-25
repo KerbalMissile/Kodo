@@ -186,6 +186,23 @@ public class MarketplaceExtension : INotifyPropertyChanged
     public string Description { get; init; } = string.Empty;
     public string DownloadUrl { get; init; } = string.Empty;
     public string FileName { get; init; } = string.Empty;
+    public string IconUrl { get; init; } = string.Empty;
+
+    private Bitmap? _iconImage;
+    public Bitmap? IconImage
+    {
+        get => _iconImage;
+        set
+        {
+            if (_iconImage == value) return;
+            _iconImage = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasIcon));
+        }
+    }
+
+    public bool HasIcon => IconImage is not null;
+    public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
 
     public bool IsInstalling
     {
@@ -270,7 +287,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
     private LoadedExtension? _currentLanguageExtension;
     private event PropertyChangedEventHandler? ViewModelPropertyChanged;
-    private static readonly HttpClient MarketplaceHttpClient = new();
+    private static readonly HttpClient MarketplaceHttpClient = CreateHttpClient();
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Kodo/1.0 (https://github.com/KerbalMissile/Kodo)");
+        return client;
+    }
 
     private string ExtensionsFolderPath => Path.Combine(Directory.GetCurrentDirectory(), "Extensions");
     private string IndexFolderPath => Path.Combine(Directory.GetCurrentDirectory(), "Indexs");
@@ -491,6 +515,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SyncMarketplaceInstallStates();
         OnPropertyChanged(nameof(ExtensionLoadErrors));
         OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
+        await FetchMarketplaceIconsAsync();
+    }
+
+    private async Task FetchMarketplaceIconsAsync()
+    {
+        var tasks = MarketplaceExtensions
+            .Where(e => !string.IsNullOrWhiteSpace(e.IconUrl))
+            .Select(async entry =>
+            {
+                try
+                {
+                    var bytes = await MarketplaceHttpClient.GetByteArrayAsync(entry.IconUrl);
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            using var ms = new MemoryStream(bytes);
+                            entry.IconImage = new Bitmap(ms);
+                        }
+                        catch { /* Silently ignore bad image data — fallback to abbreviation. */ }
+                    });
+                }
+                catch { /* Network failure — fallback to abbreviation. */ }
+            });
+
+        await Task.WhenAll(tasks);
     }
 
     private IEnumerable<string> GetExtensionsIndexSearchPaths()
@@ -510,7 +560,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Author = item.TryGetProperty("author", out var author) ? author.GetString() ?? string.Empty : string.Empty,
         Description = item.TryGetProperty("description", out var description) ? description.GetString() ?? string.Empty : string.Empty,
         DownloadUrl = item.TryGetProperty("downloadUrl", out var downloadUrl) ? downloadUrl.GetString() ?? string.Empty : string.Empty,
-        FileName = item.TryGetProperty("fileName", out var fileName) ? fileName.GetString() ?? string.Empty : string.Empty
+        FileName = item.TryGetProperty("fileName", out var fileName) ? fileName.GetString() ?? string.Empty : string.Empty,
+        IconUrl = item.TryGetProperty("iconUrl", out var iconUrl) ? iconUrl.GetString() ?? string.Empty : string.Empty
     };
 
     private void SyncMarketplaceInstallStates()

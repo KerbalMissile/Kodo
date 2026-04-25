@@ -559,8 +559,30 @@
                                                 CornerRadius="12"
                                                 Padding="16"
                                                 Margin="0,0,0,8">
-                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
-                                                <StackPanel Spacing="4">
+                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                                <!-- Icon: image if available, accent box with abbreviation otherwise -->
+                                                <Border Width="48" Height="48" CornerRadius="8"
+                                                        Background="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        Margin="0,0,16,0"
+                                                        IsVisible="{Binding !HasIcon}">
+                                                    <TextBlock HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="14"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="White"
+                                                               Text="{Binding NameAbbreviation}" />
+                                                </Border>
+                                                <Border Width="48" Height="48" CornerRadius="8"
+                                                        Margin="0,0,16,0"
+                                                        IsVisible="{Binding HasIcon}"
+                                                        ClipToBounds="True">
+                                                    <Image Source="{Binding IconImage}"
+                                                           Width="48"
+                                                           Height="48"
+                                                           Stretch="Uniform" />
+                                                </Border>
+
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
                                                     <TextBlock FontSize="16"
                                                                FontWeight="SemiBold"
                                                                Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -574,9 +596,10 @@
                                                                Text="{Binding Author}" />
                                                 </StackPanel>
 
-                                                <StackPanel Grid.Column="1"
+                                                <StackPanel Grid.Column="2"
                                                             Spacing="8"
-                                                            HorizontalAlignment="Right">
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center">
                                                     <TextBlock HorizontalAlignment="Right"
                                                                Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                Text="{Binding Version}" />
