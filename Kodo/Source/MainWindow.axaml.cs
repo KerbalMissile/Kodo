@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -337,7 +338,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 ApplyTheme(_requestedThemeName);
             }
-            ExtensionsStatusText = $"Refreshed {LoadedExtensions.Count} installed and {MarketplaceExtensions.Count} marketplace extension(s).";
+            ExtensionsStatusText = $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s).";
         }
         catch (Exception ex)
         {
@@ -1642,6 +1643,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FocusEditor();
     }
 
+    private void OpenExtensionsFolderButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!Directory.Exists(ExtensionsFolderPath))
+                Directory.CreateDirectory(ExtensionsFolderPath);
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName        = ExtensionsFolderPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            ExtensionsStatusText = $"Could not open extensions folder: {ex.Message}";
+        }
+    }
     private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { Tag: string themeName })

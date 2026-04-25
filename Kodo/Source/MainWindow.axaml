@@ -452,7 +452,7 @@
                                     Click="RefreshExtensionsButton_OnClick"
                                     IsEnabled="{Binding !IsRefreshingExtensions}"
                                     Content="{Binding RefreshExtensionsButtonText}" />
-                            <Button Classes="chrome" Click="BackToEditorButton_OnClick" Content="Back" />
+                            <Button Classes="chrome" Click="OpenExtensionsFolderButton_OnClick" Content="Open Folder" />
                         </StackPanel>
                     </Grid>
                 </Border>
