@@ -19,7 +19,8 @@
       "author": "Kodo Team",
       "description": "Adds a high contrast dark and light theme with a purple accent.",
       "fileName": "High-Contrast-Themes-v1.1.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/High-Contrast-Themes-v1.1.0.kox"
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/High-Contrast-Themes-v1.1.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/high-contrast-icon.png"
     },
     {
       "id": "cpp-kodo-extension",
