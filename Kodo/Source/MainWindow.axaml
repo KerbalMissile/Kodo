@@ -389,7 +389,7 @@
                                                Text="Visit the Marketplace to explore extensions, syntax highlighting, and themes." />
                                     <StackPanel Orientation="Horizontal" Spacing="10">
                                         <Button Classes="chrome"
-                                                Click="MarketplaceTabButton_OnClick"
+                                                Click="OpenMarketplaceButton_OnClick"
                                                 Content="Visit Marketplace" />
                                     </StackPanel>
                                 </StackPanel>
