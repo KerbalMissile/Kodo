@@ -359,7 +359,8 @@
                                                Foreground="{Binding PrimaryTextBrush}"
                                                Text="Get Started!" />
                                     <TextBlock Foreground="{Binding MutedTextBrush}"
-                                               Text="Open a folder or file, edit it, save it. Or start a new file." />
+                                               TextWrapping="Wrap"
+                                               Text="Open a folder or file, edit it, save it. Or start a new file. To get syntax highlighting, please visit the Extensions Marketplace (4 Cubes left bar), to download it for your favourite languages!" />
                                     <StackPanel Orientation="Horizontal" Spacing="10">
                                         <Button Classes="chrome"
                                                 Click="NewFileButton_OnClick"
@@ -502,13 +503,23 @@
                                                 Padding="16"
                                                 Margin="0,0,0,8">
                                             <Grid ColumnDefinitions="Auto,*,Auto">
-                                                <Border Width="48" Height="48" CornerRadius="8" Background="{Binding AccentBrush}" Margin="0,0,16,0">
+                                                <!-- Icon: image if available, accent box with abbreviation otherwise -->
+                                                <Border Width="48" Height="48" CornerRadius="8" Background="{Binding AccentBrush}" Margin="0,0,16,0"
+                                                        IsVisible="{Binding !HasIcon}">
                                                     <TextBlock HorizontalAlignment="Center"
                                                                VerticalAlignment="Center"
                                                                FontSize="14"
                                                                FontWeight="SemiBold"
                                                                Foreground="White"
-                                                               Text="{Binding Name}" />
+                                                               Text="{Binding NameAbbreviation}" />
+                                                </Border>
+                                                <Border Width="48" Height="48" CornerRadius="8" Margin="0,0,16,0"
+                                                        IsVisible="{Binding HasIcon}"
+                                                        ClipToBounds="True">
+                                                    <Image Source="{Binding IconImage}"
+                                                           Width="48"
+                                                           Height="48"
+                                                           Stretch="Uniform" />
                                                 </Border>
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                                     <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" Text="{Binding Name}" />

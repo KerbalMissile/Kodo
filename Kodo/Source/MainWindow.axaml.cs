@@ -25,6 +25,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
@@ -134,6 +135,11 @@ public record class LoadedExtension : INotifyPropertyChanged
     // True for the 2nd, 3rd, etc. entries split out of a multi-theme array —
     // they appear in ThemeExtensions but are hidden from the Installed list.
     public bool IsThemeSubEntry { get; init; }
+    // Optional icon loaded from icon.png inside the .kox / folder
+    public Bitmap? IconImage { get; set; }
+    // Fallback: first two letters of the name, shown when no icon is present
+    public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
+    public bool HasIcon => IconImage is not null;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -613,6 +619,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ParseLanguage(langDoc.RootElement, baseExt);
         }
 
+        var iconPath = Path.Combine(folderPath, "icon.png");
+        if (File.Exists(iconPath))
+        {
+            using var iconStream = File.OpenRead(iconPath);
+            baseExt.IconImage = LoadIconFromStream(iconStream);
+        }
+
         var themePath = Path.Combine(folderPath, "theme.json");
         if (!File.Exists(themePath))
         {
@@ -666,7 +679,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ColorTokens       = src.ColorTokens,
         SourcePath        = src.SourcePath,
         IsDirectorySource = src.IsDirectorySource,
+        IconImage         = src.IconImage,
     };
+
+    // Loads a PNG from a stream and scales it to 48x48 if it is square,
+    // otherwise returns null so the text fallback is used.
+    private static Bitmap? LoadIconFromStream(Stream stream)
+    {
+        try
+        {
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            ms.Position = 0;
+            var bmp = new Bitmap(ms);
+            if (bmp.PixelSize.Width != bmp.PixelSize.Height) return null;
+            // Scale down to 48x48 — Avalonia Bitmap doesn't resize on load,
+            // but we can let the Image control handle it via Width/Height binding.
+            // Just return the bitmap as-is; sizing is done in AXAML.
+            return bmp;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private IEnumerable<LoadedExtension> LoadExtensionsFromKox(string koxPath)
     {
@@ -686,6 +722,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             using var langStream = languageEntry.Open();
             using var langDoc = JsonDocument.Parse(langStream);
             ParseLanguage(langDoc.RootElement, baseExt);
+        }
+
+        var iconEntry = archive.GetEntry("icon.png");
+        if (iconEntry is not null)
+        {
+            using var iconStream = iconEntry.Open();
+            baseExt.IconImage = LoadIconFromStream(iconStream);
         }
 
         var themeEntry = archive.GetEntry("theme.json");
