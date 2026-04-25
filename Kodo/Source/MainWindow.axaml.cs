@@ -312,7 +312,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return client;
     }
 
-    private string ExtensionsFolderPath => Path.Combine(Directory.GetCurrentDirectory(), "Extensions");
+    private string ExtensionsFolderPath => Path.Combine(
+    	Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+    	"Kodo", "Extensions");
     private string IndexFolderPath => Path.Combine(Directory.GetCurrentDirectory(), "Indexs");
     private string ProjectExtensionsFolderPath =>
         Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Extensions"));
