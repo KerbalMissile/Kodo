@@ -621,7 +621,7 @@
                             Padding="22"
                             MaxWidth="620"
                             Width="620"
-                            HorizontalAlignment="Left"
+                            HorizontalAlignment="Center"
                             VerticalAlignment="Top">
                         <StackPanel Spacing="16">
                             <TextBlock FontSize="18"
