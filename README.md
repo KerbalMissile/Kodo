@@ -37,7 +37,7 @@ To download, run, and edit Kodo's source code, follow these steps:
 - Discord Rich Presence Support
 - Autosave Functionality
 - Syntax Highlighting via `.kox` extensions (currently only C#, C++, C, and Python, but will be expanded in the future.)
-- Recently Edited 
+- Recently Edited Files Section
 
 **Planned Features:**
 - Multi-person file editing in real time, at the same time
