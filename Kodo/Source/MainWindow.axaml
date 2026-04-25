@@ -459,7 +459,7 @@
                 </Border>
 
                 <ScrollViewer Grid.Row="1" Padding="24">
-                    <StackPanel Spacing="12">
+                    <StackPanel Spacing="12" Margin="0,0,0,96">
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
                             <Panel>
                                 <Button Classes="tab"
