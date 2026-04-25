@@ -8,7 +8,8 @@
       "author": "Kodo Team",
       "description": "Syntax highlighting for C# files",
       "fileName": "C#-Kodo-Extension-v1.0.1.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.0.1.kox"
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.0.1.kox",
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/d/d2/C_Sharp_Logo_2023.svg"
     },
     {
       "id": "high-contrast-themes",
@@ -28,7 +29,8 @@
       "author": "Kodo Team",
       "description": "Syntax highlighting for C and C++ files.",
       "fileName": "C++-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%2B%2B-Kodo-Extension-v1.0.0.kox"
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%2B%2B-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/1/18/ISO_C%2B%2B_Logo.svg"
     },
     {
       "id": "python-kodo-extension",
@@ -38,7 +40,8 @@
       "author": "Kodo Team",
       "description": "Syntax highlighting for Python files.",
       "fileName": "Python-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Python-Kodo-Extension-v1.0.0.kox"
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Python-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c3/Python-logo-notext.svg"
     },
     {
       "id": "HTML-kodo-extension",
@@ -48,7 +51,8 @@
       "author": "Kodo Team",
       "description": "Syntax highlighting for HTML files.",
       "fileName": "HTML-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/HTML-Kodo-Extension-v1.0.0.kox"
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/HTML-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/6/61/HTML5_logo_and_wordmark.svg"
     },
     {
       "id": "CSS-kodo-extension",
@@ -58,7 +62,8 @@
       "author": "Kodo Team",
       "description": "Syntax highlighting for CSS files.",
       "fileName": "CSS-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/CSS-Kodo-Extension-v1.0.0.kox"
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/CSS-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Official_CSS_Logo.svg"
     },
     {
       "id": "JavaScript-kodo-extension",
@@ -68,7 +73,8 @@
       "author": "Kodo Team",
       "description": "Syntax highlighting for JavaScript files.",
       "fileName": "JavaScript-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JavaScript-Kodo-Extension-v1.0.0.kox"
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JavaScript-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/6/6a/JavaScript-logo.png"
     },
     {
       "id": "HolyC-kodo-extension",
@@ -78,7 +84,8 @@
       "author": "Kodo Team",
       "description": "Syntax highlighting for HolyC files.",
       "fileName": "HolyC-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/HolyC-Kodo-Extension-v1.0.0.kox"
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/HolyC-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/3/33/HolyC_Logo.svg"
     }
   ]
 }
