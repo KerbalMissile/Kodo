@@ -39,7 +39,7 @@
       "description": "Syntax highlighting for Python files.",
       "fileName": "Py-Kodo-Extension-v1.0.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Py-Kodo-Extension-v1.0.0.kox"
-    }
+    },
     {
       "id": "HTML-kodo-extension",
       "version": "v1.0.0",
@@ -59,7 +59,7 @@
       "description": "Syntax highlighting for CSS files.",
       "fileName": "CSS-Kodo-Extension-v1.0.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/CSS-Kodo-Extension-v1.0.0.kox"
-    }
+    },
     {
       "id": "JavaScript-kodo-extension",
       "version": "v1.0.0",
