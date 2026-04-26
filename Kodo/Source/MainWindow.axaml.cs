@@ -313,8 +313,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private string ExtensionsFolderPath => Path.Combine(
-    	Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-    	"Kodo", "Extensions");
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "Kodo", "Extensions");
     private string IndexFolderPath => Path.Combine(Directory.GetCurrentDirectory(), "Indexs");
     private string ProjectExtensionsFolderPath =>
         Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Extensions"));
@@ -542,7 +542,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task FetchMarketplaceIconsAsync()
     {
         var tasks = MarketplaceExtensions
-            .Where(e => !string.IsNullOrWhiteSpace(e.IconUrl))
+            // Skip installed extensions — their icon is already loaded from the local .kox file.
+            .Where(e => !string.IsNullOrWhiteSpace(e.IconUrl) && !e.IsInstalled)
             .Select(async entry =>
             {
                 try
@@ -588,7 +589,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void SyncMarketplaceInstallStates()
     {
         foreach (var entry in MarketplaceExtensions)
-            entry.SetInstalledState(LoadedExtensions.Any(ext => ext.Id.Equals(entry.Id, StringComparison.OrdinalIgnoreCase)));
+        {
+            var localExt = LoadedExtensions.FirstOrDefault(ext =>
+                ext.Id.Equals(entry.Id, StringComparison.OrdinalIgnoreCase));
+
+            entry.SetInstalledState(localExt is not null);
+
+            // When installed, prefer the local icon from the .kox file over the remote IconUrl.
+            if (localExt?.IconImage is not null)
+                entry.IconImage = localExt.IconImage;
+        }
     }
 
     private async Task InstallMarketplaceExtensionAsync(MarketplaceExtension marketplaceExtension)
