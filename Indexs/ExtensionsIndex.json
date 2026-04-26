@@ -6,7 +6,7 @@
       "name": "C# Language Support",
       "type": "language",
       "author": "Kodo Team",
-      "description": "Syntax highlighting for C# files",
+      "description": "Syntax highlighting for C# files.",
       "fileName": "C#-Kodo-Extension-v1.1.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.1.0.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/C_Sharp_Logo_2023.svg/240px-C_Sharp_Logo_2023.svg.png"
