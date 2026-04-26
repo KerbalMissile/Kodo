@@ -313,6 +313,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private DiscordRpcClient? _discordRpcClient;
     private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly DispatcherTimer _autoSaveStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+    private readonly DispatcherTimer _discordReconnectTimer = new() { Interval = TimeSpan.FromSeconds(10) };
+    private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
     private string? _autoSaveStatusMessage;
     private bool _isAutoSaveEnabled;
     private bool _isDirty;
@@ -328,6 +330,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _currentThemeName = "Dark";
     private string _requestedThemeName = "Dark";
     private string _editorStatsText = "0 lines";
+    private string _lastDiscordPresenceDetails = string.Empty;
+    private string _lastDiscordPresenceState = string.Empty;
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
     private LoadedExtension? _currentLanguageExtension;
     private FileSystemWatcher? _extensionsFolderWatcher;
@@ -402,6 +406,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         LoadRecentFiles(settings.RecentFiles);
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
+        _discordReconnectTimer.Tick += DiscordReconnectTimer_OnTick;
+        _editorStateRefreshTimer.Tick += EditorStateRefreshTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         DataContext = this;
         ApplyTheme(_requestedThemeName);
@@ -542,8 +548,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void LoadExtensions()
     {
-        LoadedExtensions.Clear();
-        ExtensionLoadErrors.Clear();
+        var loadedExtensions = new List<LoadedExtension>();
+        var extensionLoadErrors = new List<string>();
         var searchPaths = GetExtensionSearchPaths().ToList();
         var binPath = ExtensionsFolderPath;
 
@@ -559,12 +565,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     foreach (var ext in LoadExtensionsFromKox(koxFile))
                     {
-                        AddOrReplaceLoadedExtension(ext);
+                        AddOrReplaceLoadedExtension(loadedExtensions, ext);
                     }
                 }
                 catch (Exception ex)
                 {
-                    ExtensionLoadErrors.Add($"Failed to load '{Path.GetFileName(koxFile)}': {ex.Message}");
+                    extensionLoadErrors.Add($"Failed to load '{Path.GetFileName(koxFile)}': {ex.Message}");
                 }
             }
 
@@ -576,19 +582,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     {
                         foreach (var ext in LoadExtensionsFromFolder(dir))
                         {
-                            AddOrReplaceLoadedExtension(ext);
+                            AddOrReplaceLoadedExtension(loadedExtensions, ext);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    ExtensionLoadErrors.Add($"Failed to load folder extension '{Path.GetFileName(dir)}': {ex.Message}");
+                    extensionLoadErrors.Add($"Failed to load folder extension '{Path.GetFileName(dir)}': {ex.Message}");
                 }
             }
         }
 
         if (!anyFolderFound)
-            ExtensionLoadErrors.Add($"Extensions folder not found. Expected: {binPath}");
+            extensionLoadErrors.Add($"Extensions folder not found. Expected: {binPath}");
+
+        SyncObservableCollection(LoadedExtensions, loadedExtensions, ext => ext.Id);
+        SyncObservableCollection(ExtensionLoadErrors, extensionLoadErrors, error => error);
 
         OnPropertyChanged(nameof(ExtensionLoadErrors));
         OnPropertyChanged(nameof(VisibleLoadedExtensions));
@@ -601,8 +610,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task LoadMarketplaceExtensionsAsync()
     {
-        MarketplaceExtensions.Clear();
+        var marketplaceExtensions = new List<MarketplaceExtension>();
         var loadedAny = false;
+        var extensionLoadErrors = new List<string>();
 
         foreach (var indexPath in GetExtensionsIndexSearchPaths())
         {
@@ -619,18 +629,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 foreach (var item in extensionsElement.EnumerateArray())
                 {
                     var entry = ParseMarketplaceExtension(item);
-                    if (string.IsNullOrWhiteSpace(entry.Id) || MarketplaceExtensions.Any(e => e.Id == entry.Id))
+                    if (string.IsNullOrWhiteSpace(entry.Id) || marketplaceExtensions.Any(e => e.Id == entry.Id))
                         continue;
 
-                    MarketplaceExtensions.Add(entry);
+                    marketplaceExtensions.Add(entry);
                 }
 
-                loadedAny = MarketplaceExtensions.Count > 0;
+                loadedAny = marketplaceExtensions.Count > 0;
                 break;
             }
             catch (Exception ex)
             {
-                ExtensionLoadErrors.Add($"Failed to load marketplace index '{Path.GetFileName(indexPath)}': {ex.Message}");
+                extensionLoadErrors.Add($"Failed to load marketplace index '{Path.GetFileName(indexPath)}': {ex.Message}");
             }
         }
 
@@ -646,21 +656,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     foreach (var item in extensionsElement.EnumerateArray())
                     {
                         var entry = ParseMarketplaceExtension(item);
-                        if (string.IsNullOrWhiteSpace(entry.Id) || MarketplaceExtensions.Any(e => e.Id == entry.Id))
+                        if (string.IsNullOrWhiteSpace(entry.Id) || marketplaceExtensions.Any(e => e.Id == entry.Id))
                             continue;
 
-                        MarketplaceExtensions.Add(entry);
+                        marketplaceExtensions.Add(entry);
                     }
 
-                    if (MarketplaceExtensions.Count > 0)
+                    if (marketplaceExtensions.Count > 0)
                         ExtensionsStatusText = $"Loaded marketplace from {DefaultMarketplaceIndexUrl}";
                 }
             }
             catch (Exception ex)
             {
-                ExtensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
+                extensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
             }
         }
+
+        SyncObservableCollection(MarketplaceExtensions, marketplaceExtensions, ext => ext.Id);
+        SyncObservableCollection(
+            ExtensionLoadErrors,
+            ExtensionLoadErrors.Concat(extensionLoadErrors).Distinct().ToList(),
+            error => error);
 
         SyncMarketplaceInstallStates();
         OnPropertyChanged(nameof(ExtensionLoadErrors));
@@ -739,20 +755,61 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         MarketplaceExtensions.FirstOrDefault(entry =>
             entry.Id.Equals(extension.Id, StringComparison.OrdinalIgnoreCase));
 
-    private void AddOrReplaceLoadedExtension(LoadedExtension extension)
+    private void AddOrReplaceLoadedExtension(IList<LoadedExtension> extensions, LoadedExtension extension)
     {
-        var existingIndex = LoadedExtensions
+        var existingIndex = extensions
             .Select((item, index) => new { item, index })
             .FirstOrDefault(x => x.item.Id.Equals(extension.Id, StringComparison.OrdinalIgnoreCase));
 
         if (existingIndex is null)
         {
-            LoadedExtensions.Add(extension);
+            extensions.Add(extension);
             return;
         }
 
         if (ShouldReplaceLoadedExtension(existingIndex.item, extension))
-            LoadedExtensions[existingIndex.index] = extension;
+            extensions[existingIndex.index] = extension;
+    }
+
+    private static void SyncObservableCollection<T, TKey>(
+        ObservableCollection<T> target,
+        IList<T> source,
+        Func<T, TKey> keySelector)
+        where TKey : notnull
+    {
+        for (var i = target.Count - 1; i >= 0; i--)
+        {
+            var key = keySelector(target[i]);
+            if (!source.Any(item => EqualityComparer<TKey>.Default.Equals(keySelector(item), key)))
+                target.RemoveAt(i);
+        }
+
+        for (var i = 0; i < source.Count; i++)
+        {
+            var item = source[i];
+            var key = keySelector(item);
+            var existingIndex = -1;
+            for (var j = 0; j < target.Count; j++)
+            {
+                if (EqualityComparer<TKey>.Default.Equals(keySelector(target[j]), key))
+                {
+                    existingIndex = j;
+                    break;
+                }
+            }
+
+            if (existingIndex == -1)
+            {
+                target.Insert(Math.Min(i, target.Count), item);
+                continue;
+            }
+
+            if (existingIndex != i)
+                target.Move(existingIndex, i);
+
+            if (!ReferenceEquals(target[i], item))
+                target[i] = item;
+        }
     }
 
     private LoadedExtension? GetPreferredLoadedExtension(string extensionId) =>
@@ -1586,11 +1643,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshState()
     {
-        var content = EditorTextBox?.Document?.Text ?? string.Empty;
+        var document = EditorTextBox?.Document;
         if (HasDocumentOpen)
         {
-            var lines = content.Length == 0 ? 1 : content.Count(static c => c == '\n') + 1;
-            EditorStatsText = $"{lines} lines  |  {content.Length} characters";
+            var lines = document?.LineCount ?? 1;
+            var characters = document?.TextLength ?? 0;
+            EditorStatsText = $"{lines} lines  |  {characters} characters";
         }
         else
         {
@@ -1606,12 +1664,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(FileSummaryText));
         OnPropertyChanged(nameof(FilePathText));
         OnPropertyChanged(nameof(ExplorerHeaderText));
-        OnPropertyChanged(nameof(ThemeStatusText));
-        OnPropertyChanged(nameof(ThemeExtensions));
-        OnPropertyChanged(nameof(HasThemeExtensions));
         OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
         OnPropertyChanged(nameof(AutoSaveStatusText));
         UpdateDiscordPresence();
+    }
+
+    private void QueueRefreshState()
+    {
+        _editorStateRefreshTimer.Stop();
+        _editorStateRefreshTimer.Start();
+    }
+
+    private void EditorStateRefreshTimer_OnTick(object? sender, EventArgs e)
+    {
+        _editorStateRefreshTimer.Stop();
+        RefreshState();
     }
 
     private string GetDocumentStatusSuffix()
@@ -1654,6 +1721,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void UpdateDiscordRichPresenceLifecycle()
     {
+        _discordReconnectTimer.Stop();
         try
         {
             var clientId = GetDiscordApplicationId();
@@ -1671,7 +1739,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             UpdateDiscordPresence();
         }
-        catch { DisposeDiscordPresence(); }
+        catch
+        {
+            ResetDiscordPresenceForReconnect();
+            _discordReconnectTimer.Start();
+        }
     }
 
     private void UpdateDiscordPresence()
@@ -1680,18 +1752,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
+            var details = GetDiscordPresenceDetails();
+            var state = GetDiscordPresenceState();
+            if (details == _lastDiscordPresenceDetails && state == _lastDiscordPresenceState)
+                return;
+
             _discordRpcClient.SetPresence(new DiscordRichPresenceModel
             {
-                Details = GetDiscordPresenceDetails(),
-                State   = GetDiscordPresenceState(),
+                Details = details,
+                State   = state,
                 Assets  = new DiscordAssetsModel
                 {
                     LargeImageKey  = DefaultDiscordLargeImageKey,
                     LargeImageText = DefaultDiscordLargeImageText
                 }
             });
+            _lastDiscordPresenceDetails = details;
+            _lastDiscordPresenceState = state;
         }
-        catch { DisposeDiscordPresence(); }
+        catch
+        {
+            ResetDiscordPresenceForReconnect();
+            _discordReconnectTimer.Start();
+        }
     }
 
     private string GetDiscordPresenceDetails()
@@ -1715,16 +1798,45 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return string.IsNullOrWhiteSpace(folderName) ? fallback : $"Workspace: {folderName}";
     }
 
-    private void DisposeDiscordPresence()
+    private void DisposeDiscordPresence(bool clearPresence = true)
     {
+        _discordReconnectTimer.Stop();
         if (_discordRpcClient is null) return;
         try
         {
-            _discordRpcClient.ClearPresence();
+            if (clearPresence)
+                _discordRpcClient.ClearPresence();
             _discordRpcClient.Dispose();
         }
         catch { /* Ignore cleanup failures. */ }
-        finally { _discordRpcClient = null; }
+        finally
+        {
+            _discordRpcClient = null;
+            _lastDiscordPresenceDetails = string.Empty;
+            _lastDiscordPresenceState = string.Empty;
+        }
+    }
+
+    private void ResetDiscordPresenceForReconnect()
+    {
+        if (_discordRpcClient is null)
+            return;
+
+        try
+        {
+            _discordRpcClient.Dispose();
+        }
+        catch { /* Ignore reconnect cleanup failures. */ }
+        finally
+        {
+            _discordRpcClient = null;
+        }
+    }
+
+    private void DiscordReconnectTimer_OnTick(object? sender, EventArgs e)
+    {
+        _discordReconnectTimer.Stop();
+        UpdateDiscordRichPresenceLifecycle();
     }
 
     // ── Settings persistence ─────────────────────────────────────────────────
@@ -2431,6 +2543,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _autoSaveTimer.Stop();
         _autoSaveStatusTimer.Stop();
+        _discordReconnectTimer.Stop();
         _extensionsRefreshDebounceTimer.Stop();
         DisposeExtensionFolderWatchers();
         DisposeDiscordPresence();
