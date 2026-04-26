@@ -112,6 +112,8 @@ public class FileTreeItem : INotifyPropertyChanged
 
 public record class LoadedExtension : INotifyPropertyChanged
 {
+    private bool _isUpdateAvailable;
+
     public string Id { get; init; } = string.Empty;
     public string Version { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
@@ -141,6 +143,16 @@ public record class LoadedExtension : INotifyPropertyChanged
     // Fallback: first two letters of the name, shown when no icon is present
     public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
     public bool HasIcon => IconImage is not null;
+    public bool IsUpdateAvailable
+    {
+        get => _isUpdateAvailable;
+        set
+        {
+            if (_isUpdateAvailable == value) return;
+            _isUpdateAvailable = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUpdateAvailable)));
+        }
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -705,18 +717,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void SyncMarketplaceInstallStates()
     {
+        foreach (var installedExtension in LoadedExtensions)
+            installedExtension.IsUpdateAvailable = false;
+
         foreach (var entry in MarketplaceExtensions)
         {
             var localExt = GetPreferredLoadedExtension(entry.Id);
             var isUpdateAvailable = localExt is not null && CompareExtensionVersions(entry.Version, localExt.Version) > 0;
 
             entry.SetInstalledState(localExt, isUpdateAvailable);
+            if (localExt is not null)
+                localExt.IsUpdateAvailable = isUpdateAvailable;
 
             // When installed, prefer the local icon from the .kox file over the remote IconUrl.
             if (localExt?.IconImage is not null)
                 entry.IconImage = localExt.IconImage;
         }
     }
+
+    private MarketplaceExtension? GetMarketplaceExtensionForInstalled(LoadedExtension extension) =>
+        MarketplaceExtensions.FirstOrDefault(entry =>
+            entry.Id.Equals(extension.Id, StringComparison.OrdinalIgnoreCase));
 
     private void AddOrReplaceLoadedExtension(LoadedExtension extension)
     {
@@ -2240,6 +2261,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (sender is Button { Tag: MarketplaceExtension marketplaceExtension })
             await InstallMarketplaceExtensionAsync(marketplaceExtension);
+    }
+
+    private async void UpdateInstalledExtensionButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: LoadedExtension extension })
+            return;
+
+        var marketplaceExtension = GetMarketplaceExtensionForInstalled(extension);
+        if (marketplaceExtension is null)
+        {
+            ExtensionsStatusText = $"No marketplace update source found for {extension.Name}.";
+            return;
+        }
+
+        await InstallMarketplaceExtensionAsync(marketplaceExtension);
     }
 
     private async void UninstallExtensionButton_OnClick(object? sender, RoutedEventArgs e)

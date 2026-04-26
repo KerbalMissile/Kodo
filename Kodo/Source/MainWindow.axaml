@@ -551,6 +551,11 @@
                                                     <TextBlock HorizontalAlignment="Right"
                                                                Foreground="{Binding MutedTextBrush}"
                                                                Text="{Binding Version}" />
+                                                    <Button Classes="chrome"
+                                                            Tag="{Binding}"
+                                                            Click="UpdateInstalledExtensionButton_OnClick"
+                                                            Content="Update"
+                                                            IsVisible="{Binding IsUpdateAvailable}" />
                                                     <Button Classes="uninstall"
                                                             Tag="{Binding}"
                                                             Click="UninstallExtensionButton_OnClick"
