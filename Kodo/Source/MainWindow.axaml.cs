@@ -18,6 +18,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Avalonia;
@@ -177,6 +178,8 @@ public class MarketplaceExtension : INotifyPropertyChanged
 {
     private bool _isInstalling;
     private string _installButtonText = "Install";
+    private bool _isUpdateAvailable;
+    private string _installedVersion = string.Empty;
 
     public string Id { get; init; } = string.Empty;
     public string Version { get; init; } = string.Empty;
@@ -218,7 +221,29 @@ public class MarketplaceExtension : INotifyPropertyChanged
 
     public bool IsInstalled { get; private set; }
 
-    public bool IsInstallEnabled => !IsInstalling && !IsInstalled && !string.IsNullOrWhiteSpace(DownloadUrl);
+    public bool IsUpdateAvailable
+    {
+        get => _isUpdateAvailable;
+        private set
+        {
+            if (_isUpdateAvailable == value) return;
+            _isUpdateAvailable = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string InstalledVersion
+    {
+        get => _installedVersion;
+        private set
+        {
+            if (_installedVersion == value) return;
+            _installedVersion = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsInstallEnabled => !IsInstalling && (!IsInstalled || IsUpdateAvailable) && !string.IsNullOrWhiteSpace(DownloadUrl);
 
     public string InstallButtonText
     {
@@ -231,18 +256,25 @@ public class MarketplaceExtension : INotifyPropertyChanged
         }
     }
 
-    public void SetInstalledState(bool isInstalled)
+    public void SetInstalledState(LoadedExtension? installedExtension, bool isUpdateAvailable)
     {
-        if (IsInstalled == isInstalled)
+        var isInstalled = installedExtension is not null;
+        InstalledVersion = installedExtension?.Version ?? string.Empty;
+        IsUpdateAvailable = isUpdateAvailable;
+
+        if (IsInstalled != isInstalled)
         {
-            if (!isInstalled && !IsInstalling && InstallButtonText != "Install")
-                InstallButtonText = "Install";
-            return;
+            IsInstalled = isInstalled;
+            OnPropertyChanged(nameof(IsInstalled));
         }
 
-        IsInstalled = isInstalled;
-        InstallButtonText = isInstalled ? "Installed" : "Install";
-        OnPropertyChanged(nameof(IsInstalled));
+        if (!IsInstalling)
+        {
+            InstallButtonText = isInstalled
+                ? (isUpdateAvailable ? "Update" : "Installed")
+                : "Install";
+        }
+
         OnPropertyChanged(nameof(IsInstallEnabled));
     }
 
@@ -286,6 +318,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _editorStatsText = "0 lines";
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
     private LoadedExtension? _currentLanguageExtension;
+    private FileSystemWatcher? _extensionsFolderWatcher;
+    private FileSystemWatcher? _projectExtensionsFolderWatcher;
+    private readonly DispatcherTimer _extensionsRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private event PropertyChangedEventHandler? ViewModelPropertyChanged;
     private static readonly HttpClient MarketplaceHttpClient = CreateHttpClient();
 
@@ -300,10 +335,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         { '<', '>' },
         { '"', '"' },
         { '\'', '\'' },
+        { '`', '`' },
     };
 
     // Closing characters — when typed over an existing auto-inserted closer, skip past it
-    private static readonly HashSet<char> ClosingChars = new() { ')', ']', '}', '>', '"', '\'' };
+    private static readonly HashSet<char> ClosingChars = new() { ')', ']', '}', '>', '"', '\'', '`' };
 
     private static HttpClient CreateHttpClient()
     {
@@ -346,6 +382,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 		// Auto-completion: insert closing bracket/quote after opener, skip-over when typing a closer
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
         EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
+        EditorTextBox.AddHandler(InputElement.KeyDownEvent, EditorTextArea_OnKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
         var settings = LoadSettings();
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
@@ -353,9 +390,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         LoadRecentFiles(settings.RecentFiles);
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
+        _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         DataContext = this;
         ApplyTheme(_requestedThemeName);
         EnsureExtensionsFolder();
+        SetupExtensionFolderWatchers();
         _ = RefreshExtensionsDataAsync();
         UpdateDiscordRichPresenceLifecycle();
         Closed += MainWindow_OnClosed;
@@ -368,6 +407,91 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (!Directory.Exists(ExtensionsFolderPath))
             Directory.CreateDirectory(ExtensionsFolderPath);
+    }
+
+    private void SetupExtensionFolderWatchers()
+    {
+        DisposeExtensionFolderWatchers();
+        _extensionsFolderWatcher = CreateExtensionFolderWatcher(ExtensionsFolderPath);
+
+        if (Directory.Exists(ProjectExtensionsFolderPath) &&
+            !string.Equals(ProjectExtensionsFolderPath, ExtensionsFolderPath, StringComparison.OrdinalIgnoreCase))
+        {
+            _projectExtensionsFolderWatcher = CreateExtensionFolderWatcher(ProjectExtensionsFolderPath);
+        }
+    }
+
+    private FileSystemWatcher CreateExtensionFolderWatcher(string path)
+    {
+        var watcher = new FileSystemWatcher(path)
+        {
+            IncludeSubdirectories = false,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.CreationTime
+        };
+
+        watcher.Created += ExtensionFolderWatcher_OnChanged;
+        watcher.Deleted += ExtensionFolderWatcher_OnChanged;
+        watcher.Renamed += ExtensionFolderWatcher_OnRenamed;
+        watcher.EnableRaisingEvents = true;
+        return watcher;
+    }
+
+    private void DisposeExtensionFolderWatchers()
+    {
+        DisposeExtensionFolderWatcher(_extensionsFolderWatcher);
+        DisposeExtensionFolderWatcher(_projectExtensionsFolderWatcher);
+        _extensionsFolderWatcher = null;
+        _projectExtensionsFolderWatcher = null;
+    }
+
+    private void DisposeExtensionFolderWatcher(FileSystemWatcher? watcher)
+    {
+        if (watcher is null)
+            return;
+
+        watcher.EnableRaisingEvents = false;
+        watcher.Created -= ExtensionFolderWatcher_OnChanged;
+        watcher.Deleted -= ExtensionFolderWatcher_OnChanged;
+        watcher.Renamed -= ExtensionFolderWatcher_OnRenamed;
+        watcher.Dispose();
+    }
+
+    private static bool IsExtensionFilePath(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".kox", StringComparison.OrdinalIgnoreCase) ||
+               string.IsNullOrWhiteSpace(extension);
+    }
+
+    private void ExtensionFolderWatcher_OnChanged(object sender, FileSystemEventArgs e)
+    {
+        if (!IsExtensionFilePath(e.FullPath))
+            return;
+
+        QueueExtensionsRefresh();
+    }
+
+    private void ExtensionFolderWatcher_OnRenamed(object sender, RenamedEventArgs e)
+    {
+        if (!IsExtensionFilePath(e.OldFullPath) && !IsExtensionFilePath(e.FullPath))
+            return;
+
+        QueueExtensionsRefresh();
+    }
+
+    private void QueueExtensionsRefresh()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            _extensionsRefreshDebounceTimer.Stop();
+            _extensionsRefreshDebounceTimer.Start();
+        });
+    }
+
+    private async void ExtensionsRefreshDebounceTimer_OnTick(object? sender, EventArgs e)
+    {
+        _extensionsRefreshDebounceTimer.Stop();
+        await RefreshExtensionsDataAsync();
     }
 
     private async Task RefreshExtensionsDataAsync()
@@ -389,7 +513,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 ApplyTheme(_requestedThemeName);
             }
-            ExtensionsStatusText = $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s).";
+            var updateCount = MarketplaceExtensions.Count(e => e.IsUpdateAvailable);
+            ExtensionsStatusText = updateCount > 0
+                ? $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s). {updateCount} update(s) available."
+                : $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s).";
         }
         catch (Exception ex)
         {
@@ -405,16 +532,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         LoadedExtensions.Clear();
         ExtensionLoadErrors.Clear();
-
-        var searchPaths = new List<string>();
+        var searchPaths = GetExtensionSearchPaths().ToList();
         var binPath = ExtensionsFolderPath;
-        searchPaths.Add(binPath);
-
-        // Also search the project source tree when running from the build output directory
-        var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
-        var srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions"));
-        if (!string.Equals(srcPath, binPath, StringComparison.OrdinalIgnoreCase))
-            searchPaths.Add(srcPath);
 
         var anyFolderFound = false;
         foreach (var searchPath in searchPaths)
@@ -428,8 +547,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     foreach (var ext in LoadExtensionsFromKox(koxFile))
                     {
-                        if (!LoadedExtensions.Any(e => e.Id == ext.Id))
-                            LoadedExtensions.Add(ext);
+                        AddOrReplaceLoadedExtension(ext);
                     }
                 }
                 catch (Exception ex)
@@ -446,8 +564,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     {
                         foreach (var ext in LoadExtensionsFromFolder(dir))
                         {
-                            if (!LoadedExtensions.Any(e => e.Id == ext.Id))
-                                LoadedExtensions.Add(ext);
+                            AddOrReplaceLoadedExtension(ext);
                         }
                     }
                 }
@@ -590,10 +707,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         foreach (var entry in MarketplaceExtensions)
         {
-            var localExt = LoadedExtensions.FirstOrDefault(ext =>
-                ext.Id.Equals(entry.Id, StringComparison.OrdinalIgnoreCase));
+            var localExt = GetPreferredLoadedExtension(entry.Id);
+            var isUpdateAvailable = localExt is not null && CompareExtensionVersions(entry.Version, localExt.Version) > 0;
 
-            entry.SetInstalledState(localExt is not null);
+            entry.SetInstalledState(localExt, isUpdateAvailable);
 
             // When installed, prefer the local icon from the .kox file over the remote IconUrl.
             if (localExt?.IconImage is not null)
@@ -601,40 +718,89 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void AddOrReplaceLoadedExtension(LoadedExtension extension)
+    {
+        var existingIndex = LoadedExtensions
+            .Select((item, index) => new { item, index })
+            .FirstOrDefault(x => x.item.Id.Equals(extension.Id, StringComparison.OrdinalIgnoreCase));
+
+        if (existingIndex is null)
+        {
+            LoadedExtensions.Add(extension);
+            return;
+        }
+
+        if (ShouldReplaceLoadedExtension(existingIndex.item, extension))
+            LoadedExtensions[existingIndex.index] = extension;
+    }
+
+    private LoadedExtension? GetPreferredLoadedExtension(string extensionId) =>
+        LoadedExtensions
+            .Where(ext => ext.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(GetLoadedExtensionSourcePriority)
+            .ThenByDescending(ext => ParseVersionNumbers(ext.Version), VersionNumberSequenceComparer.Instance)
+            .FirstOrDefault();
+
+    private bool ShouldReplaceLoadedExtension(LoadedExtension current, LoadedExtension candidate)
+    {
+        var currentPriority = GetLoadedExtensionSourcePriority(current);
+        var candidatePriority = GetLoadedExtensionSourcePriority(candidate);
+        if (candidatePriority != currentPriority)
+            return candidatePriority > currentPriority;
+
+        return CompareExtensionVersions(candidate.Version, current.Version) > 0;
+    }
+
+    private int GetLoadedExtensionSourcePriority(LoadedExtension extension)
+    {
+        if (!string.IsNullOrWhiteSpace(extension.SourcePath))
+        {
+            var sourcePath = Path.GetFullPath(extension.SourcePath);
+            if (IsPathInsideDirectory(sourcePath, ExtensionsFolderPath))
+                return 2;
+
+            if (IsPathInsideDirectory(sourcePath, ProjectExtensionsFolderPath))
+                return 1;
+        }
+
+        return 0;
+    }
+
     private async Task InstallMarketplaceExtensionAsync(MarketplaceExtension marketplaceExtension)
     {
-        if (marketplaceExtension.IsInstalling || marketplaceExtension.IsInstalled)
+        if (marketplaceExtension.IsInstalling || (marketplaceExtension.IsInstalled && !marketplaceExtension.IsUpdateAvailable))
             return;
 
         marketplaceExtension.IsInstalling = true;
-        marketplaceExtension.InstallButtonText = "Installing...";
-        ExtensionsStatusText = $"Installing {marketplaceExtension.Name}...";
+        var action = marketplaceExtension.IsUpdateAvailable ? "Updating" : "Installing";
+        marketplaceExtension.InstallButtonText = $"{action}...";
+        ExtensionsStatusText = $"{action} {marketplaceExtension.Name}...";
 
         try
         {
             EnsureExtensionsFolder();
-
-            var fileName = string.IsNullOrWhiteSpace(marketplaceExtension.FileName)
-                ? Path.GetFileName(new Uri(marketplaceExtension.DownloadUrl).AbsolutePath)
-                : marketplaceExtension.FileName;
-
-            var outputPath = Path.Combine(ExtensionsFolderPath, fileName);
+            var wasUpdate = marketplaceExtension.IsUpdateAvailable;
+            var installedExtension = GetPreferredLoadedExtension(marketplaceExtension.Id);
+            var outputPath = ResolveExtensionInstallPath(marketplaceExtension, installedExtension);
             var bytes = await MarketplaceHttpClient.GetByteArrayAsync(marketplaceExtension.DownloadUrl);
+            DeleteInstalledExtensionSources(marketplaceExtension.Id, outputPath);
             await File.WriteAllBytesAsync(outputPath, bytes);
+            NormalizeKoxManifestVersion(outputPath);
 
             await RefreshExtensionsDataAsync();
-            ExtensionsStatusText = $"{marketplaceExtension.Name} installed.";
+            ExtensionsStatusText = $"{marketplaceExtension.Name} {(wasUpdate ? "updated" : "installed")}.";
         }
         catch (Exception ex)
         {
-            marketplaceExtension.SetInstalledState(false);
+            marketplaceExtension.SetInstalledState(
+                GetPreferredLoadedExtension(marketplaceExtension.Id),
+                marketplaceExtension.IsUpdateAvailable);
             ExtensionsStatusText = $"Failed to install {marketplaceExtension.Name}: {ex.Message}";
         }
         finally
         {
             marketplaceExtension.IsInstalling = false;
-            if (!marketplaceExtension.IsInstalled)
-                marketplaceExtension.InstallButtonText = "Install";
+            SyncMarketplaceInstallStates();
         }
     }
 
@@ -684,6 +850,224 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             || string.Equals(normalizedPath, normalizedDirectory, StringComparison.OrdinalIgnoreCase);
     }
 
+    private IEnumerable<string> GetExtensionSearchPaths()
+    {
+        yield return ExtensionsFolderPath;
+
+        // Also search the project source tree when running from the build output directory
+        var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
+        var srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions"));
+        if (!string.Equals(srcPath, ExtensionsFolderPath, StringComparison.OrdinalIgnoreCase))
+            yield return srcPath;
+    }
+
+    private IEnumerable<(string Path, bool IsDirectory)> EnumerateInstalledExtensionSources(string extensionId)
+    {
+        foreach (var searchPath in GetExtensionSearchPaths())
+        {
+            if (!Directory.Exists(searchPath))
+                continue;
+
+            foreach (var koxFile in Directory.GetFiles(searchPath, "*.kox"))
+            {
+                if (ExtensionSourceMatchesId(koxFile, extensionId, isDirectory: false))
+                    yield return (koxFile, false);
+            }
+
+            foreach (var dir in Directory.GetDirectories(searchPath))
+            {
+                if (ExtensionSourceMatchesId(dir, extensionId, isDirectory: true))
+                    yield return (dir, true);
+            }
+        }
+    }
+
+    private void DeleteInstalledExtensionSources(string extensionId, string? pathToKeep = null)
+    {
+        foreach (var source in EnumerateInstalledExtensionSources(extensionId))
+        {
+            var resolvedPath = Path.GetFullPath(source.Path);
+            if (!string.IsNullOrWhiteSpace(pathToKeep) &&
+                string.Equals(resolvedPath, Path.GetFullPath(pathToKeep), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!IsPathInsideDirectory(resolvedPath, ExtensionsFolderPath) &&
+                !IsPathInsideDirectory(resolvedPath, ProjectExtensionsFolderPath))
+            {
+                continue;
+            }
+
+            if (source.IsDirectory)
+            {
+                if (Directory.Exists(resolvedPath))
+                    Directory.Delete(resolvedPath, recursive: true);
+            }
+            else
+            {
+                if (File.Exists(resolvedPath))
+                    File.Delete(resolvedPath);
+            }
+        }
+    }
+
+    private string ResolveExtensionInstallPath(MarketplaceExtension marketplaceExtension, LoadedExtension? installedExtension)
+    {
+        if (installedExtension is not null &&
+            !installedExtension.IsDirectorySource &&
+            !string.IsNullOrWhiteSpace(installedExtension.SourcePath))
+        {
+            var sourcePath = Path.GetFullPath(installedExtension.SourcePath);
+            if (IsPathInsideDirectory(sourcePath, ExtensionsFolderPath) ||
+                IsPathInsideDirectory(sourcePath, ProjectExtensionsFolderPath))
+            {
+                return sourcePath;
+            }
+        }
+
+        var fileName = string.IsNullOrWhiteSpace(marketplaceExtension.FileName)
+            ? Path.GetFileName(new Uri(marketplaceExtension.DownloadUrl).AbsolutePath)
+            : marketplaceExtension.FileName;
+
+        return Path.Combine(ExtensionsFolderPath, fileName);
+    }
+
+    private static bool ExtensionSourceMatchesId(string path, string extensionId, bool isDirectory)
+    {
+        try
+        {
+            var manifest = isDirectory
+                ? ReadManifestFromFolder(path)
+                : ReadManifestFromKox(path);
+
+            return manifest.TryGetProperty("id", out var id) &&
+                   string.Equals(id.GetString(), extensionId, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static JsonElement ReadManifestFromFolder(string folderPath)
+    {
+        using var manifestDoc = JsonDocument.Parse(File.ReadAllText(Path.Combine(folderPath, "manifest.json")));
+        return manifestDoc.RootElement.Clone();
+    }
+
+    private static JsonElement ReadManifestFromKox(string koxPath)
+    {
+        using var archive = ZipFile.OpenRead(koxPath);
+        var manifestEntry = archive.GetEntry("manifest.json")
+            ?? throw new InvalidDataException($"Missing manifest.json in '{koxPath}'.");
+        using var manifestStream = manifestEntry.Open();
+        using var manifestDoc = JsonDocument.Parse(manifestStream);
+        return manifestDoc.RootElement.Clone();
+    }
+
+    private static void NormalizeKoxManifestVersion(string koxPath)
+    {
+        try
+        {
+            var inferredVersion = ExtractVersionFromName(Path.GetFileName(koxPath));
+            if (string.IsNullOrWhiteSpace(inferredVersion) || !File.Exists(koxPath))
+                return;
+
+            using var archive = ZipFile.Open(koxPath, ZipArchiveMode.Update);
+            var manifestEntry = archive.GetEntry("manifest.json");
+            if (manifestEntry is null)
+                return;
+
+            JsonObject? manifestObject;
+            using (var manifestStream = manifestEntry.Open())
+            using (var reader = new StreamReader(manifestStream))
+            {
+                manifestObject = JsonNode.Parse(reader.ReadToEnd()) as JsonObject;
+            }
+
+            if (manifestObject is null)
+                return;
+
+            var manifestVersion = manifestObject["version"]?.GetValue<string>() ?? string.Empty;
+            if (CompareExtensionVersions(inferredVersion, manifestVersion) <= 0)
+                return;
+
+            manifestObject["version"] = inferredVersion;
+            manifestEntry.Delete();
+            var newManifestEntry = archive.CreateEntry("manifest.json");
+            using var outputStream = newManifestEntry.Open();
+            using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions { Indented = true });
+            manifestObject.WriteTo(writer);
+            writer.Flush();
+        }
+        catch
+        {
+            // If we cannot normalize the package metadata, fall back to reading it as-is.
+        }
+    }
+
+    private static int CompareExtensionVersions(string left, string right)
+    {
+        var leftParts = ParseVersionNumbers(left);
+        var rightParts = ParseVersionNumbers(right);
+        return VersionNumberSequenceComparer.Instance.Compare(leftParts, rightParts);
+    }
+
+    private static string GetBestKnownExtensionVersion(string manifestVersion, string sourcePath)
+    {
+        var inferredVersion = ExtractVersionFromName(Path.GetFileName(sourcePath));
+        return CompareExtensionVersions(inferredVersion, manifestVersion) > 0
+            ? inferredVersion
+            : manifestVersion;
+    }
+
+    private static string ExtractVersionFromName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return string.Empty;
+
+        var match = Regex.Match(name, @"(?i)(v\d+(?:\.\d+)+)");
+        return match.Success ? match.Groups[1].Value : string.Empty;
+    }
+
+    private static int[] ParseVersionNumbers(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+            return [0];
+
+        var matches = Regex.Matches(version, @"\d+");
+        if (matches.Count == 0)
+            return [0];
+
+        return matches
+            .Select(match => int.TryParse(match.Value, out var part) ? part : 0)
+            .ToArray();
+    }
+
+    private sealed class VersionNumberSequenceComparer : IComparer<int[]>
+    {
+        public static VersionNumberSequenceComparer Instance { get; } = new();
+
+        public int Compare(int[]? left, int[]? right)
+        {
+            left ??= [0];
+            right ??= [0];
+
+            var maxLength = Math.Max(left.Length, right.Length);
+            for (var i = 0; i < maxLength; i++)
+            {
+                var leftPart = i < left.Length ? left[i] : 0;
+                var rightPart = i < right.Length ? right[i] : 0;
+                var comparison = leftPart.CompareTo(rightPart);
+                if (comparison != 0)
+                    return comparison;
+            }
+
+            return 0;
+        }
+    }
+
     private IEnumerable<LoadedExtension> LoadExtensionsFromFolder(string folderPath)
     {
         var manifestPath = Path.Combine(folderPath, "manifest.json");
@@ -691,6 +1075,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         using var manifestDoc = JsonDocument.Parse(File.ReadAllText(manifestPath));
         var baseExt = ParseManifest(manifestDoc.RootElement);
+        baseExt = baseExt with { Version = GetBestKnownExtensionVersion(baseExt.Version, folderPath) };
         baseExt.SourcePath = folderPath;
         baseExt.IsDirectorySource = true;
 
@@ -795,6 +1180,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         using var manifestStream = manifestEntry.Open();
         using var manifestDoc = JsonDocument.Parse(manifestStream);
         var baseExt = ParseManifest(manifestDoc.RootElement);
+        baseExt = baseExt with { Version = GetBestKnownExtensionVersion(baseExt.Version, koxPath) };
         baseExt.SourcePath = koxPath;
         baseExt.IsDirectorySource = false;
 
@@ -938,6 +1324,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (EditorTextBox is null) return;
         EditorTextBox.SyntaxHighlighting = new KodoHighlightingDefinition(ext);
+    }
+
+    private void RefreshCurrentFileSyntaxHighlighting()
+    {
+        if (EditorTextBox is null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(_currentFilePath))
+        {
+            CurrentLanguageExtension = null;
+            EditorTextBox.SyntaxHighlighting = null;
+            return;
+        }
+
+        var langExt = GetLanguageExtension(_currentFilePath);
+        CurrentLanguageExtension = langExt;
+
+        if (langExt is null)
+            EditorTextBox.SyntaxHighlighting = null;
+        else
+            ApplySyntaxHighlighting(langExt);
     }
 
     // ── Properties ───────────────────────────────────────────────────────────
@@ -1530,6 +1937,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _currentFilePath = newPath;
             _hasUntitledDocument = false;
             ClearAutoSaveStatus();
+            RefreshCurrentFileSyntaxHighlighting();
         }
 
         try
@@ -1546,6 +1954,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await File.WriteAllTextAsync(_currentFilePath, EditorTextBox.Document.Text);
             _isDirty = false;
             AddRecentFile(_currentFilePath);
+            RefreshCurrentFileSyntaxHighlighting();
 
             if (IsAutoSaveEnabled && HasFileOpen)
             {
@@ -1891,10 +2300,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var caret  = EditorTextBox.TextArea.Caret;
         var doc    = EditorTextBox.Document;
         var offset = caret.Offset;
+        var selection = EditorTextBox.TextArea.Selection;
+
+        if (!selection.IsEmpty)
+        {
+            var startOffset = selection.SurroundingSegment.Offset;
+            var selectedText = selection.GetText();
+            doc.Replace(selection.SurroundingSegment, $"{ch}{selectedText}{closing}");
+            caret.Offset = startOffset + selectedText.Length + 2;
+            return;
+        }
 
         // For symmetric pairs, don't auto-close when the next char is alphanumeric
         // (avoids nuisance completions mid-word, e.g. typing " in  it's).
-        if (ch == '"' || ch == '\'')
+        if (ch == '"' || ch == '\'' || ch == '`')
         {
             if (offset < doc.TextLength)
             {
@@ -1903,9 +2322,61 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // Insert the closer without moving the caret — it stays between the pair.
+        // Insert the closer and explicitly restore the caret to the space between the pair.
         doc.Insert(offset, closing.ToString());
+        caret.Offset = offset;
     }
+
+    private void EditorTextArea_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || (e.KeyModifiers & KeyModifiers.Shift) == KeyModifiers.Shift)
+            return;
+
+        if (EditorTextBox?.Document is null)
+            return;
+
+        var textArea = EditorTextBox.TextArea;
+        var caret = textArea.Caret;
+        var doc = EditorTextBox.Document;
+        var offset = caret.Offset;
+        var line = doc.GetLineByOffset(offset);
+        var lineText = doc.GetText(line);
+        var caretColumnInLine = offset - line.Offset;
+        var textBeforeCaret = lineText[..Math.Min(caretColumnInLine, lineText.Length)];
+        var indent = GetLeadingWhitespace(textBeforeCaret);
+        var trimmedBeforeCaret = textBeforeCaret.TrimEnd();
+        var extraIndent = ShouldIncreaseIndentAfter(trimmedBeforeCaret) ? GetIndentUnit() : string.Empty;
+
+        var newLineText = Environment.NewLine + indent + extraIndent;
+        doc.Insert(offset, newLineText);
+        caret.Offset = offset + newLineText.Length;
+        e.Handled = true;
+    }
+
+    private static string GetLeadingWhitespace(string text)
+    {
+        var length = 0;
+        while (length < text.Length && char.IsWhiteSpace(text[length]) && text[length] != '\r' && text[length] != '\n')
+            length++;
+
+        return text[..length];
+    }
+
+    private static bool ShouldIncreaseIndentAfter(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        return text.EndsWith(":", StringComparison.Ordinal) ||
+               text.EndsWith("{", StringComparison.Ordinal) ||
+               text.EndsWith("[", StringComparison.Ordinal) ||
+               text.EndsWith("(", StringComparison.Ordinal) ||
+               text.EndsWith("=>", StringComparison.Ordinal) ||
+               text.EndsWith(" then", StringComparison.OrdinalIgnoreCase) ||
+               text.EndsWith(" do", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetIndentUnit() => "\t";
 
     private async void AutoSaveTimer_OnTick(object? sender, EventArgs e)
     {
@@ -1924,6 +2395,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _autoSaveTimer.Stop();
         _autoSaveStatusTimer.Stop();
+        _extensionsRefreshDebounceTimer.Stop();
+        DisposeExtensionFolderWatchers();
         DisposeDiscordPresence();
     }
 
