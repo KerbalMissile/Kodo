@@ -1,6 +1,6 @@
 # Kodo
 
-![Kodo Logo](https://github.com/KerbalMissile/Kodo/blob/main/kodo_logo.png)
+<img width="540" height="540" alt="KodoLogo" src="https://github.com/user-attachments/assets/e044cdac-5434-41d7-b08f-20897a1ba771" />
 
 **Description:**
 
