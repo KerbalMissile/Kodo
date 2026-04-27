@@ -57,4 +57,4 @@ To download, run, and edit Kodo's source code, follow these steps:
 
 Kodo is always welcome to any Issues or Pull Requests made by the community, we appreciate and encourage any help, feedback, or anything else.
 
-For further information please see [Contributing](CONTRIBUTING.md)
+For further information please see [Contributing](CONTRIBUTING.md).
