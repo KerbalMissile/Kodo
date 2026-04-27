@@ -16,6 +16,10 @@ https://discord.gg/cUQ6C88Z9C
 
 ---
 
+**Website:**
+https://kerbalmissile.github.io/Kodo-Website/
+---
+
 **Release Status:**
 Kodo is currently in a Beta release; expect bugs and unfinished features. We are slowly working upon it until it reaches a point where we can do a full release with many extensions, some compilers, and possibily even collaboration. If there are bugs, feel free to report them in the [Issues](https://github.com/KerbalMissile/Kodo/issues) section of the repository and we will fix them!
 
