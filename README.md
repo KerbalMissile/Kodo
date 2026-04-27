@@ -22,8 +22,8 @@ Kodo is currently in a Beta release; expect bugs and unfinished features. We are
 ---
 
 **Current Features:**
-- Extensions (`.kox` file extension)
-- Dark / Light mode
+- Extension Marketplace (`.kox` file extension).
+- Dark / Light mode with High Contrast themes
 - Folder support
 - File Read / Write support
 - File Save / Load support
@@ -32,13 +32,12 @@ Kodo is currently in a Beta release; expect bugs and unfinished features. We are
 - Autosave Functionality
 - Syntax Highlighting via `.kox` extensions (currently only C#, C++, C, and Python, but will be expanded in the future.)
 - Recently Edited Files Section
+- Automatically formatted brackets and indents
 
 **Planned Features:**
 - Multi-person file editing in real time, at the same time
 - Downloadable compilers
-- Extension Marketplace
 - Terminal integration
-- Auto add / type closing brackets, quotes, etc.
 
 ---
 
