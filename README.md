@@ -1,6 +1,15 @@
 # Kodo
 
 <img width="540" height="540" alt="KodoLogo" src="https://github.com/user-attachments/assets/e044cdac-5434-41d7-b08f-20897a1ba771" />
+<br>
+<img src="https://img.shields.io/github/downloads/KerbalMissile/Kodo/total">
+
+<img src="https://img.shields.io/github/commit-activity/t/KerbalMissile/Kodo">
+
+<img src="https://img.shields.io/github/v/tag/KerbalMissile/Kodo?label=latest%20version">
+
+
+---
 
 **Description:**
 
