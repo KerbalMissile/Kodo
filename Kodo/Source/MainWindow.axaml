@@ -113,8 +113,11 @@
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="10,12" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="44" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
         <Style Selector="Button.activity:pointerover">
@@ -158,8 +161,19 @@
                 Background="{Binding SidebarBrush}"
                 BorderBrush="{Binding SurfaceBorderBrush}"
                 BorderThickness="0,0,1,0">
-            <Grid RowDefinitions="Auto,*,Auto">
-                <StackPanel Margin="8,12,8,0" Spacing="4">
+            <DockPanel>
+                <!-- Settings pinned to bottom -->
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,8" Spacing="2" HorizontalAlignment="Center">
+                    <Button Classes="activity" Click="SettingsButton_OnClick" ToolTip.Tip="Settings">
+                        <TextBlock FontSize="18" Text="&#x2699;" />
+                    </Button>
+                </StackPanel>
+
+                <!-- Main buttons spread down from top -->
+                <StackPanel Margin="0,8,0,0" Spacing="8" HorizontalAlignment="Center">
+                    <Button Classes="activity" Click="HomeButton_OnClick" ToolTip.Tip="Home">
+                        <TextBlock FontSize="18" Text="&#x1F3E0;" />
+                    </Button>
                     <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor (Ctrl+Shift+E)">
                         <TextBlock FontSize="18" Text="&#x2318;" />
                     </Button>
@@ -169,7 +183,7 @@
                     <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File (Ctrl+O)">
                         <TextBlock FontSize="20" Text="&#x2009;&#x1F5CE;" />
                     </Button>
-                    <Panel>
+                    <Panel Width="44" Height="44">
                         <Button Classes="activity"
                                 Click="OpenFolderButton_OnClick"
                                 ToolTip.Tip="Open Folder"
@@ -183,7 +197,10 @@
                             <TextBlock FontSize="18" Text="&#x1F5C1;" />
                         </Button>
                     </Panel>
-                    <Button Classes="activity" Click="SaveButton_OnClick" ToolTip.Tip="Save File (Ctrl+S)">
+                    <Button Classes="activity"
+                            Click="SaveButton_OnClick"
+                            ToolTip.Tip="Save File (Ctrl+S)"
+                            IsVisible="{Binding CanShowSaveActions}">
                         <TextBlock FontSize="18" Text="&#x2009;&#x2B73;" />
                     </Button>
                     <Button Classes="activity" Click="ExtensionsButton_OnClick" ToolTip.Tip="Extensions">
@@ -195,13 +212,7 @@
                         </Grid>
                     </Button>
                 </StackPanel>
-
-                <StackPanel Grid.Row="2" Margin="8,0,8,12" Spacing="4">
-                    <Button Classes="activity" Click="SettingsButton_OnClick" ToolTip.Tip="Settings">
-                        <TextBlock FontSize="18" Text="&#x2699;" />
-                    </Button>
-                </StackPanel>
-            </Grid>
+            </DockPanel>
         </Border>
 
         <!-- Collapsible file explorer panel -->
@@ -228,7 +239,8 @@
                                    TextTrimming="CharacterEllipsis" />
                         <Button Grid.Column="1"
                                 Classes="activity"
-                                Padding="4,2"
+                                Width="28"
+                                Height="28"
                                 Click="CollapseExplorerButton_OnClick"
                                 ToolTip.Tip="Collapse Explorer">
                             <TextBlock FontSize="11" Text="&#x2715;" Foreground="{Binding MutedTextBrush}" />
@@ -316,10 +328,15 @@
 
                         <StackPanel Grid.Column="1"
                                     Orientation="Horizontal"
-                                    Spacing="8">
+                                    Spacing="12"
+                                    VerticalAlignment="Center">
+                            <TextBlock FontSize="12"
+                                       Foreground="{Binding MutedTextBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="v1.2.3-BETA" />
                             <Button Classes="chrome"
                                     Click="SaveButton_OnClick"
-                                    IsVisible="{Binding HasDocumentOpen}"
+                                    IsVisible="{Binding CanShowSaveActions}"
                                     Content="Save" />
                         </StackPanel>
                     </Grid>
@@ -327,7 +344,8 @@
 
                 <Grid Grid.Row="1"
                       Background="{Binding EditorBackgroundBrush}"
-                      IsVisible="{Binding HasDocumentOpen}">
+                      IsVisible="{Binding IsDocumentViewVisible}"
+                      IsEnabled="{Binding !IsHomePageVisible}">
                     <avaloniaEdit:TextEditor x:Name="EditorTextBox"
                                              Background="{Binding EditorBackgroundBrush}"
                                              Foreground="{Binding PrimaryTextBrush}"
@@ -337,12 +355,15 @@
                                              ShowLineNumbers="False"
                                              WordWrap="False"
                                              HorizontalScrollBarVisibility="Auto"
-                                             VerticalScrollBarVisibility="Auto" />
+                                             VerticalScrollBarVisibility="Auto"
+                                             IsVisible="{Binding IsDocumentViewVisible}" />
                 </Grid>
 
                 <Border Grid.Row="1"
                         Background="{Binding EditorBackgroundBrush}"
                         IsVisible="{Binding IsEmptyStateVisible}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
                     <Grid Margin="48">
                         <StackPanel Width="480"
                                     Spacing="14"
@@ -431,6 +452,7 @@
                             </Border>
                         </StackPanel>
                     </Grid>
+                    </ScrollViewer>
                 </Border>
 
                 <Border Grid.Row="2"
@@ -477,7 +499,10 @@
                     </Grid>
                 </Border>
 
-                <ScrollViewer Grid.Row="1" Padding="24">
+                <ScrollViewer Grid.Row="1"
+                              Padding="24"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="12" Margin="0,0,0,96">
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
                             <Panel>
@@ -671,7 +696,10 @@
                     </Grid>
                 </Border>
 
-                <Grid Grid.Row="1" Margin="24">
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                <Grid Margin="24">
                     <Border Background="{Binding CardBrush}"
                             BorderBrush="{Binding SurfaceBorderBrush}"
                             BorderThickness="1"
@@ -827,17 +855,152 @@
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
                                                Text="Kodo" />
-                                    <TextBlock FontSize="13"
-                                               Foreground="{Binding MutedTextBrush}"
-                                           Text="Version 1.2.0-BETA" />
+
                                 </StackPanel>
+                                <TextBlock FontSize="13"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           VerticalAlignment="Center"
+                                           Text="v1.2.3-BETA" />
                             </StackPanel>
 
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        Text="Built by KerbalMissile and SS-YYC." />
+
+                            <Border Height="1"
+                                    Background="{Binding SurfaceBorderBrush}" />
+
+                            <Border Background="{Binding WindowBackgroundBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="18">
+                                <StackPanel Spacing="14">
+                                    <Grid ColumnDefinitions="*,Auto"
+                                          ColumnSpacing="16">
+                                        <StackPanel Orientation="Horizontal"
+                                                    Spacing="14">
+                                            <Border Width="42"
+                                                    Height="42"
+                                                    CornerRadius="12"
+                                                    ClipToBounds="True"
+                                                    VerticalAlignment="Center">
+                                                <Image Source="/Assets/kodo-logo.png"
+                                                       Stretch="UniformToFill" />
+                                            </Border>
+                                            <StackPanel Spacing="2"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           Text="What's New" />
+                                                <TextBlock FontSize="13"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           Text="{Binding LatestReleaseDisplayName}" />
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <Button Grid.Column="1"
+                                                Classes="chrome"
+                                                Click="ToggleWhatsNewExpandedButton_OnClick"
+                                                MinWidth="164"
+                                                HorizontalContentAlignment="Center">
+                                            <StackPanel Orientation="Horizontal"
+                                                        Spacing="8"
+                                                        HorizontalAlignment="Center">
+                                                <TextBlock FontSize="14"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           Text="{Binding WhatsNewToggleGlyph}" />
+                                                <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                                           Text="{Binding WhatsNewToggleText}" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="{Binding LatestReleaseStatusText}" />
+
+                                    <Border IsVisible="{Binding IsWhatsNewExpanded}"
+                                            Background="{Binding CardBrush}"
+                                            BorderBrush="{Binding SurfaceBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="12"
+                                            Padding="16">
+                                        <StackPanel Spacing="12">
+                                            <Grid ColumnDefinitions="*,Auto"
+                                                  ColumnSpacing="16">
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock FontSize="22"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding PrimaryTextBrush}"
+                                                               Text="{Binding LatestReleaseDisplayName}" />
+                                                    <TextBlock FontSize="13"
+                                                               Foreground="{Binding MutedTextBrush}"
+                                                               Text="{Binding LatestReleaseTag}" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1"
+                                                            Orientation="Horizontal"
+                                                            Spacing="8"
+                                                            VerticalAlignment="Top">
+                                                    <Button Classes="chrome"
+                                                            Click="RefreshLatestReleaseButton_OnClick"
+                                                            IsEnabled="{Binding !IsRefreshingLatestRelease}"
+                                                            Content="{Binding RefreshLatestReleaseButtonText}" />
+                                                    <Button Classes="chrome"
+                                                            Click="OpenLatestReleaseButton_OnClick"
+                                                            Content="View on GitHub" />
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <TextBlock FontSize="16"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{Binding PrimaryTextBrush}"
+                                                       Text="Release Notes" />
+
+                                            <ScrollViewer MaxHeight="300"
+                                                          VerticalScrollBarVisibility="Auto">
+                                                <SelectableTextBlock Foreground="{Binding MutedTextBrush}"
+                                                                     TextWrapping="Wrap"
+                                                                     Text="{Binding LatestReleaseNotes}" />
+                                            </ScrollViewer>
+
+                                            <StackPanel Spacing="10"
+                                                        IsVisible="{Binding HasLatestReleaseLinks}">
+                                                <TextBlock FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           Text="Links" />
+                                                <ItemsControl ItemsSource="{Binding LatestReleaseLinks}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Button Classes="chrome"
+                                                                    Tag="{Binding Url}"
+                                                                    Click="OpenReleaseLinkButton_OnClick"
+                                                                    HorizontalAlignment="Left"
+                                                                    HorizontalContentAlignment="Left"
+                                                                    Margin="0,0,0,6">
+                                                                <StackPanel Spacing="2">
+                                                                    <TextBlock Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                               Text="Full Changelog"
+                                                                               TextWrapping="Wrap" />
+                                                                    <TextBlock FontSize="12"
+                                                                               Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                               Text="{Binding Url}"
+                                                                               TextWrapping="Wrap" />
+                                                                </StackPanel>
+                                                            </Button>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </Border>
                 </Grid>
+                </ScrollViewer>
             </Grid>
         </Grid>
     </Grid>

@@ -186,6 +186,20 @@ public class ExtensionThemeDefinition
     public string PreviewBorder { get; init; } = "#4A4A4A";
 }
 
+public class ReleaseInfo
+{
+    public string Name { get; init; } = string.Empty;
+    public string Tag { get; init; } = string.Empty;
+    public string Notes { get; init; } = string.Empty;
+    public string Url { get; init; } = string.Empty;
+}
+
+public class ReleaseLinkItem
+{
+    public string Label { get; init; } = string.Empty;
+    public string Url { get; init; } = string.Empty;
+}
+
 public class MarketplaceExtension : INotifyPropertyChanged
 {
     private bool _isInstalling;
@@ -307,6 +321,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string AutoSaveSavedMessage = "Saved.";
     private const string AutoSaveSavingMessage = "Saving...";
     private const string DefaultMarketplaceIndexUrl = "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Indexs/ExtensionsIndex.json";
+    private const string LatestReleaseApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases/latest";
+    private const string ReleasesApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases";
+    private const string ReleasesPageUrl = "https://github.com/KerbalMissile/Kodo/releases";
 
     private string? _currentFilePath;
     private string? _currentFolderPath;
@@ -322,8 +339,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isDiscordRichPresenceEnabled;
     private bool _hasUntitledDocument;
     private bool _isRefreshingExtensions;
+    private bool _isRefreshingLatestRelease;
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
+    private bool _isWhatsNewPageVisible;
+    private bool _isWhatsNewExpanded;
+    private bool _isHomePageVisible;
     private bool _isFileExplorerVisible;
     private bool _isMarketplaceTabSelected;
     private bool _suppressDirtyTracking;
@@ -333,6 +354,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _lastDiscordPresenceDetails = string.Empty;
     private string _lastDiscordPresenceState = string.Empty;
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
+    private string _latestReleaseStatusText = "Loading latest release...";
+    private ReleaseInfo? _latestRelease;
     private LoadedExtension? _currentLanguageExtension;
     private FileSystemWatcher? _extensionsFolderWatcher;
     private FileSystemWatcher? _projectExtensionsFolderWatcher;
@@ -410,10 +433,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _editorStateRefreshTimer.Tick += EditorStateRefreshTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         DataContext = this;
+        IsHomePageVisible = true;
         ApplyTheme(_requestedThemeName);
         EnsureExtensionsFolder();
         SetupExtensionFolderWatchers();
         _ = RefreshExtensionsDataAsync();
+        _ = RefreshLatestReleaseAsync();
         UpdateDiscordRichPresenceLifecycle();
         Closed += MainWindow_OnClosed;
         RefreshState();
@@ -708,6 +733,113 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             });
 
         await Task.WhenAll(tasks);
+    }
+
+    private async Task RefreshLatestReleaseAsync()
+    {
+        if (_isRefreshingLatestRelease)
+            return;
+
+        _isRefreshingLatestRelease = true;
+        OnPropertyChanged(nameof(IsRefreshingLatestRelease));
+        OnPropertyChanged(nameof(RefreshLatestReleaseButtonText));
+        LatestReleaseStatusText = "Loading latest release...";
+
+        try
+        {
+            LatestRelease = await FetchLatestReleaseInfoAsync();
+
+            LatestReleaseStatusText = HasLatestRelease
+                ? $"Latest release: {LatestReleaseDisplayName}"
+                : "No releases found.";
+        }
+        catch (Exception ex)
+        {
+            LatestRelease = null;
+            LatestReleaseStatusText = $"Could not load release info: {ex.Message}";
+        }
+        finally
+        {
+            _isRefreshingLatestRelease = false;
+            OnPropertyChanged(nameof(IsRefreshingLatestRelease));
+            OnPropertyChanged(nameof(RefreshLatestReleaseButtonText));
+        }
+    }
+
+    private async Task<ReleaseInfo?> FetchLatestReleaseInfoAsync()
+    {
+        var latestRelease = await TryFetchLatestStableReleaseAsync();
+        if (latestRelease is not null)
+            return latestRelease;
+
+        return await TryFetchLatestListedReleaseAsync();
+    }
+
+    private async Task<ReleaseInfo?> TryFetchLatestStableReleaseAsync()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApiUrl);
+        request.Headers.Accept.ParseAdd("application/vnd.github+json");
+
+        using var response = await MarketplaceHttpClient.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        return ParseReleaseInfo(doc.RootElement);
+    }
+
+    private async Task<ReleaseInfo?> TryFetchLatestListedReleaseAsync()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, ReleasesApiUrl);
+        request.Headers.Accept.ParseAdd("application/vnd.github+json");
+
+        using var response = await MarketplaceHttpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var release in doc.RootElement.EnumerateArray())
+        {
+            var parsedRelease = ParseReleaseInfo(release);
+            if (parsedRelease is not null)
+                return parsedRelease;
+        }
+
+        return null;
+    }
+
+    private static ReleaseInfo? ParseReleaseInfo(JsonElement releaseElement)
+    {
+        if (releaseElement.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var name = releaseElement.TryGetProperty("name", out var nameElement)
+            ? nameElement.GetString() ?? string.Empty
+            : string.Empty;
+        var tag = releaseElement.TryGetProperty("tag_name", out var tagElement)
+            ? tagElement.GetString() ?? string.Empty
+            : string.Empty;
+        var notes = releaseElement.TryGetProperty("body", out var bodyElement)
+            ? bodyElement.GetString() ?? string.Empty
+            : string.Empty;
+        var url = releaseElement.TryGetProperty("html_url", out var urlElement)
+            ? urlElement.GetString() ?? ReleasesPageUrl
+            : ReleasesPageUrl;
+
+        if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(tag) && string.IsNullOrWhiteSpace(notes))
+            return null;
+
+        return new ReleaseInfo
+        {
+            Name = name,
+            Tag = tag,
+            Notes = notes,
+            Url = url
+        };
     }
 
     private IEnumerable<string> GetExtensionsIndexSearchPaths()
@@ -1378,10 +1510,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private LoadedExtension? GetLanguageExtension(string filePath)
     {
+        if (IsPlainTextFile(filePath))
+            return null;
+
         var fileExt = Path.GetExtension(filePath).ToLowerInvariant();
         return LoadedExtensions.FirstOrDefault(e =>
             e.Type == "language" &&
             e.Extensions.Any(ex => ex.Equals(fileExt, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static bool IsPlainTextFile(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return false;
+
+        var ext = Path.GetExtension(filePath);
+        return ext.Equals(".txt", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".text", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".log", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsPlainTextMode()
+    {
+        if (IsPlainTextFile(_currentFilePath))
+            return true;
+
+        return _currentFilePath is null && _hasUntitledDocument;
     }
 
     // ── Theme / editor appearance ────────────────────────────────────────────
@@ -1451,6 +1605,47 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsWhatsNewPageVisible
+    {
+        get => _isWhatsNewPageVisible;
+        set
+        {
+            if (_isWhatsNewPageVisible == value) return;
+            _isWhatsNewPageVisible = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsEditorPageVisible));
+        }
+    }
+
+    public bool IsHomePageVisible
+    {
+        get => _isHomePageVisible;
+        set
+        {
+            if (_isHomePageVisible == value) return;
+            _isHomePageVisible = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsEmptyStateVisible));
+            OnPropertyChanged(nameof(IsDocumentViewVisible));
+            OnPropertyChanged(nameof(FileSummaryText));
+            OnPropertyChanged(nameof(FilePathText));
+            OnPropertyChanged(nameof(CanShowSaveActions));
+        }
+    }
+
+    public bool IsWhatsNewExpanded
+    {
+        get => _isWhatsNewExpanded;
+        set
+        {
+            if (_isWhatsNewExpanded == value) return;
+            _isWhatsNewExpanded = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(WhatsNewToggleText));
+            OnPropertyChanged(nameof(WhatsNewToggleGlyph));
+        }
+    }
+
     public bool IsFileExplorerVisible
     {
         get => _isFileExplorerVisible;
@@ -1462,15 +1657,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public bool IsEditorPageVisible => !IsSettingsPageVisible && !IsExtensionsPageVisible;
+    public bool IsEditorPageVisible => !IsSettingsPageVisible && !IsExtensionsPageVisible && !IsWhatsNewPageVisible;
 
     public bool HasDocumentOpen => _currentFilePath is not null || _hasUntitledDocument;
+
+    public bool IsDocumentViewVisible => HasDocumentOpen && !IsHomePageVisible;
+
+    public bool CanShowSaveActions => IsDocumentViewVisible;
+
+    public string WhatsNewToggleText => IsWhatsNewExpanded ? "Hide release notes" : "Show release notes";
+
+    public string WhatsNewToggleGlyph => IsWhatsNewExpanded ? "▾" : "▸";
 
     public bool HasFileOpen => _currentFilePath is not null;
 
     public bool IsFolderOpen => _currentFolderPath is not null;
 
-    public bool IsEmptyStateVisible => !HasDocumentOpen;
+    public bool IsEmptyStateVisible => IsHomePageVisible || !HasDocumentOpen;
 
     public bool HasRecentFiles => RecentFiles.Count > 0;
 
@@ -1533,6 +1736,140 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string LatestReleaseStatusText
+    {
+        get => _latestReleaseStatusText;
+        private set
+        {
+            if (_latestReleaseStatusText == value) return;
+            _latestReleaseStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public ReleaseInfo? LatestRelease
+    {
+        get => _latestRelease;
+        private set
+        {
+            if (_latestRelease == value) return;
+            _latestRelease = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasLatestRelease));
+            OnPropertyChanged(nameof(LatestReleaseDisplayName));
+            OnPropertyChanged(nameof(LatestReleaseTag));
+            OnPropertyChanged(nameof(LatestReleaseNotes));
+            OnPropertyChanged(nameof(LatestReleasePreview));
+            OnPropertyChanged(nameof(LatestReleaseUrl));
+            OnPropertyChanged(nameof(LatestReleaseLinks));
+            OnPropertyChanged(nameof(HasLatestReleaseLinks));
+        }
+    }
+
+    public bool HasLatestRelease => LatestRelease is not null;
+
+    public string LatestReleaseDisplayName =>
+        !string.IsNullOrWhiteSpace(LatestRelease?.Name)
+            ? LatestRelease.Name
+            : !string.IsNullOrWhiteSpace(LatestRelease?.Tag)
+                ? LatestRelease.Tag
+                : "Latest Release";
+
+    public string LatestReleaseTag => LatestRelease?.Tag ?? string.Empty;
+
+    public string LatestReleaseNotes => string.IsNullOrWhiteSpace(LatestRelease?.Notes)
+        ? "No release notes available."
+        : ConvertMarkdownToDisplayText(LatestRelease.Notes);
+
+    public string LatestReleasePreview
+    {
+        get
+        {
+            var notes = LatestReleaseNotes.Replace("\r\n", "\n").Replace('\r', '\n');
+            var preview = notes.Length > 220 ? notes[..220].TrimEnd() + "..." : notes;
+            return preview;
+        }
+    }
+
+    public string LatestReleaseUrl => LatestRelease?.Url ?? ReleasesPageUrl;
+
+    public IReadOnlyList<ReleaseLinkItem> LatestReleaseLinks =>
+        ExtractReleaseLinks(LatestRelease?.Notes ?? string.Empty);
+
+    public bool HasLatestReleaseLinks => LatestReleaseLinks.Count > 0;
+
+    private static string ConvertMarkdownToDisplayText(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+            return string.Empty;
+
+        var text = markdown.Replace("\r\n", "\n").Replace('\r', '\n');
+
+        text = Regex.Replace(text, @"```(?:[\w#+.-]+)?\n?", string.Empty);
+        text = text.Replace("```", string.Empty);
+        text = Regex.Replace(text, @"`([^`]+)`", "$1");
+        text = Regex.Replace(text, @"!\[([^\]]*)\]\([^)]+\)", "$1");
+        text = Regex.Replace(text, @"\[(.*?)\]\((.*?)\)", "$1");
+        text = Regex.Replace(text, @"(?m)^\s{0,3}#{1,6}\s*", string.Empty);
+        text = Regex.Replace(text, @"(?m)^\s{0,3}>\s?", string.Empty);
+        text = Regex.Replace(text, @"(?m)^\s*[-*_]{3,}\s*$", string.Empty);
+        text = Regex.Replace(text, @"(?m)^\s*[-*+]\s+", "• ");
+        text = Regex.Replace(text, @"(?m)^\s*(\d+)\.\s+", "$1. ");
+        text = Regex.Replace(text, @"(?<!\*)\*\*(?!\*)(.*?)\*\*(?<!\*)", "$1");
+        text = Regex.Replace(text, @"(?<!\*)\*(?!\*)(.*?)\*(?<!\*)", "$1");
+        text = Regex.Replace(text, @"__(.*?)__", "$1");
+        text = Regex.Replace(text, @"(?<!_)_(?!_)(.*?)(?<!_)_(?!_)", "$1");
+        text = Regex.Replace(text, @"~~(.*?)~~", "$1");
+        text = Regex.Replace(text, @"(?m)^\s*\|", string.Empty);
+        text = Regex.Replace(text, @"(?m)\|\s*$", string.Empty);
+        text = Regex.Replace(text, @"\|", " | ");
+        text = Regex.Replace(text, @"\n{3,}", "\n\n");
+
+        return text.Trim();
+    }
+
+    private static IReadOnlyList<ReleaseLinkItem> ExtractReleaseLinks(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+            return [];
+
+        var links = new List<ReleaseLinkItem>();
+        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match match in Regex.Matches(markdown, @"\[(.*?)\]\((https?://[^\s)]+)\)"))
+        {
+            var label = match.Groups[1].Value.Trim();
+            var url = match.Groups[2].Value.Trim();
+            if (string.IsNullOrWhiteSpace(url) || !seenUrls.Add(url))
+                continue;
+
+            links.Add(new ReleaseLinkItem
+            {
+                Label = string.IsNullOrWhiteSpace(label) ? url : label,
+                Url = url
+            });
+        }
+
+        foreach (Match match in Regex.Matches(markdown, @"https?://[^\s)]+"))
+        {
+            var url = match.Value.Trim().TrimEnd('.', ',', ';');
+            if (string.IsNullOrWhiteSpace(url) || !seenUrls.Add(url))
+                continue;
+
+            links.Add(new ReleaseLinkItem
+            {
+                Label = url,
+                Url = url
+            });
+        }
+
+        return links;
+    }
+
+    public bool IsRefreshingLatestRelease => _isRefreshingLatestRelease;
+
+    public string RefreshLatestReleaseButtonText => IsRefreshingLatestRelease ? "Refreshing..." : "Refresh";
+
     public string RefreshExtensionsButtonText => IsRefreshingExtensions ? "Refreshing..." : "Refresh";
 
     public bool IsMarketplaceEmptyVisible => MarketplaceExtensions.Count == 0;
@@ -1580,11 +1917,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // Displays the file name and unsaved/autosave status in the top bar
-    public string FileSummaryText => HasDocumentOpen
+    public string FileSummaryText => IsHomePageVisible
+        ? "Home"
+        : HasDocumentOpen
         ? $"{GetDocumentDisplayName()}{GetDocumentStatusSuffix()}"
         : "Open A File";
 
-    public string FilePathText => HasFileOpen
+    public string FilePathText => IsHomePageVisible
+        ? "Welcome to Kodo!"
+        : HasFileOpen
         ? _currentFilePath!
         : HasDocumentOpen ? "Unsaved file"
         : IsFolderOpen ? $"📂 {_currentFolderPath}"
@@ -1657,6 +1998,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         Title = HasDocumentOpen ? $"{GetDocumentDisplayName()} - Kodo" : "Kodo";
         OnPropertyChanged(nameof(HasDocumentOpen));
+        OnPropertyChanged(nameof(IsDocumentViewVisible));
+        OnPropertyChanged(nameof(CanShowSaveActions));
         OnPropertyChanged(nameof(HasFileOpen));
         OnPropertyChanged(nameof(IsFolderOpen));
         OnPropertyChanged(nameof(IsEmptyStateVisible));
@@ -1987,6 +2330,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _currentFilePath = path;
         _hasUntitledDocument = false;
+        IsHomePageVisible = false;
         _autoSaveTimer.Stop();
         ClearAutoSaveStatus();
 
@@ -2009,6 +2353,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _currentFilePath = null;
         _hasUntitledDocument = true;
+        IsHomePageVisible = false;
         _autoSaveTimer.Stop();
         ClearAutoSaveStatus();
         CurrentLanguageExtension = null;
@@ -2260,7 +2605,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         IsSettingsPageVisible = false;
         IsExtensionsPageVisible = false;
+        IsWhatsNewPageVisible = false;
+        IsHomePageVisible = false;
         FocusEditor();
+    }
+
+    private void HomeButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        IsSettingsPageVisible = false;
+        IsExtensionsPageVisible = false;
+        IsWhatsNewPageVisible = false;
+        IsHomePageVisible = true;
+        RefreshState();
     }
 
     private async void OpenFileButton_OnClick(object? sender, RoutedEventArgs e) =>
@@ -2284,12 +2640,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void SettingsButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsExtensionsPageVisible = false;
+        IsWhatsNewPageVisible = false;
+        IsHomePageVisible = false;
         IsSettingsPageVisible = true;
     }
 
     private void ExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsSettingsPageVisible = false;
+        IsWhatsNewPageVisible = false;
+        IsHomePageVisible = false;
         IsExtensionsPageVisible = true;
         _ = RefreshExtensionsDataAsync();
     }
@@ -2309,16 +2669,64 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void OpenMarketplaceButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsSettingsPageVisible = false;
+        IsWhatsNewPageVisible = false;
+        IsHomePageVisible = false;
         IsMarketplaceTabSelected = true;
         IsExtensionsPageVisible = true;
         _ = RefreshExtensionsDataAsync();
+    }
+
+    private void OpenWhatsNewButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        IsExtensionsPageVisible = false;
+        IsHomePageVisible = false;
+        IsWhatsNewPageVisible = false;
+        IsSettingsPageVisible = true;
+        IsWhatsNewExpanded = true;
+        _ = RefreshLatestReleaseAsync();
     }
 
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsSettingsPageVisible = false;
         IsExtensionsPageVisible = false;
+        IsWhatsNewPageVisible = false;
+        IsHomePageVisible = false;
         FocusEditor();
+    }
+
+    private async void RefreshLatestReleaseButton_OnClick(object? sender, RoutedEventArgs e) =>
+        await RefreshLatestReleaseAsync();
+
+    private void ToggleWhatsNewExpandedButton_OnClick(object? sender, RoutedEventArgs e) =>
+        IsWhatsNewExpanded = !IsWhatsNewExpanded;
+
+    private void OpenLatestReleaseButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrl(LatestReleaseUrl);
+
+    private void OpenReleaseLinkButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string url })
+            OpenUrl(url);
+    }
+
+    private static void OpenUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore browser launch failures quietly; the release info remains visible in-app.
+        }
     }
 
     private void OpenExtensionsFolderButton_OnClick(object? sender, RoutedEventArgs e)
@@ -2411,6 +2819,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // instead of inserting a duplicate.
     private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
     {
+        if (IsPlainTextMode()) return;
         if (string.IsNullOrEmpty(e.Text)) return;
         var ch     = e.Text[0];
         var caret  = EditorTextBox.TextArea.Caret;
@@ -2440,6 +2849,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Used to insert the matching closing character right after the opener.
     private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
     {
+        if (IsPlainTextMode()) return;
         if (string.IsNullOrEmpty(e.Text)) return;
         var ch = e.Text[0];
 
@@ -2477,7 +2887,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void EditorTextArea_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter || (e.KeyModifiers & KeyModifiers.Shift) == KeyModifiers.Shift)
+        if (IsPlainTextMode())
             return;
 
         if (EditorTextBox?.Document is null)
@@ -2486,19 +2896,100 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var textArea = EditorTextBox.TextArea;
         var caret = textArea.Caret;
         var doc = EditorTextBox.Document;
+        switch (e.Key)
+        {
+            case Key.Enter when (e.KeyModifiers & KeyModifiers.Shift) != KeyModifiers.Shift:
+                HandleSmartEnter(doc, caret);
+                e.Handled = true;
+                return;
+
+            case Key.Tab when (e.KeyModifiers & KeyModifiers.Shift) == KeyModifiers.Shift:
+                HandleOutdent(doc, textArea.Selection, caret);
+                e.Handled = true;
+                return;
+
+            case Key.Tab:
+                HandleIndent(doc, textArea.Selection, caret);
+                e.Handled = true;
+                return;
+        }
+    }
+
+    private void HandleSmartEnter(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
+    {
         var offset = caret.Offset;
         var line = doc.GetLineByOffset(offset);
         var lineText = doc.GetText(line);
         var caretColumnInLine = offset - line.Offset;
         var textBeforeCaret = lineText[..Math.Min(caretColumnInLine, lineText.Length)];
+        var textAfterCaret = lineText[Math.Min(caretColumnInLine, lineText.Length)..];
         var indent = GetLeadingWhitespace(textBeforeCaret);
         var trimmedBeforeCaret = textBeforeCaret.TrimEnd();
         var extraIndent = ShouldIncreaseIndentAfter(trimmedBeforeCaret) ? GetIndentUnit() : string.Empty;
 
-        var newLineText = Environment.NewLine + indent + extraIndent;
+        if (ShouldInsertStructuredBlock(trimmedBeforeCaret, textAfterCaret))
+        {
+            var blockText = Environment.NewLine + indent + extraIndent + Environment.NewLine + indent;
+            doc.Insert(offset, blockText);
+            caret.Offset = offset + Environment.NewLine.Length + indent.Length + extraIndent.Length;
+            return;
+        }
+
+        var adjustedIndent = StartsWithClosingDelimiter(textAfterCaret)
+            ? RemoveOneIndentUnit(indent)
+            : indent;
+
+        var newLineText = Environment.NewLine + adjustedIndent + extraIndent;
         doc.Insert(offset, newLineText);
         caret.Offset = offset + newLineText.Length;
-        e.Handled = true;
+    }
+
+    private void HandleIndent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection selection, AvaloniaEdit.Editing.Caret caret)
+    {
+        if (selection.IsEmpty)
+        {
+            doc.Insert(caret.Offset, GetIndentUnit());
+            caret.Offset += GetIndentUnit().Length;
+            return;
+        }
+
+        var lines = GetSelectedLines(doc, selection.SurroundingSegment.Offset, selection.SurroundingSegment.EndOffset);
+        foreach (var line in lines.OrderByDescending(l => l.Offset))
+            doc.Insert(line.Offset, GetIndentUnit());
+
+        caret.Offset = selection.SurroundingSegment.EndOffset + (GetIndentUnit().Length * lines.Count);
+    }
+
+    private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection selection, AvaloniaEdit.Editing.Caret caret)
+    {
+        if (selection.IsEmpty)
+        {
+            var line = doc.GetLineByOffset(caret.Offset);
+            var lineText = doc.GetText(line);
+            var caretColumnInLine = caret.Offset - line.Offset;
+            var removable = GetOutdentLength(lineText, caretColumnInLine);
+            if (removable <= 0)
+                return;
+
+            doc.Remove(caret.Offset - removable, removable);
+            caret.Offset -= removable;
+            return;
+        }
+
+        var lines = GetSelectedLines(doc, selection.SurroundingSegment.Offset, selection.SurroundingSegment.EndOffset);
+        var removed = 0;
+        foreach (var line in lines.OrderByDescending(l => l.Offset))
+        {
+            var lineText = doc.GetText(line);
+            var removable = GetOutdentLength(lineText, lineText.Length);
+            if (removable <= 0)
+                continue;
+
+            doc.Remove(line.Offset, removable);
+            removed += removable;
+        }
+
+        caret.Offset = Math.Max(selection.SurroundingSegment.Offset, selection.SurroundingSegment.EndOffset - removed);
     }
 
     private static string GetLeadingWhitespace(string text)
@@ -2525,6 +3016,74 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private static string GetIndentUnit() => "\t";
+
+    private static bool ShouldInsertStructuredBlock(string textBeforeCaret, string textAfterCaret)
+    {
+        var trimmedAfter = textAfterCaret.TrimStart();
+        if (string.IsNullOrEmpty(trimmedAfter))
+            return false;
+
+        if (!BracketPairs.TryGetValue(textBeforeCaret.LastOrDefault(), out var closing))
+            return false;
+
+        return trimmedAfter.Length > 0 && trimmedAfter[0] == closing && closing is ')' or ']' or '}';
+    }
+
+    private static bool StartsWithClosingDelimiter(string text)
+    {
+        var trimmed = text.TrimStart();
+        return trimmed.StartsWith("}", StringComparison.Ordinal) ||
+               trimmed.StartsWith("]", StringComparison.Ordinal) ||
+               trimmed.StartsWith(")", StringComparison.Ordinal);
+    }
+
+    private static string RemoveOneIndentUnit(string indent)
+    {
+        var indentUnit = GetIndentUnit();
+        if (indent.EndsWith(indentUnit, StringComparison.Ordinal))
+            return indent[..^indentUnit.Length];
+
+        return indent.Length > 0 ? indent[..^1] : indent;
+    }
+
+    private static int GetOutdentLength(string lineText, int availableLength)
+    {
+        if (string.IsNullOrEmpty(lineText) || availableLength <= 0)
+            return 0;
+
+        var maxLength = Math.Min(availableLength, lineText.Length);
+        var indentUnit = GetIndentUnit();
+        if (maxLength >= indentUnit.Length &&
+            lineText[..indentUnit.Length].Equals(indentUnit, StringComparison.Ordinal))
+        {
+            return indentUnit.Length;
+        }
+
+        var whitespaceCount = 0;
+        while (whitespaceCount < maxLength && (lineText[whitespaceCount] == ' ' || lineText[whitespaceCount] == '\t'))
+            whitespaceCount++;
+
+        return whitespaceCount > 0 ? 1 : 0;
+    }
+
+    private static List<AvaloniaEdit.Document.DocumentLine> GetSelectedLines(
+        AvaloniaEdit.Document.TextDocument doc,
+        int startOffset,
+        int endOffset)
+    {
+        var lines = new List<AvaloniaEdit.Document.DocumentLine>();
+        var line = doc.GetLineByOffset(startOffset);
+        while (line is not null)
+        {
+            lines.Add(line);
+            if (line.EndOffset >= endOffset || line.NextLine is null)
+                break;
+
+            line = line.NextLine;
+        }
+
+        return lines;
+    }
 
     private async void AutoSaveTimer_OnTick(object? sender, EventArgs e)
     {
