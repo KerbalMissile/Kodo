@@ -1,4 +1,4 @@
-// Licensed under the Kodo Public License v1.0
+// Licensed under the Kodo Public License v1.1
 // April 24th, 2026 - SS-YYC - Fixed multi-theme support: theme.json arrays now create one LoadedExtension per theme entry
 // April 19th, 2026 - KerbalMissile - Changed "One file at a time" note to "No file open"
 // April 19th, 2026 - KerbalMissile - Added proper comments

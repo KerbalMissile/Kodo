@@ -333,7 +333,7 @@
                             <TextBlock FontSize="12"
                                        Foreground="{Binding MutedTextBrush}"
                                        VerticalAlignment="Center"
-                                       Text="v1.2.3-BETA" />
+                                       Text="v1.3.0-BETA" />
                             <Button Classes="chrome"
                                     Click="SaveButton_OnClick"
                                     IsVisible="{Binding CanShowSaveActions}"
@@ -860,7 +860,7 @@
                                 <TextBlock FontSize="13"
                                            Foreground="{Binding MutedTextBrush}"
                                            VerticalAlignment="Center"
-                                           Text="v1.2.3-BETA" />
+                                           Text="v1.3.0-BETA" />
                             </StackPanel>
 
                             <TextBlock Foreground="{Binding MutedTextBrush}"
