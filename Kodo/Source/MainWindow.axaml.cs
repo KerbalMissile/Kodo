@@ -8,6 +8,7 @@
 // April 20th, 2026 - SS-YYC - Added collapsible file explorer panel with folder tree and expand/collapse
 // April 20th, 2026 - KerbalMissile - Added extension support, re-added full screen by default, updated open / close folder icon
 using System;
+using System.Reflection;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -320,6 +321,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string DiscordClientIdEnvironmentVariable = "KODO_DISCORD_CLIENT_ID";
     private const string AutoSaveSavedMessage = "Saved.";
     private const string AutoSaveSavingMessage = "Saving...";
+    // Read from <InformationalVersion> in Kodo.csproj (e.g. "v1.3.0-BETA").
+    // To update the app version, change only that tag in the csproj.
+    private static readonly string CurrentAppVersion =
+        Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "v0.0.0";
     private const string DefaultMarketplaceIndexUrl = "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Indexs/ExtensionsIndex.json";
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases/latest";
     private const string ReleasesApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases";
@@ -1763,10 +1770,41 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(LatestReleaseUrl));
             OnPropertyChanged(nameof(LatestReleaseLinks));
             OnPropertyChanged(nameof(HasLatestReleaseLinks));
+            OnPropertyChanged(nameof(IsNewerVersionAvailable));
+            OnPropertyChanged(nameof(IsAppUpdateAvailable));
         }
     }
 
     public bool HasLatestRelease => LatestRelease is not null;
+
+    public string CurrentAppVersionDisplay => CurrentAppVersion;
+
+    private bool _updateBannerDismissed;
+
+    // Core version check — dismissal has no effect here.
+    // Used by the About section so the note persists after the banner is dismissed.
+    public bool IsNewerVersionAvailable
+    {
+        get
+        {
+            if (!HasLatestRelease || string.IsNullOrWhiteSpace(LatestReleaseTag)) return false;
+
+            static string StripPreRelease(string tag)
+            {
+                var t = tag.TrimStart('v');
+                var dash = t.IndexOf('-');
+                return dash >= 0 ? t[..dash] : t;
+            }
+
+            if (!Version.TryParse(StripPreRelease(CurrentAppVersion), out var current)) return false;
+            if (!Version.TryParse(StripPreRelease(LatestReleaseTag), out var latest)) return false;
+
+            return latest > current;
+        }
+    }
+
+    // Banner visibility — collapses when dismissed, reappears if the app restarts.
+    public bool IsAppUpdateAvailable => IsNewerVersionAvailable && !_updateBannerDismissed;
 
     public string LatestReleaseDisplayName =>
         !string.IsNullOrWhiteSpace(LatestRelease?.Name)
@@ -2700,6 +2738,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ToggleWhatsNewExpandedButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsWhatsNewExpanded = !IsWhatsNewExpanded;
+
+    private void DismissUpdateBanner_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _updateBannerDismissed = true;
+        OnPropertyChanged(nameof(IsAppUpdateAvailable));
+    }
+
+    private void OpenReleasesPageButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrl(ReleasesPageUrl);
 
     private void OpenLatestReleaseButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(LatestReleaseUrl);

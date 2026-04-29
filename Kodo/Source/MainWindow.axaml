@@ -118,6 +118,18 @@
             <Setter Property="Height" Value="44" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+
+        <!-- Prevent Avalonia's default template from shifting the ContentPresenter on hover -->
+        <Style Selector="Button.activity /template/ ContentPresenter">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="Button.activity:pointerover /template/ ContentPresenter">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Background" Value="{Binding $parent[Button].Tag, FallbackValue=Transparent}" />
         </Style>
 
         <Style Selector="Button.activity:pointerover">
@@ -165,46 +177,63 @@
                 <!-- Settings pinned to bottom -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,8" Spacing="2" HorizontalAlignment="Center">
                     <Button Classes="activity" Click="SettingsButton_OnClick" ToolTip.Tip="Settings">
-                        <TextBlock FontSize="18" Text="&#x2699;" />
+                        <TextBlock FontSize="18" Text="&#x2699;"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextAlignment="Center" />
                     </Button>
                 </StackPanel>
 
                 <!-- Main buttons spread down from top -->
                 <StackPanel Margin="0,8,0,0" Spacing="8" HorizontalAlignment="Center">
                     <Button Classes="activity" Click="HomeButton_OnClick" ToolTip.Tip="Home">
-                        <TextBlock FontSize="18" Text="&#x1F3E0;" />
+                        <TextBlock FontSize="18" Text="&#x1F3E0;"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextAlignment="Center" />
                     </Button>
                     <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor (Ctrl+Shift+E)">
-                        <TextBlock FontSize="18" Text="&#x2318;" />
+                        <TextBlock FontSize="18" Text="&#x2318;"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextAlignment="Center" />
                     </Button>
                     <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="New File (Ctrl+N)">
-                        <TextBlock FontSize="18" Text="&#xFF0B;" />
+                        <TextBlock FontSize="18" Text="&#xFF0B;"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextAlignment="Center" />
                     </Button>
                     <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File (Ctrl+O)">
-                        <TextBlock FontSize="20" Text="&#x2009;&#x1F5CE;" />
+                        <TextBlock FontSize="18" Text="&#x1F5CE;"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextAlignment="Center" />
                     </Button>
                     <Panel Width="44" Height="44">
                         <Button Classes="activity"
                                 Click="OpenFolderButton_OnClick"
                                 ToolTip.Tip="Open Folder"
                                 IsVisible="{Binding !IsFolderOpen}">
-                            <TextBlock FontSize="18" Text="&#x1F5C0;" />
+                            <TextBlock FontSize="18" Text="&#x1F5C0;"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       TextAlignment="Center" />
                         </Button>
                         <Button Classes="activity"
                                 Click="CloseFolderButton_OnClick"
                                 ToolTip.Tip="Close Folder"
                                 IsVisible="{Binding IsFolderOpen}">
-                            <TextBlock FontSize="18" Text="&#x1F5C1;" />
+                            <TextBlock FontSize="18" Text="&#x1F5C1;"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       TextAlignment="Center" />
                         </Button>
                     </Panel>
                     <Button Classes="activity"
                             Click="SaveButton_OnClick"
                             ToolTip.Tip="Save File (Ctrl+S)"
                             IsVisible="{Binding CanShowSaveActions}">
-                        <TextBlock FontSize="18" Text="&#x2009;&#x2B73;" />
+                        <TextBlock FontSize="18" Text="&#x2B73;"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextAlignment="Center" />
                     </Button>
                     <Button Classes="activity" Click="ExtensionsButton_OnClick" ToolTip.Tip="Extensions">
-                        <Grid Width="20" Height="20">
+                        <Grid Width="20" Height="20"
+                              HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Border BorderBrush="{Binding MutedTextBrush}" BorderThickness="1.5" Width="9" Height="9" HorizontalAlignment="Left" VerticalAlignment="Top" CornerRadius="2" />
                             <Border BorderBrush="{Binding MutedTextBrush}" BorderThickness="1.5" Width="9" Height="9" HorizontalAlignment="Right" VerticalAlignment="Top" CornerRadius="2" Margin="0,2,0,0" />
                             <Border BorderBrush="{Binding MutedTextBrush}" BorderThickness="1.5" Width="9" Height="9" HorizontalAlignment="Left" VerticalAlignment="Bottom" CornerRadius="2" />
@@ -298,7 +327,47 @@
         </Border>
 
         <!-- Main content area (editor + settings) -->
-        <Grid Grid.Column="2">
+        <Grid Grid.Column="2" RowDefinitions="Auto,*">
+
+            <!-- Update available banner -->
+            <Border Grid.Row="0"
+                    IsVisible="{Binding IsAppUpdateAvailable}"
+                    Background="{Binding AccentBrush}"
+                    Padding="18,8">
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="10"
+                                VerticalAlignment="Center">
+                        <TextBlock FontSize="13"
+                                   Foreground="White"
+                                   VerticalAlignment="Center"
+                                   Text="A new version of Kodo is available —" />
+                        <TextBlock FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="White"
+                                   VerticalAlignment="Center"
+                                   Text="{Binding LatestReleaseTag}" />
+                    </StackPanel>
+                    <Button Grid.Column="1"
+                            Classes="chrome"
+                            Click="OpenReleasesPageButton_OnClick"
+                            VerticalAlignment="Center"
+                            Margin="0,0,8,0"
+                            Content="Download Update" />
+                    <Button Grid.Column="2"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Foreground="White"
+                            Padding="6,4"
+                            VerticalAlignment="Center"
+                            Click="DismissUpdateBanner_OnClick"
+                            ToolTip.Tip="Dismiss">
+                        <TextBlock FontSize="13" Text="&#x2715;" />
+                    </Button>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1">
             <Grid IsVisible="{Binding IsEditorPageVisible}" RowDefinitions="Auto,*,Auto">
                 <Border Grid.Row="0"
                         Background="{Binding TopBarBrush}"
@@ -333,7 +402,7 @@
                             <TextBlock FontSize="12"
                                        Foreground="{Binding MutedTextBrush}"
                                        VerticalAlignment="Center"
-                                       Text="v1.3.0-BETA" />
+                                       Text="{Binding CurrentAppVersionDisplay}" />
                             <Button Classes="chrome"
                                     Click="SaveButton_OnClick"
                                     IsVisible="{Binding CanShowSaveActions}"
@@ -860,11 +929,35 @@
                                 <TextBlock FontSize="13"
                                            Foreground="{Binding MutedTextBrush}"
                                            VerticalAlignment="Center"
-                                           Text="v1.3.0-BETA" />
+                                           Text="{Binding CurrentAppVersionDisplay}" />
                             </StackPanel>
 
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        Text="Built by KerbalMissile and SS-YYC." />
+
+                            <Border IsVisible="{Binding IsNewerVersionAvailable}"
+                                    Background="{Binding AccentBrush}"
+                                    CornerRadius="8"
+                                    Padding="12,8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                        <TextBlock FontSize="13"
+                                                   Foreground="White"
+                                                   VerticalAlignment="Center"
+                                                   Text="Update available —" />
+                                        <TextBlock FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="White"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding LatestReleaseTag}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Classes="chrome"
+                                            Click="OpenReleasesPageButton_OnClick"
+                                            VerticalAlignment="Center"
+                                            Content="Download" />
+                                </Grid>
+                            </Border>
 
                             <Border Height="1"
                                     Background="{Binding SurfaceBorderBrush}" />
@@ -1001,6 +1094,7 @@
                     </Border>
                 </Grid>
                 </ScrollViewer>
+            </Grid>
             </Grid>
         </Grid>
     </Grid>
