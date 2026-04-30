@@ -1,4 +1,5 @@
 // Licensed under the Kodo Public License v1.1
+// April 29th, 2026 - SS-YYC - Marketplace now pulls exclusively from the web, removed local index file lookup
 // April 24th, 2026 - SS-YYC - Fixed multi-theme support: theme.json arrays now create one LoadedExtension per theme entry
 // April 19th, 2026 - KerbalMissile - Changed "One file at a time" note to "No file open"
 // April 19th, 2026 - KerbalMissile - Added proper comments
@@ -32,6 +33,7 @@ using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AvaloniaEdit.Highlighting;
 using DiscordAssetsModel = DiscordRPC.Assets;
 using DiscordRpcClient = DiscordRPC.DiscordRpcClient;
@@ -127,6 +129,10 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string CommentLine { get; set; } = "//";
     public string CommentBlockStart { get; set; } = "/*";
     public string CommentBlockEnd { get; set; } = "*/";
+    // When true, the open-ended single-quote span is replaced with a precise
+    // char-literal regex. Set via "disableSingleQuoteStrings": true in language.json.
+    // Use for languages like C# where ' appears in non-string contexts.
+    public bool DisableSingleQuoteStrings { get; set; }
     public Dictionary<string, string> ColorTokens { get; set; } = new();
     public IBrush AccentBrush { get; set; } = Brush.Parse("#8C00FF");
     public IBrush CardBrush { get; set; } = Brush.Parse("#252526");
@@ -321,6 +327,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string DiscordClientIdEnvironmentVariable = "KODO_DISCORD_CLIENT_ID";
     private const string AutoSaveSavedMessage = "Saved.";
     private const string AutoSaveSavingMessage = "Saving...";
+    private const string AutoSaveFailedMessagePrefix = "Save failed:";
     // Read from <InformationalVersion> in Kodo.csproj (e.g. "v1.3.0-BETA").
     // To update the app version, change only that tag in the csproj.
     private static readonly string CurrentAppVersion =
@@ -367,6 +374,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private FileSystemWatcher? _extensionsFolderWatcher;
     private FileSystemWatcher? _projectExtensionsFolderWatcher;
     private readonly DispatcherTimer _extensionsRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private static readonly TimeSpan ExtensionsRefreshCooldown = TimeSpan.FromSeconds(8);
+    private DateTime _lastExtensionsRefreshUtc = DateTime.MinValue;
     private event PropertyChangedEventHandler? ViewModelPropertyChanged;
     private static readonly HttpClient MarketplaceHttpClient = CreateHttpClient();
 
@@ -397,7 +406,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string ExtensionsFolderPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "Kodo", "Extensions");
-    private string IndexFolderPath => Path.Combine(Directory.GetCurrentDirectory(), "Indexs");
     private string ProjectExtensionsFolderPath =>
         Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Extensions"));
 
@@ -428,7 +436,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 		// Auto-completion: insert closing bracket/quote after opener, skip-over when typing a closer
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
         EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
-        EditorTextBox.AddHandler(InputElement.KeyDownEvent, EditorTextArea_OnKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(InputElement.KeyDownEvent, MainWindow_EditorKeyIntercept_OnKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
         var settings = LoadSettings();
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
@@ -544,9 +552,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await RefreshExtensionsDataAsync();
     }
 
-    private async Task RefreshExtensionsDataAsync()
+    private async Task RefreshExtensionsDataAsync(bool force = false)
     {
         if (_isRefreshingExtensions)
+            return;
+
+        if (!force && DateTime.UtcNow - _lastExtensionsRefreshUtc < ExtensionsRefreshCooldown)
             return;
 
         IsRefreshingExtensions = true;
@@ -567,6 +578,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ExtensionsStatusText = updateCount > 0
                 ? $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s). {updateCount} update(s) available."
                 : $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s).";
+            _lastExtensionsRefreshUtc = DateTime.UtcNow;
         }
         catch (Exception ex)
         {
@@ -643,21 +655,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task LoadMarketplaceExtensionsAsync()
     {
         var marketplaceExtensions = new List<MarketplaceExtension>();
-        var loadedAny = false;
         var extensionLoadErrors = new List<string>();
 
-        foreach (var indexPath in GetExtensionsIndexSearchPaths())
+        try
         {
-            if (!File.Exists(indexPath))
-                continue;
-
-            try
+            var remoteJson = await MarketplaceHttpClient.GetStringAsync(DefaultMarketplaceIndexUrl);
+            using var doc = JsonDocument.Parse(remoteJson);
+            if (doc.RootElement.TryGetProperty("extensions", out var extensionsElement) &&
+                extensionsElement.ValueKind == JsonValueKind.Array)
             {
-                using var doc = JsonDocument.Parse(File.ReadAllText(indexPath));
-                if (!doc.RootElement.TryGetProperty("extensions", out var extensionsElement) ||
-                    extensionsElement.ValueKind != JsonValueKind.Array)
-                    continue;
-
                 foreach (var item in extensionsElement.EnumerateArray())
                 {
                     var entry = ParseMarketplaceExtension(item);
@@ -666,42 +672,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
                     marketplaceExtensions.Add(entry);
                 }
-
-                loadedAny = marketplaceExtensions.Count > 0;
-                break;
-            }
-            catch (Exception ex)
-            {
-                extensionLoadErrors.Add($"Failed to load marketplace index '{Path.GetFileName(indexPath)}': {ex.Message}");
             }
         }
-
-        if (!loadedAny)
+        catch (Exception ex)
         {
-            try
-            {
-                var remoteJson = await MarketplaceHttpClient.GetStringAsync(DefaultMarketplaceIndexUrl);
-                using var doc = JsonDocument.Parse(remoteJson);
-                if (doc.RootElement.TryGetProperty("extensions", out var extensionsElement) &&
-                    extensionsElement.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in extensionsElement.EnumerateArray())
-                    {
-                        var entry = ParseMarketplaceExtension(item);
-                        if (string.IsNullOrWhiteSpace(entry.Id) || marketplaceExtensions.Any(e => e.Id == entry.Id))
-                            continue;
-
-                        marketplaceExtensions.Add(entry);
-                    }
-
-                    if (marketplaceExtensions.Count > 0)
-                        ExtensionsStatusText = $"Loaded marketplace from {DefaultMarketplaceIndexUrl}";
-                }
-            }
-            catch (Exception ex)
-            {
-                extensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
-            }
+            extensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
         }
 
         SyncObservableCollection(MarketplaceExtensions, marketplaceExtensions, ext => ext.Id);
@@ -849,14 +824,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
     }
 
-    private IEnumerable<string> GetExtensionsIndexSearchPaths()
-    {
-        yield return Path.Combine(IndexFolderPath, "ExtensionsIndex.json");
-
-        var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
-        yield return Path.GetFullPath(Path.Combine(projectRoot, "Indexs", "ExtensionsIndex.json"));
-    }
-
     private static MarketplaceExtension ParseMarketplaceExtension(JsonElement item) => new()
     {
         Id = item.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty,
@@ -888,6 +855,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (localExt?.IconImage is not null)
                 entry.IconImage = localExt.IconImage;
         }
+
+        OnPropertyChanged(nameof(AvailableExtensionUpdatesCount));
+        OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
+        OnPropertyChanged(nameof(ExtensionUpdatesBannerText));
     }
 
     private MarketplaceExtension? GetMarketplaceExtensionForInstalled(LoadedExtension extension) =>
@@ -1477,6 +1448,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (lang.TryGetProperty("colorTokens", out var ct))
             foreach (var prop in ct.EnumerateObject())
                 ext.ColorTokens[prop.Name] = prop.Value.GetString() ?? "#FFFFFF";
+
+        ext.DisableSingleQuoteStrings = lang.TryGetProperty("disableSingleQuoteStrings", out var dsqs)
+            && dsqs.ValueKind == JsonValueKind.True;
     }
 
     private static ExtensionThemeDefinition ParseTheme(JsonElement theme, LoadedExtension ext) => new()
@@ -1780,6 +1754,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string CurrentAppVersionDisplay => CurrentAppVersion;
 
     private bool _updateBannerDismissed;
+    private bool _extensionUpdateBannerDismissed;
 
     // Core version check — dismissal has no effect here.
     // Used by the About section so the note persists after the banner is dismissed.
@@ -1805,6 +1780,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Banner visibility — collapses when dismissed, reappears if the app restarts.
     public bool IsAppUpdateAvailable => IsNewerVersionAvailable && !_updateBannerDismissed;
+    public int AvailableExtensionUpdatesCount => MarketplaceExtensions.Count(e => e.IsUpdateAvailable);
+    public bool IsExtensionUpdateBannerVisible => AvailableExtensionUpdatesCount > 0 && !_extensionUpdateBannerDismissed;
+    public string ExtensionUpdatesBannerText =>
+        $"{AvailableExtensionUpdatesCount} extension{(AvailableExtensionUpdatesCount == 1 ? string.Empty : "s")} {(AvailableExtensionUpdatesCount == 1 ? "has" : "have")} updates available";
 
     public string LatestReleaseDisplayName =>
         !string.IsNullOrWhiteSpace(LatestRelease?.Name)
@@ -2077,8 +2056,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!string.IsNullOrWhiteSpace(_autoSaveStatusMessage))
                 return _autoSaveStatusMessage;
 
-            if (_isSaving || _isDirty || _autoSaveTimer.IsEnabled)
+            if (_isSaving)
                 return AutoSaveSavingMessage;
+
+            if (_isDirty || _autoSaveTimer.IsEnabled)
+                return "unsaved";
         }
 
         return _isDirty ? "unsaved" : null;
@@ -2419,7 +2401,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
 
         _currentFolderPath = path;
-        PopulateFileTree(path);
+        await PopulateFileTreeAsync(path);
         IsFileExplorerVisible = true;
         RefreshState();
     }
@@ -2481,36 +2463,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             RefreshState();
         }
+        catch (Exception ex)
+        {
+            _autoSaveStatusTimer.Stop();
+            _autoSaveStatusMessage = BuildAutoSaveFailureMessage(ex);
+            OnPropertyChanged(nameof(FileSummaryText));
+            OnPropertyChanged(nameof(AutoSaveStatusText));
+        }
         finally
         {
             _isSaving = false;
             OnPropertyChanged(nameof(FileSummaryText));
+            OnPropertyChanged(nameof(AutoSaveStatusText));
         }
     }
 
     // ── File tree ────────────────────────────────────────────────────────────
 
-    private void PopulateFileTree(string folderPath)
+    private async Task PopulateFileTreeAsync(string folderPath)
     {
+        var items = await CreateFileTreeItemsAsync(folderPath, depth: 0);
         FileTreeItems.Clear();
-        AppendDirectoryContents(folderPath, depth: 0);
+        foreach (var item in items)
+            FileTreeItems.Add(item);
     }
 
-    private void AppendDirectoryContents(string dirPath, int depth, int insertAfterIndex = -1)
+    private async Task AppendDirectoryContentsAsync(string dirPath, int depth, int insertAfterIndex = -1)
     {
-        var entries = GetSortedEntries(dirPath);
+        var items = await CreateFileTreeItemsAsync(dirPath, depth);
         var pos = insertAfterIndex + 1;
 
-        foreach (var entry in entries)
+        foreach (var item in items)
         {
-            var item = new FileTreeItem
-            {
-                Name        = Path.GetFileName(entry),
-                FullPath    = entry,
-                IsDirectory = Directory.Exists(entry),
-                Depth       = depth,
-            };
-
             if (insertAfterIndex < 0)
                 FileTreeItems.Add(item);
             else
@@ -2520,6 +2504,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
     }
+
+    private static Task<List<FileTreeItem>> CreateFileTreeItemsAsync(string dirPath, int depth) =>
+        Task.Run(() => GetSortedEntries(dirPath)
+            .Select(entry => new FileTreeItem
+            {
+                Name        = Path.GetFileName(entry),
+                FullPath    = entry,
+                IsDirectory = Directory.Exists(entry),
+                Depth       = depth,
+            })
+            .ToList());
 
     private static string[] GetSortedEntries(string dirPath)
     {
@@ -2540,7 +2535,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { return []; }
     }
 
-    private void ToggleDirectoryExpansion(FileTreeItem dirItem)
+    private async Task ToggleDirectoryExpansionAsync(FileTreeItem dirItem)
     {
         var index = FileTreeItems.IndexOf(dirItem);
         if (index < 0) return;
@@ -2558,7 +2553,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         else
         {
             dirItem.IsExpanded = true;
-            AppendDirectoryContents(dirItem.FullPath, dirItem.Depth + 1, insertAfterIndex: index);
+            await AppendDirectoryContentsAsync(dirItem.FullPath, dirItem.Depth + 1, insertAfterIndex: index);
         }
     }
 
@@ -2613,6 +2608,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _autoSaveStatusTimer.Stop();
         _autoSaveStatusMessage = null;
         OnPropertyChanged(nameof(FileSummaryText));
+        OnPropertyChanged(nameof(AutoSaveStatusText));
+    }
+
+    private static string BuildAutoSaveFailureMessage(Exception ex)
+    {
+        var message = string.IsNullOrWhiteSpace(ex.Message) ? "Unexpected error." : ex.Message.Trim();
+        return $"{AutoSaveFailedMessagePrefix} {message}";
     }
 
     // ── Editor helpers ───────────────────────────────────────────────────────
@@ -2693,7 +2695,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private async void RefreshExtensionsButton_OnClick(object? sender, RoutedEventArgs e) =>
-        await RefreshExtensionsDataAsync();
+        await RefreshExtensionsDataAsync(force: true);
 
     private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsMarketplaceTabSelected = false;
@@ -2711,7 +2713,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsHomePageVisible = false;
         IsMarketplaceTabSelected = true;
         IsExtensionsPageVisible = true;
-        _ = RefreshExtensionsDataAsync();
+        _ = RefreshExtensionsDataAsync(force: true);
     }
 
     private void OpenWhatsNewButton_OnClick(object? sender, RoutedEventArgs e)
@@ -2743,6 +2745,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _updateBannerDismissed = true;
         OnPropertyChanged(nameof(IsAppUpdateAvailable));
+    }
+
+    private void DismissExtensionUpdateBanner_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _extensionUpdateBannerDismissed = true;
+        OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
+    }
+
+    private void OpenMarketplaceFromBannerButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _extensionUpdateBannerDismissed = true;
+        OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
+        IsSettingsPageVisible = false;
+        IsWhatsNewPageVisible = false;
+        IsHomePageVisible = false;
+        IsMarketplaceTabSelected = true;
+        IsExtensionsPageVisible = true;
     }
 
     private void OpenReleasesPageButton_OnClick(object? sender, RoutedEventArgs e) =>
@@ -2805,7 +2824,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (sender is Button { Tag: FileTreeItem item })
         {
             if (item.IsDirectory)
-                ToggleDirectoryExpansion(item);
+                await ToggleDirectoryExpansionAsync(item);
             else
                 await OpenFileFromPathAsync(item.FullPath);
         }
@@ -2857,7 +2876,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_suppressDirtyTracking) return;
         ClearAutoSaveStatus();
         _isDirty = true;
-        RefreshState();
+        QueueRefreshState();
         RestartAutoSaveTimerIfNeeded();
     }
 
@@ -2932,9 +2951,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         caret.Offset = offset;
     }
 
-    private void EditorTextArea_OnKeyDown(object? sender, KeyEventArgs e)
+    private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (IsPlainTextMode())
+        if (!IsEditorKeyEvent(e))
             return;
 
         if (EditorTextBox?.Document is null)
@@ -2945,21 +2964,56 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var doc = EditorTextBox.Document;
         switch (e.Key)
         {
-            case Key.Enter when (e.KeyModifiers & KeyModifiers.Shift) != KeyModifiers.Shift:
+            case Key.Enter when !IsPlainTextMode() && (e.KeyModifiers & KeyModifiers.Shift) != KeyModifiers.Shift:
                 HandleSmartEnter(doc, caret);
                 e.Handled = true;
                 return;
 
-            case Key.Tab when (e.KeyModifiers & KeyModifiers.Shift) == KeyModifiers.Shift:
-                HandleOutdent(doc, textArea.Selection, caret);
+            case Key.Tab when e.KeyModifiers == KeyModifiers.Shift:
+                HandleTabKey(() => HandleOutdent(doc, textArea.Selection, caret), doc, caret);
                 e.Handled = true;
                 return;
 
-            case Key.Tab:
-                HandleIndent(doc, textArea.Selection, caret);
+            case Key.Tab when e.KeyModifiers == KeyModifiers.None:
+                HandleTabKey(() => HandleIndent(doc, textArea.Selection, caret), doc, caret);
                 e.Handled = true;
                 return;
         }
+    }
+
+    private bool IsEditorKeyEvent(KeyEventArgs e)
+    {
+        if (EditorTextBox is null || e.Source is not Visual visual)
+            return false;
+
+        if (ReferenceEquals(visual, EditorTextBox) || ReferenceEquals(visual, EditorTextBox.TextArea))
+            return true;
+
+        return visual.GetSelfAndVisualAncestors().Any(v =>
+            ReferenceEquals(v, EditorTextBox) || ReferenceEquals(v, EditorTextBox.TextArea));
+    }
+
+    private void HandleTabKey(Action tabAction, AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
+    {
+        try
+        {
+            tabAction();
+        }
+        catch
+        {
+            // Keep Tab editor-local even if AvaloniaEdit reports an invalid selection snapshot.
+            var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+            doc.Insert(safeOffset, GetIndentUnit());
+            SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
+        }
+    }
+
+    private static void SetCaretOffsetSafely(
+        AvaloniaEdit.Editing.Caret caret,
+        AvaloniaEdit.Document.TextDocument doc,
+        int desiredOffset)
+    {
+        caret.Offset = Math.Clamp(desiredOffset, 0, doc.TextLength);
     }
 
     private void HandleSmartEnter(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
@@ -2991,25 +3045,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         caret.Offset = offset + newLineText.Length;
     }
 
-    private void HandleIndent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection selection, AvaloniaEdit.Editing.Caret caret)
+    private void HandleIndent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
-        if (selection.IsEmpty)
+        if (selection is null || selection.IsEmpty)
         {
-            doc.Insert(caret.Offset, GetIndentUnit());
-            caret.Offset += GetIndentUnit().Length;
+            var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+            doc.Insert(safeOffset, GetIndentUnit());
+            SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
             return;
         }
 
-        var lines = GetSelectedLines(doc, selection.SurroundingSegment.Offset, selection.SurroundingSegment.EndOffset);
+        var segment = selection.SurroundingSegment;
+        if (segment is null)
+        {
+            var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+            doc.Insert(safeOffset, GetIndentUnit());
+            SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
+            return;
+        }
+
+        var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
         foreach (var line in lines.OrderByDescending(l => l.Offset))
             doc.Insert(line.Offset, GetIndentUnit());
 
-        caret.Offset = selection.SurroundingSegment.EndOffset + (GetIndentUnit().Length * lines.Count);
+        SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
     }
 
-    private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection selection, AvaloniaEdit.Editing.Caret caret)
+    private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
-        if (selection.IsEmpty)
+        if (selection is null || selection.IsEmpty)
         {
             var line = doc.GetLineByOffset(caret.Offset);
             var lineText = doc.GetText(line);
@@ -3019,11 +3083,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return;
 
             doc.Remove(caret.Offset - removable, removable);
-            caret.Offset -= removable;
+            SetCaretOffsetSafely(caret, doc, caret.Offset - removable);
             return;
         }
 
-        var lines = GetSelectedLines(doc, selection.SurroundingSegment.Offset, selection.SurroundingSegment.EndOffset);
+        var segment = selection.SurroundingSegment;
+        if (segment is null)
+            return;
+
+        var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
         var removed = 0;
         foreach (var line in lines.OrderByDescending(l => l.Offset))
         {
@@ -3036,7 +3104,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             removed += removable;
         }
 
-        caret.Offset = Math.Max(selection.SurroundingSegment.Offset, selection.SurroundingSegment.EndOffset - removed);
+        SetCaretOffsetSafely(caret, doc, Math.Max(segment.Offset, segment.EndOffset - removed));
     }
 
     private static string GetLeadingWhitespace(string text)
@@ -3118,6 +3186,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         int startOffset,
         int endOffset)
     {
+        if (endOffset > startOffset)
+            endOffset--;
+
         var lines = new List<AvaloniaEdit.Document.DocumentLine>();
         var line = doc.GetLineByOffset(startOffset);
         while (line is not null)
@@ -3136,7 +3207,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _autoSaveTimer.Stop();
         if (!IsAutoSaveEnabled || !HasFileOpen || !_isDirty) return;
-        await SaveAsync(allowPromptForPath: false);
+        try
+        {
+            await SaveAsync(allowPromptForPath: false);
+        }
+        catch (Exception ex)
+        {
+            _autoSaveStatusMessage = BuildAutoSaveFailureMessage(ex);
+            OnPropertyChanged(nameof(FileSummaryText));
+            OnPropertyChanged(nameof(AutoSaveStatusText));
+        }
     }
 
     private void AutoSaveStatusTimer_OnTick(object? sender, EventArgs e)
@@ -3267,27 +3347,39 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        // Double-quoted string  "..."
-        ruleSet.Spans.Add(new HighlightingSpan
+        // Line-bounded strings keep one unfinished quote from recoloring the rest
+        // of the document while the user is still typing.
+        ruleSet.Rules.Add(new HighlightingRule
         {
-            StartExpression        = new Regex("\"", RegexOptions.Compiled),
-            EndExpression          = new Regex("\"", RegexOptions.Compiled),
-            SpanColor              = stringColor,
-            SpanColorIncludesStart = true,
-            SpanColorIncludesEnd   = true,
-            RuleSet                = new HighlightingRuleSet()
+            Regex = new Regex("\"(?:\\\\.|[^\"\\\\\r\n])*\"", RegexOptions.Compiled),
+            Color = stringColor
         });
 
-        // Single-quoted char/string  '...'
-        ruleSet.Spans.Add(new HighlightingSpan
+        // Single-quoted strings / char literals.
+        // Languages that set "disableSingleQuoteStrings": true (e.g. C#) get a
+        // precise regex that only matches valid char literals: 'x', '\n', '\uXXXX'.
+        // This prevents the open-ended span from bleeding colour across multiple
+        // lines when single quotes appear in dictionaries, operator lists, etc.
+        if (ext.DisableSingleQuoteStrings)
         {
-            StartExpression        = new Regex("'", RegexOptions.Compiled),
-            EndExpression          = new Regex("'", RegexOptions.Compiled),
-            SpanColor              = stringColor,
-            SpanColorIncludesStart = true,
-            SpanColorIncludesEnd   = true,
-            RuleSet                = new HighlightingRuleSet()
-        });
+            var charLiteralColor = ColorFor(ext, "charLiteral", "#CE9178");
+            ruleSet.Rules.Add(new HighlightingRule
+            {
+                // Matches: 'x'  '\n'  '\\'  '\uXXXX'  '\UXXXXXXXX'  '\xXX'  '\0'
+                Regex = new Regex(
+                    @"'(?:\\(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|x[0-9A-Fa-f]{1,4}|[0-7]{1,3}|[abfnrtvs\\""'0])|[^\\'])'",
+                    RegexOptions.Compiled),
+                Color = charLiteralColor
+            });
+        }
+        else
+        {
+            ruleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex("'(?:\\\\.|[^'\\\\\r\n])*'", RegexOptions.Compiled),
+                Color = stringColor
+            });
+        }
 
         // Keywords — only match whole words so "string" != "substring"
         if (ext.Keywords.Length > 0)
