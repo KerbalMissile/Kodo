@@ -329,43 +329,72 @@
         <!-- Main content area (editor + settings) -->
         <Grid Grid.Column="2" RowDefinitions="Auto,*">
 
-            <!-- Update available banner -->
-            <Border Grid.Row="0"
-                    IsVisible="{Binding IsAppUpdateAvailable}"
-                    Background="{Binding AccentBrush}"
-                    Padding="18,8">
-                <Grid ColumnDefinitions="*,Auto,Auto">
-                    <StackPanel Orientation="Horizontal"
-                                Spacing="10"
-                                VerticalAlignment="Center">
+            <StackPanel Grid.Row="0" Spacing="1">
+                <!-- Update available banner -->
+                <Border IsVisible="{Binding IsAppUpdateAvailable}"
+                        Background="{Binding AccentBrush}"
+                        Padding="18,8">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="10"
+                                    VerticalAlignment="Center">
+                            <TextBlock FontSize="13"
+                                       Foreground="White"
+                                       VerticalAlignment="Center"
+                                       Text="A new version of Kodo is available —" />
+                            <TextBlock FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="White"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding LatestReleaseTag}" />
+                        </StackPanel>
+                        <Button Grid.Column="1"
+                                Classes="chrome"
+                                Click="OpenReleasesPageButton_OnClick"
+                                VerticalAlignment="Center"
+                                Margin="0,0,8,0"
+                                Content="Download Update" />
+                        <Button Grid.Column="2"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Foreground="White"
+                                Padding="6,4"
+                                VerticalAlignment="Center"
+                                Click="DismissUpdateBanner_OnClick"
+                                ToolTip.Tip="Dismiss">
+                            <TextBlock FontSize="13" Text="&#x2715;" />
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- Extension updates banner -->
+                <Border IsVisible="{Binding IsExtensionUpdateBannerVisible}"
+                        Background="{Binding AccentBrush}"
+                        Padding="18,8">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
                         <TextBlock FontSize="13"
                                    Foreground="White"
                                    VerticalAlignment="Center"
-                                   Text="A new version of Kodo is available —" />
-                        <TextBlock FontSize="13"
-                                   FontWeight="SemiBold"
-                                   Foreground="White"
-                                   VerticalAlignment="Center"
-                                   Text="{Binding LatestReleaseTag}" />
-                    </StackPanel>
-                    <Button Grid.Column="1"
-                            Classes="chrome"
-                            Click="OpenReleasesPageButton_OnClick"
-                            VerticalAlignment="Center"
-                            Margin="0,0,8,0"
-                            Content="Download Update" />
-                    <Button Grid.Column="2"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            Foreground="White"
-                            Padding="6,4"
-                            VerticalAlignment="Center"
-                            Click="DismissUpdateBanner_OnClick"
-                            ToolTip.Tip="Dismiss">
-                        <TextBlock FontSize="13" Text="&#x2715;" />
-                    </Button>
-                </Grid>
-            </Border>
+                                   Text="{Binding ExtensionUpdatesBannerText}" />
+                        <Button Grid.Column="1"
+                                Classes="chrome"
+                                Click="OpenMarketplaceFromBannerButton_OnClick"
+                                VerticalAlignment="Center"
+                                Margin="0,0,8,0"
+                                Content="Open Marketplace" />
+                        <Button Grid.Column="2"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Foreground="White"
+                                Padding="6,4"
+                                VerticalAlignment="Center"
+                                Click="DismissExtensionUpdateBanner_OnClick"
+                                ToolTip.Tip="Dismiss">
+                            <TextBlock FontSize="13" Text="&#x2715;" />
+                        </Button>
+                    </Grid>
+                </Border>
+            </StackPanel>
 
             <Grid Grid.Row="1">
             <Grid IsVisible="{Binding IsEditorPageVisible}" RowDefinitions="Auto,*,Auto">
@@ -421,6 +450,7 @@
                                              FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
                                              FontSize="15"
                                              Padding="20,18"
+                                             KeyboardNavigation.TabNavigation="None"
                                              ShowLineNumbers="False"
                                              WordWrap="False"
                                              HorizontalScrollBarVisibility="Auto"
@@ -645,15 +675,19 @@
                                                     <TextBlock HorizontalAlignment="Right"
                                                                Foreground="{Binding MutedTextBrush}"
                                                                Text="{Binding Version}" />
-                                                    <Button Classes="chrome"
-                                                            Tag="{Binding}"
-                                                            Click="UpdateInstalledExtensionButton_OnClick"
-                                                            Content="Update"
-                                                            IsVisible="{Binding IsUpdateAvailable}" />
-                                                    <Button Classes="uninstall"
-                                                            Tag="{Binding}"
-                                                            Click="UninstallExtensionButton_OnClick"
-                                                            Content="Uninstall" />
+                                                    <StackPanel Orientation="Horizontal"
+                                                                HorizontalAlignment="Right"
+                                                                Spacing="8">
+                                                        <Button Classes="chrome"
+                                                                Tag="{Binding}"
+                                                                Click="UpdateInstalledExtensionButton_OnClick"
+                                                                Content="Update"
+                                                                IsVisible="{Binding IsUpdateAvailable}" />
+                                                        <Button Classes="uninstall"
+                                                                Tag="{Binding}"
+                                                                Click="UninstallExtensionButton_OnClick"
+                                                                Content="Uninstall" />
+                                                    </StackPanel>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>

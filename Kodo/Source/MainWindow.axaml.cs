@@ -1,4 +1,7 @@
 // Licensed under the Kodo Public License v1.1
+// April 29th, 2026 - SS-YYC - Fixed marketplace icons always showing abbreviation boxes instead of index icons
+// April 29th, 2026 - SS-YYC - Fixed installed extensions not showing index icons in the Installed tab
+// April 29th, 2026 - SS-YYC - Fixed install/uninstall not refreshing due to cooldown, safe URI parsing in install path, HttpClient timeout, removed redundant binPath variable
 // April 29th, 2026 - SS-YYC - Marketplace now pulls exclusively from the web, removed local index file lookup
 // April 24th, 2026 - SS-YYC - Fixed multi-theme support: theme.json arrays now create one LoadedExtension per theme entry
 // April 19th, 2026 - KerbalMissile - Changed "One file at a time" note to "No file open"
@@ -170,6 +173,12 @@ public record class LoadedExtension : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PrimaryTextBrush)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SurfaceBorderBrush)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MutedTextBrush)));
+    }
+
+    public void NotifyIconChanged()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IconImage)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIcon)));
     }
 }
 
@@ -398,7 +407,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static HttpClient CreateHttpClient()
     {
-        var client = new HttpClient();
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Kodo/1.0 (https://github.com/KerbalMissile/Kodo)");
         return client;
     }
@@ -595,7 +604,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var loadedExtensions = new List<LoadedExtension>();
         var extensionLoadErrors = new List<string>();
         var searchPaths = GetExtensionSearchPaths().ToList();
-        var binPath = ExtensionsFolderPath;
 
         var anyFolderFound = false;
         foreach (var searchPath in searchPaths)
@@ -638,7 +646,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         if (!anyFolderFound)
-            extensionLoadErrors.Add($"Extensions folder not found. Expected: {binPath}");
+            extensionLoadErrors.Add($"Extensions folder not found. Expected: {ExtensionsFolderPath}");
 
         SyncObservableCollection(LoadedExtensions, loadedExtensions, ext => ext.Id);
         SyncObservableCollection(ExtensionLoadErrors, extensionLoadErrors, error => error);
@@ -689,13 +697,50 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(ExtensionLoadErrors));
         OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
         await FetchMarketplaceIconsAsync();
+        await FetchInstalledExtensionIconsAsync();
+    }
+
+    private async Task FetchInstalledExtensionIconsAsync()
+    {
+        // For each installed extension, look up its IconUrl from the marketplace index
+        // and fetch it so the Installed tab shows the same artwork as the Marketplace tab.
+        var tasks = LoadedExtensions
+            .Select(ext =>
+            {
+                var marketplaceEntry = MarketplaceExtensions.FirstOrDefault(m =>
+                    m.Id.Equals(ext.Id, StringComparison.OrdinalIgnoreCase));
+                return (ext, iconUrl: marketplaceEntry?.IconUrl ?? string.Empty);
+            })
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.iconUrl))
+            .Select(async pair =>
+            {
+                try
+                {
+                    var bytes = await MarketplaceHttpClient.GetByteArrayAsync(pair.iconUrl);
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            using var ms = new MemoryStream(bytes);
+                            pair.ext.IconImage = new Bitmap(ms);
+                            pair.ext.NotifyIconChanged();
+                        }
+                        catch { /* Bad image data — keep existing icon or abbreviation. */ }
+                    });
+                }
+                catch { /* Network failure — keep existing icon or abbreviation. */ }
+            });
+
+        await Task.WhenAll(tasks);
     }
 
     private async Task FetchMarketplaceIconsAsync()
     {
+        // Fetch the icon from IconUrl for every entry that has one.
+        // For installed extensions, the remote icon takes priority over the local
+        // .kox icon so the marketplace always shows the index-supplied artwork.
         var tasks = MarketplaceExtensions
-            // Skip installed extensions — their icon is already loaded from the local .kox file.
-            .Where(e => !string.IsNullOrWhiteSpace(e.IconUrl) && !e.IsInstalled)
+            .Where(e => !string.IsNullOrWhiteSpace(e.IconUrl))
             .Select(async entry =>
             {
                 try
@@ -711,7 +756,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         catch { /* Silently ignore bad image data — fallback to abbreviation. */ }
                     });
                 }
-                catch { /* Network failure — fallback to abbreviation. */ }
+                catch { /* Network failure — fallback to local icon or abbreviation. */ }
             });
 
         await Task.WhenAll(tasks);
@@ -975,7 +1020,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await File.WriteAllBytesAsync(outputPath, bytes);
             NormalizeKoxManifestVersion(outputPath);
 
-            await RefreshExtensionsDataAsync();
+            await RefreshExtensionsDataAsync(force: true);
             ExtensionsStatusText = $"{marketplaceExtension.Name} {(wasUpdate ? "updated" : "installed")}.";
         }
         catch (Exception ex)
@@ -1021,7 +1066,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     File.Delete(resolvedPath);
             }
 
-            await RefreshExtensionsDataAsync();
+            await RefreshExtensionsDataAsync(force: true);
             ExtensionsStatusText = $"{extension.Name} uninstalled.";
         }
         catch (Exception ex)
@@ -1115,10 +1160,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         var fileName = string.IsNullOrWhiteSpace(marketplaceExtension.FileName)
-            ? Path.GetFileName(new Uri(marketplaceExtension.DownloadUrl).AbsolutePath)
+            ? TryGetFileNameFromUrl(marketplaceExtension.DownloadUrl)
             : marketplaceExtension.FileName;
 
         return Path.Combine(ExtensionsFolderPath, fileName);
+    }
+
+    private static string TryGetFileNameFromUrl(string url)
+    {
+        try
+        {
+            return Path.GetFileName(new Uri(url).AbsolutePath);
+        }
+        catch
+        {
+            return "extension.kox";
+        }
     }
 
     private static bool ExtensionSourceMatchesId(string path, string extensionId, bool isDirectory)
