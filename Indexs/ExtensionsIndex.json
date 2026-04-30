@@ -90,13 +90,13 @@
     },
     {
       "id": "csproj-kodo-extension",
-      "version": "v1.0.0",
+      "version": "v1.0.1",
       "name": "C# Project Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for C# project files.",
-      "fileName": "CSPROJ-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/CSPROJ-Kodo-Extension-v1.0.0.kox",
+      "fileName": "CSPROJ-Kodo-Extension-v1.0.1.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/CSPROJ-Kodo-Extension-v1.0.1.kox",
       "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/csproj-icon.png"
     },
     {
