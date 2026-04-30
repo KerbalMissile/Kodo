@@ -2,35 +2,35 @@
   "extensions": [
     {
       "id": "csharp-kodo-extension",
-      "version": "v1.1.0",
+      "version": "v1.1.2",
       "name": "C# Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for C# files.",
-      "fileName": "C#-Kodo-Extension-v1.1.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.1.0.kox",
+      "fileName": "C#-Kodo-Extension-v1.1.2.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.1.2.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/C_Sharp_Logo_2023.svg/240px-C_Sharp_Logo_2023.svg.png"
     },
     {
       "id": "high-contrast-themes",
-      "version": "v1.1.1",
+      "version": "v1.1.2",
       "name": "High Contrast Themes",
       "type": "theme",
       "author": "Kodo Team",
       "description": "Adds a high contrast dark and light theme with a purple accent.",
-      "fileName": "High-Contrast-Themes-v1.1.1.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/High-Contrast-Themes-v1.1.1.kox",
+      "fileName": "High-Contrast-Themes-v1.1.2.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/High-Contrast-Themes-v1.1.2.kox",
       "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/high-contrast-icon.png"
     },
     {
       "id": "cpp-kodo-extension",
-      "version": "v1.0.0",
+      "version": "v1.0.1",
       "name": "C++ Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for C and C++ files.",
-      "fileName": "C++-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%2B%2B-Kodo-Extension-v1.0.0.kox",
+      "fileName": "C++-Kodo-Extension-v1.0.1.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%2B%2B-Kodo-Extension-v1.0.1.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/ISO_C%2B%2B_Logo.svg/213px-ISO_C%2B%2B_Logo.svg.png"
     },
     {
@@ -79,14 +79,102 @@
     },
     {
       "id": "HolyC-kodo-extension",
-      "version": "v1.0.0",
+      "version": "v1.0.1",
       "name": "HolyC Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for HolyC files.",
-      "fileName": "HolyC-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/HolyC-Kodo-Extension-v1.0.0.kox",
+      "fileName": "HolyC-Kodo-Extension-v1.0.1.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/HolyC-Kodo-Extension-v1.0.1.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/HolyC_Logo.svg/213px-HolyC_Logo.svg.png"
+    },
+    {
+      "id": "csproj-kodo-extension",
+      "version": "v1.0.0",
+      "name": "C# Project Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for C# project files.",
+      "fileName": "CSPROJ-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/CSPROJ-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/csproj-icon.png"
+    },
+    {
+      "id": "xaml-kodo-extension",
+      "version": "v1.0.0",
+      "name": "XAML Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for XAML and Avalonia XAML files.",
+      "fileName": "XAML-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/XAML-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/xaml-icon.png"
+    },
+    {
+      "id": "xml-kodo-extension",
+      "version": "v1.0.0",
+      "name": "XML Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for XML and related configuration files.",
+      "fileName": "XML-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/XML-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/xml-icon.png"
+    },
+    {
+      "id": "json-kodo-extension",
+      "version": "v1.0.0",
+      "name": "JSON Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for JSON and JSONC files.",
+      "fileName": "JSON-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JSON-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/json-icon.png"
+    },
+    {
+      "id": "yaml-kodo-extension",
+      "version": "v1.0.0",
+      "name": "YAML Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for YAML files.",
+      "fileName": "YAML-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/YAML-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/yaml-icon.png"
+    },
+    {
+      "id": "toml-kodo-extension",
+      "version": "v1.0.0",
+      "name": "TOML Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for TOML files.",
+      "fileName": "TOML-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/TOML-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/toml-icon.png"
+    },
+    {
+      "id": "markdown-kodo-extension",
+      "version": "v1.0.0",
+      "name": "Markdown Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for Markdown and reStructuredText files.",
+      "fileName": "Markdown-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Markdown-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/markdown-icon.png"
+    },
+    {
+      "id": "typescript-kodo-extension",
+      "version": "v1.0.0",
+      "name": "TypeScript Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for TypeScript files.",
+      "fileName": "TypeScript-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/TypeScript-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/typescript-icon.png"
     }
   ]
 }
