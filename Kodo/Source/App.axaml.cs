@@ -3,6 +3,9 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using System;
+using System.IO;
+using System.Threading.Tasks;
 
 namespace Kodo;
 
@@ -13,6 +16,8 @@ public partial class App : Application
 {
     public override void Initialize()
     {
+        AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += TaskScheduler_OnUnobservedTaskException;
         AvaloniaXamlLoader.Load(this);
     }
 
@@ -25,5 +30,36 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static void CurrentDomain_OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        if (e.ExceptionObject is Exception exception)
+            WriteCrashLog("AppDomain.UnhandledException", exception);
+    }
+
+    private static void TaskScheduler_OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        WriteCrashLog("TaskScheduler.UnobservedTaskException", e.Exception);
+        e.SetObserved();
+    }
+
+    private static void WriteCrashLog(string source, Exception exception)
+    {
+        try
+        {
+            var logDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Kodo");
+            Directory.CreateDirectory(logDirectory);
+            var logPath = Path.Combine(logDirectory, "crash.log");
+            var content =
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {source}{Environment.NewLine}{exception}{Environment.NewLine}{Environment.NewLine}";
+            File.AppendAllText(logPath, content);
+        }
+        catch
+        {
+            // Last-resort logging should never crash the app.
+        }
     }
 }
