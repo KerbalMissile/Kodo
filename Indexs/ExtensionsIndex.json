@@ -89,17 +89,6 @@
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/HolyC_Logo.svg/213px-HolyC_Logo.svg.png"
     },
     {
-      "id": "csproj-kodo-extension",
-      "version": "v1.0.1",
-      "name": "C# Project Language Support",
-      "type": "language",
-      "author": "Kodo Team",
-      "description": "Syntax highlighting for C# project files.",
-      "fileName": "CSPROJ-Kodo-Extension-v1.0.1.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/CSPROJ-Kodo-Extension-v1.0.1.kox",
-      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/csproj-icon.png"
-    },
-    {
       "id": "xaml-kodo-extension",
       "version": "v1.0.0",
       "name": "XAML Language Support",
