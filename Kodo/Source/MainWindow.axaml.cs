@@ -1324,7 +1324,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         baseExt.SourcePath = folderPath;
         baseExt.IsDirectorySource = true;
 
-        var languagePath = Path.Combine(folderPath, "language.json");
+        var languagePath = Path.Combine(folderPath, "language.json", "language2.json");
         if (File.Exists(languagePath))
         {
             using var langDoc = JsonDocument.Parse(File.ReadAllText(languagePath));
@@ -1435,6 +1435,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             using var langStream = languageEntry.Open();
             using var langDoc = JsonDocument.Parse(langStream);
             ParseLanguage(langDoc.RootElement, baseExt);
+        }
+
+        var language2Entry = archive.GetEntry("language2.json");
+        if (language2Entry is not null)
+        {
+            using var lang2Stream = language2Entry.Open();
+            using var lang2Doc = JsonDocument.Parse(lang2Stream);
+            ParseLanguage(lang2Doc.RootElement, baseExt);
         }
 
         var iconEntry = archive.GetEntry("icon.png");
