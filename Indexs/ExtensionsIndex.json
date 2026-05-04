@@ -2,13 +2,13 @@
   "extensions": [
     {
       "id": "csharp-kodo-extension",
-      "version": "v1.2.0",
+      "version": "v1.2.1",
       "name": "C# Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for C# files, including .csproj and most other .NET based languages.",
-      "fileName": "C#-Kodo-Extension-v1.2.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.2.0.kox",
+      "fileName": "C#-Kodo-Extension-v1.2.1.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.2.1.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/C_Sharp_Logo_2023.svg/240px-C_Sharp_Logo_2023.svg.png"
     },
     {
@@ -35,13 +35,13 @@
     },
     {
       "id": "python-kodo-extension",
-      "version": "v1.1.0",
+      "version": "v1.1.1",
       "name": "Python Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for Python files.",
-      "fileName": "Python-Kodo-Extension-v1.1.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Python-Kodo-Extension-v1.1.0.kox",
+      "fileName": "Python-Kodo-Extension-v1.1.1.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Python-Kodo-Extension-v1.1.1.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/240px-Python-logo-notext.svg.png"
     },
     {
@@ -68,13 +68,13 @@
     },
     {
       "id": "JavaScript-kodo-extension",
-      "version": "v1.1.0",
+      "version": "v1.1.1",
       "name": "JavaScript Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for JavaScript files.",
-      "fileName": "JavaScript-Kodo-Extension-v1.1.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JavaScript-Kodo-Extension-v1.1.0.kox",
+      "fileName": "JavaScript-Kodo-Extension-v1.1.1.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JavaScript-Kodo-Extension-v1.1.1.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/6/6a/JavaScript-logo.png"
     },
     {
@@ -101,13 +101,13 @@
     },
     {
       "id": "xml-kodo-extension",
-      "version": "v1.0.0",
+      "version": "v1.0.1",
       "name": "XML Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for XML and related configuration files.",
-      "fileName": "XML-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/XML-Kodo-Extension-v1.0.0.kox",
+      "fileName": "XML-Kodo-Extension-v1.0.1.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/XML-Kodo-Extension-v1.0.1.kox",
       "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/xml-icon.png"
     },
     {
@@ -156,13 +156,13 @@
     },
     {
       "id": "typescript-kodo-extension",
-      "version": "v1.0.0",
+      "version": "v1.0.1",
       "name": "TypeScript Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for TypeScript files.",
-      "fileName": "TypeScript-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/TypeScript-Kodo-Extension-v1.0.0.kox",
+      "fileName": "TypeScript-Kodo-Extension-v1.0.1.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/TypeScript-Kodo-Extension-v1.0.1.kox",
       "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/typescript-icon.png"
     }
   ]
