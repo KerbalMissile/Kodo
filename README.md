@@ -44,7 +44,7 @@ Kodo is currently in a Beta release; expect bugs and unfinished features. We are
 - New File Creation Support
 - Discord Rich Presence Support
 - Autosave Functionality
-- Syntax Highlighting via `.kox` extensions (currently only C#, C++, C, and Python, but will be expanded in the future.)
+- Syntax Highlighting via `.kox` extensions
 - Recently Edited Files Section
 - Automatically formatted brackets and indents
 
