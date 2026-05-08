@@ -113,13 +113,30 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="Width" Value="48" />
+            <Setter Property="Margin" Value="4,2" />
             <Setter Property="Height" Value="48" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="PART_Border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Name="PART_ContentPresenter"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
         </Style>
 
         <!-- Prevent Avalonia's default template from shifting the ContentPresenter on hover -->
@@ -130,23 +147,31 @@
         <Style Selector="Button.activity:pointerover /template/ ContentPresenter">
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
-            <Setter Property="Background" Value="{Binding $parent[Button].Tag, FallbackValue=Transparent}" />
+        </Style>
+
+        <Style Selector="Button.activity:pointerover /template/ Border#PART_Border">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
         </Style>
 
         <Style Selector="Button.activity:pointerover">
-            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
-            <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
 
-        <Style Selector="Button.activity:pressed">
+        <Style Selector="Button.activity:pressed /template/ Border#PART_Border">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
-            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+
+        <Style Selector="Button.activity:pressed">
             <Setter Property="Foreground" Value="White" />
         </Style>
 
         <Style Selector="Button.activity TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI Symbol,Segoe UI Emoji,Noto Sans Symbols,Apple Symbols,sans-serif" />
+        </Style>
+
+        <Style Selector="Button.activity">
+            <Setter Property="ToolTip.Placement" Value="RightEdgeAlignedTop" />
+            <Setter Property="ToolTip.HorizontalOffset" Value="8" />
         </Style>
 
         <Style Selector="Button.editortab">
@@ -256,6 +281,14 @@
             <Setter Property="AcceptsReturn" Value="True" />
             <Setter Property="AcceptsTab" Value="True" />
         </Style>
+
+        <!-- All tooltips size dynamically to their content, capped at 480px -->
+        <Style Selector="ToolTip">
+            <Setter Property="MaxWidth" Value="480" />
+        </Style>
+        <Style Selector="ToolTip TextBlock">
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
     </Window.Styles>
 
     <!-- Root: activity bar | file explorer panel | editor/content area -->
@@ -268,16 +301,16 @@
                 BorderThickness="0,0,1,0">
             <DockPanel>
                 <!-- Settings pinned to bottom -->
-                <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" Spacing="6" HorizontalAlignment="Center">
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" Spacing="0" HorizontalAlignment="Stretch">
                     <Button Classes="activity" Click="SettingsButton_OnClick" ToolTip.Tip="Settings (Ctrl+,)">
-                        <TextBlock FontSize="18" Text="&#x2699;"
+                        <TextBlock FontSize="16" Text="&#x2699;"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    TextAlignment="Center" />
                     </Button>
                 </StackPanel>
 
                 <!-- Main buttons spread down from top -->
-                <StackPanel Margin="0,10,0,0" Spacing="6" HorizontalAlignment="Center">
+                <StackPanel Margin="0,10,0,0" Spacing="0" HorizontalAlignment="Stretch">
                     <Button Classes="activity" Click="HomeButton_OnClick" ToolTip.Tip="Home (Ctrl+H)">
                         <TextBlock FontSize="18" Text="&#x2302;"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -305,24 +338,22 @@
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    TextAlignment="Center" />
                     </Button>
-                    <Panel Width="44" Height="44">
-                        <Button Classes="activity"
-                                Click="OpenFolderButton_OnClick"
-                                ToolTip.Tip="Open Folder (Ctrl+K)"
-                                IsVisible="{Binding !IsFolderOpen}">
-                            <TextBlock FontSize="18" Text="&#x25A1;"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       TextAlignment="Center" />
-                        </Button>
-                        <Button Classes="activity"
-                                Click="CloseFolderButton_OnClick"
-                                ToolTip.Tip="Close Folder (Ctrl+K)"
-                                IsVisible="{Binding IsFolderOpen}">
-                            <TextBlock FontSize="18" Text="&#x25A3;"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       TextAlignment="Center" />
-                        </Button>
-                    </Panel>
+                    <Button Classes="activity"
+                            Click="OpenFolderButton_OnClick"
+                            ToolTip.Tip="Open Folder (Ctrl+K)"
+                            IsVisible="{Binding !IsFolderOpen}">
+                        <TextBlock FontSize="18" Text="&#x25A1;"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextAlignment="Center" />
+                    </Button>
+                    <Button Classes="activity"
+                            Click="CloseFolderButton_OnClick"
+                            ToolTip.Tip="Close Folder (Ctrl+K)"
+                            IsVisible="{Binding IsFolderOpen}">
+                        <TextBlock FontSize="18" Text="&#x25A3;"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextAlignment="Center" />
+                    </Button>
                     <Button Classes="activity" Click="ExtensionsButton_OnClick" ToolTip.Tip="Extensions (Ctrl+E)">
                         <TextBlock FontSize="18" Text="&#x2692;"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -463,6 +494,16 @@
                                         Tag="{Binding}"
                                         Click="FileTreeItem_OnClick"
                                         Margin="0,1">
+                                    <ToolTip.Tip>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="12" />
+                                            <TextBlock Text="{Binding FullPath}"
+                                                       FontSize="11"
+                                                       Opacity="0.7" />
+                                        </StackPanel>
+                                    </ToolTip.Tip>
                                     <Button.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="New File"
@@ -840,30 +881,31 @@
                                     VerticalAlignment="Center">
 
                             <!-- Welcome Back header + version pill -->
-                            <Grid ColumnDefinitions="*,Auto" Margin="4,0,4,4">
-                                <StackPanel Spacing="2">
-                                    <TextBlock FontSize="13"
+                            <StackPanel Spacing="2" Margin="4,0,4,4">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <TextBlock Grid.Column="0"
+                                               FontSize="13"
                                                FontWeight="Medium"
                                                Foreground="{Binding AccentBrush}"
+                                               VerticalAlignment="Center"
                                                Text="KODO" />
-                                    <TextBlock FontSize="32"
-                                               FontWeight="Bold"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               Text="Welcome back." />
-                                </StackPanel>
-                                <!-- Version pill -->
-                                <Border Grid.Column="1"
-                                        Background="{Binding CardBrush}"
-                                        BorderBrush="{Binding SurfaceBorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="12"
-                                        Padding="10,5"
-                                        VerticalAlignment="Center">
-                                    <TextBlock FontSize="11"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               Text="{Binding CurrentAppVersionDisplay}" />
-                                </Border>
-                            </Grid>
+                                    <Border Grid.Column="2"
+                                            Background="{Binding CardBrush}"
+                                            BorderBrush="{Binding SurfaceBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="12"
+                                            Padding="10,3"
+                                            VerticalAlignment="Center">
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   Text="{Binding CurrentAppVersionDisplay}" />
+                                    </Border>
+                                </Grid>
+                                <TextBlock FontSize="32"
+                                           FontWeight="Bold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="{Binding WelcomeMessage}" />
+                            </StackPanel>
                             <Border Padding="26"
                                     Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
@@ -1183,6 +1225,16 @@
                                                 CornerRadius="12"
                                                 Padding="16"
                                                 Margin="0,0,0,8">
+                                            <ToolTip.Tip>
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               FontWeight="SemiBold"
+                                                               FontSize="12" />
+                                                    <TextBlock Text="{Binding SourcePath}"
+                                                               FontSize="11"
+                                                               Opacity="0.7" />
+                                                </StackPanel>
+                                            </ToolTip.Tip>
                                             <Grid ColumnDefinitions="Auto,*,Auto">
                                                 <!-- Icon: image if available, accent box with abbreviation otherwise -->
                                                 <Border Width="48" Height="48" CornerRadius="8" Background="{Binding AccentBrush}" Margin="0,0,16,0"
@@ -1372,7 +1424,8 @@
                                         Classes="chrome"
                                         Click="ThemeButton_OnClick"
                                         Tag="Dark"
-                                        Width="170">
+                                        Width="170"
+                                        ToolTip.Tip="Apply Dark theme">
                                     <StackPanel Spacing="8">
                                         <Panel>
                                             <Border Height="96"
@@ -1389,7 +1442,7 @@
                                         <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                                             <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Dark" />
                                             <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
-                                                       VerticalAlignment="Center" Text="● Active"
+                                                       VerticalAlignment="Center" Text="●"
                                                        IsVisible="{Binding IsDarkThemeActive}" />
                                         </StackPanel>
                                     </StackPanel>
@@ -1399,7 +1452,8 @@
                                         Classes="chrome"
                                         Click="ThemeButton_OnClick"
                                         Tag="Light"
-                                        Width="170">
+                                        Width="170"
+                                        ToolTip.Tip="Apply Light theme">
                                     <StackPanel Spacing="8">
                                         <Panel>
                                             <Border Height="96"
@@ -1416,7 +1470,7 @@
                                         <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                                             <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Light" />
                                             <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
-                                                       VerticalAlignment="Center" Text="● Active"
+                                                       VerticalAlignment="Center" Text="●"
                                                        IsVisible="{Binding IsLightThemeActive}" />
                                         </StackPanel>
                                     </StackPanel>
@@ -1432,7 +1486,7 @@
                                 <ItemsControl ItemsSource="{Binding ThemeExtensions}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
-                                            <WrapPanel Orientation="Horizontal" ItemWidth="170" ItemHeight="144" />
+                                            <StackPanel Orientation="Horizontal" Spacing="10" />
                                         </ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
@@ -1440,25 +1494,51 @@
                                             <Button Classes="chrome"
                                                     Click="ThemeButton_OnClick"
                                                     Tag="{Binding ThemeCardThemeId}"
-                                                    Width="170"
-                                                    Margin="0,0,10,0">
+                                                    Width="170">
+                                                <ToolTip.Tip>
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="{Binding ThemeCardDisplayName}"
+                                                                   FontWeight="SemiBold"
+                                                                   FontSize="12" />
+                                                        <TextBlock Text="{Binding SourcePath}"
+                                                                   FontSize="11"
+                                                                   Opacity="0.7" />
+                                                    </StackPanel>
+                                                </ToolTip.Tip>
                                                 <StackPanel Spacing="8">
-                                                    <Border Height="96"
-                                                            CornerRadius="12"
-                                                            Background="{Binding ThemeCardPreviewBackground}"
-                                                            BorderBrush="{Binding ThemeCardPreviewBorder}"
-                                                            BorderThickness="1">
-                                                        <Border Width="42"
-                                                                Height="10"
-                                                                Margin="12"
-                                                                HorizontalAlignment="Left"
-                                                                VerticalAlignment="Top"
-                                                                CornerRadius="999"
-                                                                Background="{Binding ThemeCardAccent}" />
-                                                    </Border>
-                                                    <TextBlock HorizontalAlignment="Center"
-                                                               Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                               Text="{Binding ThemeCardDisplayName}" />
+                                                    <Panel>
+                                                        <Border Height="96"
+                                                                CornerRadius="12"
+                                                                Background="{Binding ThemeCardPreviewBackground}"
+                                                                BorderBrush="{Binding ThemeCardPreviewBorder}"
+                                                                BorderThickness="1">
+                                                            <Border Width="42"
+                                                                    Height="10"
+                                                                    Margin="12"
+                                                                    HorizontalAlignment="Left"
+                                                                    VerticalAlignment="Top"
+                                                                    CornerRadius="999"
+                                                                    Background="{Binding ThemeCardAccent}" />
+                                                        </Border>
+                                                        <Border Height="96"
+                                                                CornerRadius="12"
+                                                                BorderThickness="2"
+                                                                BorderBrush="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                IsVisible="{Binding IsActiveTheme}" />
+                                                    </Panel>
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                                                        <TextBlock Grid.Column="0"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Text="{Binding ThemeCardDisplayName}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Grid.Column="1"
+                                                                   FontSize="11"
+                                                                   Foreground="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="●"
+                                                                   IsVisible="{Binding IsActiveTheme}" />
+                                                    </Grid>
                                                 </StackPanel>
                                             </Button>
                                         </DataTemplate>
@@ -1634,6 +1714,10 @@
                             </StackPanel>
 
                             <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                                <Border Width="3"
+                                        Height="48"
+                                        CornerRadius="2"
+                                        Background="{Binding AccentBrush}" />
                                 <Border Width="48"
                                         Height="48"
                                         CornerRadius="12"

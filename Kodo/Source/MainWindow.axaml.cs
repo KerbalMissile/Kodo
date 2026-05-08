@@ -193,6 +193,18 @@ public record class LoadedExtension : INotifyPropertyChanged
         }
     }
 
+    private bool _isActiveTheme;
+    public bool IsActiveTheme
+    {
+        get => _isActiveTheme;
+        set
+        {
+            if (_isActiveTheme == value) return;
+            _isActiveTheme = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsActiveTheme)));
+        }
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public void NotifyAllBrushesChanged()
@@ -2527,6 +2539,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(ThemeStatusText));
             OnPropertyChanged(nameof(IsDarkThemeActive));
             OnPropertyChanged(nameof(IsLightThemeActive));
+            foreach (var ext in ThemeExtensions)
+                ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, value, StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -2552,6 +2566,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         : "EXPLORER";
 
     public string ThemeStatusText => $"Current theme: {CurrentThemeName}";
+
+    private static string TimeOfDay()
+    {
+        int hour = DateTime.Now.Hour;
+        if (hour < 12) return "morning";
+        if (hour < 17) return "afternoon";
+        return "evening";
+    }
+
+    private static readonly string[] _welcomeMessages =
+    [
+        "Welcome back.",
+        "Good to see you.",
+        "Ready to code?",
+        "Let's build something!",
+        "What are we building today?",
+        "Back at it!",
+        "Let's get to work!",
+        $"Good {TimeOfDay()}.",
+        $"Good {TimeOfDay()}, ready to build?",
+        $"Good {TimeOfDay()}, let's get to it!",
+    ];
+
+    public static string WelcomeMessage { get; } =
+        _welcomeMessages[Random.Shared.Next(_welcomeMessages.Length)];
 
     public bool IsDarkThemeActive  => string.Equals(CurrentThemeName, "Dark",  StringComparison.OrdinalIgnoreCase);
     public bool IsLightThemeActive => string.Equals(CurrentThemeName, "Light", StringComparison.OrdinalIgnoreCase);
