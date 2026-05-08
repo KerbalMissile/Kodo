@@ -98,29 +98,40 @@ public class FileTreeItem : INotifyPropertyChanged
 			{
 			    ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "C#",
 			    ".axaml" or ".xaml" => "XM",
-			    ".xml" or ".html" or ".htm" => "<>",
-			    ".json" or ".yaml" or ".yml" or ".toml" => "{}",
-			    ".md" or ".txt" or ".rst" => "==",
-			    ".png" or ".jpg" or ".jpeg" or ".gif" or ".svg" or ".ico" => "[]",
+			    ".xml" or ".html" or ".htm" => "HTML",
+			    ".json" or ".yaml" or ".yml" or ".toml" => "JSON",
+			    ".md" or ".txt" or ".rst" => "MD",
+			    ".png" => "PNG",
+			    ".jpg" or ".jpeg" => "JPG",
+			    ".gif" => "GIF",
+			    ".svg" => "SVG",
+			    ".ico" => "ICO",
+			    ".webp" => "WBP",
+			    ".bmp" => "BMP",
 			    ".py" => "Py",
 			    ".js" or ".jsx" => "JS",
 			    ".ts" or ".tsx" => "TS",
 			    ".vue" or ".svelte" => "UI",
-			    ".css" or ".scss" or ".less" => "##",
+			    ".css" or ".scss" or ".less" => "CSS",
 			    ".sh" or ".bat" or ".ps1" => ">_",
-			    ".zip" or ".tar" or ".gz" or ".rar" => "[]",
-			    ".cpp" or ".c" or ".h" or ".hpp" => "C",
+			    ".zip" or ".tar" or ".gz" or ".rar" => "ZIP",
+			    ".cpp" or ".cc" or ".cxx" => "C++",
+			    ".c" => "C",
+			    ".h" or ".hpp" or ".hxx" => "C++",
 			    ".rs" => "Rs",
 			    ".go" => "Go",
 			    ".rb" => "Rb",
-			    ".java" or ".kt" or ".kts" => "Jv",
+			    ".java" => "JAVA",
+			    ".kt" or ".kts" => "Kt",
 			    ".swift" => "Sw",
-			    ".fs" or ".fsi" or ".fsx" => "Fs",
+			    ".fs" or ".fsi" or ".fsx" => "F#",
 			    ".sql" => "Db",
 			    ".lua" => "Lu",
 			    ".r" => "R",
 			    ".lock" => "Lk",
-				".csv" or ".tsv" => "::",
+				".csv" or ".tsv" => "CSV",
+				".nova" => "NOVA",
+				".kox" => "KOX",
 			    _ => "..",
 			};
     }
@@ -410,6 +421,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isWhatsNewExpanded;
     private bool _isHomePageVisible;
     private bool _isFileExplorerVisible;
+    private bool _isFileTreeExpanded;
     private bool _isStatusBarFilePathVisible = true;
     private bool _isWordWrapEnabled;
     private bool _isConfirmBeforeClosingUnsavedTabsEnabled = true;
@@ -554,8 +566,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
+        FileTreeItems.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ExplorerPanelWidth));
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
+        EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => QueueRefreshState();
 		// Auto-completion: insert closing bracket/quote after opener, skip-over when typing a closer
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
         EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
@@ -1970,6 +1984,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsDocumentViewVisible));
             OnPropertyChanged(nameof(FileSummaryText));
             OnPropertyChanged(nameof(FilePathText));
+            OnPropertyChanged(nameof(LanguageDisplayText));
             OnPropertyChanged(nameof(CanShowSaveActions));
         }
     }
@@ -1984,6 +1999,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(WhatsNewToggleText));
             OnPropertyChanged(nameof(WhatsNewToggleGlyph));
+        }
+    }
+
+    // Base width 240 + extra pixels per character beyond 2 in the longest icon label.
+    // 2-char labels ("Py","JS") → 240px; 3-char ("C++","F#") → 252px; 4-char ("Java") → 264px.
+    public double ExplorerPanelWidth
+    {
+        get
+        {
+            var maxLen = FileTreeItems
+                .Select(i => (i.Icon ?? string.Empty).Length)
+                .DefaultIfEmpty(2)
+                .Max();
+            return 240 + Math.Max(0, maxLen - 2) * 12;
         }
     }
 
@@ -2130,25 +2159,44 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _updateBannerDismissed;
     private bool _extensionUpdateBannerDismissed;
 
+    // Returns true if the current build is a -DEV build.
+    // DEV builds suppress all app update UI (but extension updating still works).
+    private static bool IsDevBuild =>
+        CurrentAppVersion.Contains("-DEV", StringComparison.OrdinalIgnoreCase);
+
+    // Priority: stable (no suffix) = 2, -BETA = 1, -DEV = 0
+    private static int VersionPriority(string tag)
+    {
+        if (tag.Contains("-DEV",  StringComparison.OrdinalIgnoreCase)) return 0;
+        if (tag.Contains("-BETA", StringComparison.OrdinalIgnoreCase)) return 1;
+        return 2;
+    }
+
+    private static string StripPreRelease(string tag)
+    {
+        var t = tag.TrimStart('v');
+        var dash = t.IndexOf('-');
+        return dash >= 0 ? t[..dash] : t;
+    }
+
     // Core version check — dismissal has no effect here.
-    // Used by the About section so the note persists after the banner is dismissed.
+    // -DEV builds always return false (updates suppressed entirely).
+    // Priority: stable > beta > dev. A stable latest beats a beta current
+    // of the same numeric version; a beta latest beats a dev current, etc.
     public bool IsNewerVersionAvailable
     {
         get
         {
+            if (IsDevBuild) return false;
             if (!HasLatestRelease || string.IsNullOrWhiteSpace(LatestReleaseTag)) return false;
 
-            static string StripPreRelease(string tag)
-            {
-                var t = tag.TrimStart('v');
-                var dash = t.IndexOf('-');
-                return dash >= 0 ? t[..dash] : t;
-            }
-
             if (!Version.TryParse(StripPreRelease(CurrentAppVersion), out var current)) return false;
-            if (!Version.TryParse(StripPreRelease(LatestReleaseTag), out var latest)) return false;
+            if (!Version.TryParse(StripPreRelease(LatestReleaseTag),  out var latest))  return false;
 
-            return latest > current;
+            if (latest != current) return latest > current;
+
+            // Same numeric version — compare by suffix priority
+            return VersionPriority(LatestReleaseTag) > VersionPriority(CurrentAppVersion);
         }
     }
 
@@ -2326,6 +2374,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isStatusBarFilePathVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(FilePathText));
+            OnPropertyChanged(nameof(LanguageDisplayText));
             OnPropertyChanged(nameof(StatusBarFilePathVisibilityText));
             SaveSettings();
         }
@@ -2507,9 +2556,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsDarkThemeActive  => string.Equals(CurrentThemeName, "Dark",  StringComparison.OrdinalIgnoreCase);
     public bool IsLightThemeActive => string.Equals(CurrentThemeName, "Light", StringComparison.OrdinalIgnoreCase);
 
-    public string LanguageDisplayText => HasImagePreview
-        ? "Image Preview"
-        : CurrentLanguageExtension?.Name ?? (HasDocumentOpen ? "Plain Text" : string.Empty);
+    public string LanguageDisplayText
+    {
+        get
+        {
+            if (HasImagePreview) return "Image Preview";
+            if (!HasDocumentOpen) return string.Empty;
+            if (!string.IsNullOrWhiteSpace(_currentFilePath))
+            {
+                var ext = Path.GetExtension(_currentFilePath);
+                if (!string.IsNullOrWhiteSpace(ext))
+                    return $"{ext.ToLowerInvariant()} file";
+                var name = Path.GetFileName(_currentFilePath);
+                return string.IsNullOrWhiteSpace(name) ? "Plain Text" : $"{name} file";
+            }
+            return "Plain Text";
+        }
+    }
 
     public string DiscordRichPresenceStatusText => !IsDiscordRichPresenceEnabled
         ? "Discord Rich Presence is turned off."
@@ -2570,6 +2633,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenTabs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (e.Action == NotifyCollectionChangedAction.Add)
+            IsFileExplorerVisible = true;
         OnPropertyChanged(nameof(HasOpenEditors));
         OnPropertyChanged(nameof(IsEditorTabsVisible));
         SaveSettings();
@@ -2588,9 +2653,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             else
             {
-                var lines = document?.LineCount ?? 1;
+                var lines      = document?.LineCount ?? 1;
                 var characters = document?.TextLength ?? 0;
-                EditorStatsText = $"{lines} lines  |  {characters} characters";
+                var caret      = EditorTextBox?.TextArea?.Caret;
+                var ln         = caret?.Line ?? 1;
+                var col        = caret?.Column ?? 1;
+                EditorStatsText = $"Ln {ln}, Col {col}  |  {lines} lines  |  {characters} characters";
             }
         }
         else
@@ -2971,7 +3039,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (ReferenceEquals(ActiveEditorTab, tab))
         {
+            // Force page state even if NavigateTo bails early due to no change
+            _isHomePageVisible = false;
             NavigateTo(Page.Editor);
+            RefreshState();
             if (focusEditor)
                 FocusEditor();
             return;
@@ -2987,7 +3058,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ClearAutoSaveStatus();
         SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
         UpdateCurrentDocumentPresentation();
+
+        // Directly set the backing field before NavigateTo so the bail-early
+        // check doesn't short-circuit when we're already on the editor page.
+        _isHomePageVisible = false;
         NavigateTo(Page.Editor);
+        RefreshState();
 
         if (focusEditor)
             FocusEditor();
@@ -3524,8 +3600,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void CloseFolderButton_OnClick(object? sender, RoutedEventArgs e) =>
         CloseFolder();
 
-    private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e) =>
-        IsFileExplorerVisible = false;
+    private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsFolderOpen)
+            CloseFolder();
+        else
+            IsFileExplorerVisible = !IsFileExplorerVisible;
+    }
 
     private void SettingsButton_OnClick(object? sender, RoutedEventArgs e) =>
         NavigateTo(Page.Settings);
@@ -4112,9 +4193,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void CollapseAllTreeButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        var expandedDirs = FileTreeItems.Where(i => i.IsDirectory && i.IsExpanded).ToList();
-        foreach (var dir in expandedDirs)
-            await ToggleDirectoryExpansionAsync(dir);
+        _isFileTreeExpanded = !_isFileTreeExpanded;
+        if (!_isFileTreeExpanded)
+        {
+            // Collapse: repopulate from scratch — fastest correct collapse
+            if (!string.IsNullOrWhiteSpace(_currentFolderPath))
+                await PopulateFileTreeAsync(_currentFolderPath);
+        }
+        else
+        {
+            // Expand: toggle all top-level directories
+            var rootDirs = FileTreeItems.Where(i => i.IsDirectory && i.Depth == 0 && !i.IsExpanded).ToList();
+            foreach (var dir in rootDirs)
+                await ToggleDirectoryExpansionAsync(dir);
+        }
     }
 
     private async void NewFileInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)

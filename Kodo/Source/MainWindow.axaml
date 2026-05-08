@@ -334,8 +334,9 @@
 
         <!-- Collapsible file explorer panel -->
         <Border Grid.Column="1"
-                Width="240"
+                Width="{Binding ExplorerPanelWidth}"
                 IsVisible="{Binding IsFileExplorerVisible}"
+                VerticalAlignment="Stretch"
                 Background="{Binding SidebarBrush}"
                 BorderBrush="{Binding SurfaceBorderBrush}"
                 BorderThickness="0,0,1,0">
@@ -363,7 +364,7 @@
                                 Height="28"
                                 IsVisible="{Binding IsFolderOpen}"
                                 Click="CollapseAllTreeButton_OnClick"
-                                ToolTip.Tip="Collapse All">
+                                ToolTip.Tip="Collapse / Expand All">
                             <TextBlock FontSize="11" Text="&#x25B4;&#x25BE;" Foreground="{Binding MutedTextBrush}" />
                         </Button>
                         <Button Grid.Column="2"
@@ -371,7 +372,7 @@
                                 Width="28"
                                 Height="28"
                                 Click="CollapseExplorerButton_OnClick"
-                                ToolTip.Tip="Collapse Explorer (Ctrl+B)">
+                                ToolTip.Tip="Toggle Explorer (Ctrl+B)">
                             <TextBlock FontSize="11" Text="&#x2715;" Foreground="{Binding PrimaryTextBrush}" />
                         </Button>
                     </Grid>
@@ -450,8 +451,9 @@
                     </StackPanel>
                 </Border>
 
-                <!-- File tree -->
+                <!-- File tree (only shown when a folder is open) -->
                 <ScrollViewer Grid.Row="2"
+                              IsVisible="{Binding IsFolderOpen}"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding FileTreeItems}" Margin="4,4,4,8">
@@ -529,7 +531,7 @@
                                                     Margin="0,4">
                                             <TextBlock FontSize="13"
                                                        FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
-                                                       Width="22"
+                                                       Width="32"
                                                        TextAlignment="Center"
                                                        VerticalAlignment="Center"
                                                        Text="{Binding Icon}"
@@ -551,7 +553,7 @@
         </Border>
 
         <!-- Main content area (editor + settings) -->
-        <Grid Grid.Column="2" RowDefinitions="Auto,*">
+        <Grid Grid.Column="2" RowDefinitions="Auto,*" VerticalAlignment="Stretch">
 
             <StackPanel Grid.Row="0" Spacing="1">
                 <!-- Update available banner -->
@@ -621,8 +623,8 @@
                 </Border>
             </StackPanel>
 
-            <Grid Grid.Row="1">
-            <Grid IsVisible="{Binding IsEditorPageVisible}" RowDefinitions="Auto,Auto,*,Auto">
+            <Panel Grid.Row="1">
+            <Grid IsVisible="{Binding IsEditorPageVisible}" IsHitTestVisible="{Binding IsEditorPageVisible}" RowDefinitions="Auto,Auto,*,Auto">
                 <Border Grid.Row="0"
                         Background="{Binding TopBarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
@@ -781,8 +783,7 @@
 
                 <Grid Grid.Row="2"
                       Background="{Binding EditorBackgroundBrush}"
-                      IsVisible="{Binding IsDocumentViewVisible}"
-                      IsEnabled="{Binding !IsHomePageVisible}">
+                      IsVisible="{Binding IsDocumentViewVisible}">
                     <avaloniaEdit:TextEditor x:Name="EditorTextBox"
                                              Background="{Binding EditorBackgroundBrush}"
                                              Foreground="{Binding PrimaryTextBrush}"
@@ -1090,6 +1091,7 @@
             </Grid>
 
             <Grid IsVisible="{Binding IsExtensionsPageVisible}"
+                  IsHitTestVisible="{Binding IsExtensionsPageVisible}"
                   Background="{Binding EditorBackgroundBrush}"
                   RowDefinitions="Auto,*">
                 <Border Grid.Row="0"
@@ -1313,6 +1315,7 @@
             </Grid>
 
             <Grid IsVisible="{Binding IsSettingsPageVisible}"
+                  IsHitTestVisible="{Binding IsSettingsPageVisible}"
                   Background="{Binding EditorBackgroundBrush}"
                   RowDefinitions="Auto,*">
                 <Border Grid.Row="0"
@@ -1818,7 +1821,7 @@
                 </Grid>
                 </ScrollViewer>
             </Grid>
-            </Grid>
+            </Panel>
         </Grid>
     </Grid>
 </Window>
