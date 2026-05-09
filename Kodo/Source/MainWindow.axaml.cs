@@ -1,4 +1,6 @@
 // Licensed under the Kodo Public License v1.1
+// May 8th, 2026 - Fixed settings.json resetting by using atomic write (temp file + replace)
+// May 8th, 2026 - Added ShowWarningDialogAsync for non-fatal recoverable errors
 // May 5th, 2026 - SS-YYC - Added Unsaved dot indicator on editor tabs, close other/all tabs context menu, last-modified time on recent files, language indicator in status bar, font size setting, collapse all tree button, extension search filter, active theme indicator, find in file panel (Ctrl+F), file tree right-click context menu (copy path, delete)
 // April 29th, 2026 - SS-YYC - Fixed syntax highlighting: keywords/numbers no longer colour inside comments or strings by isolating rules into a code-only ruleset that comment and string spans cannot inherit from
 // April 29th, 2026 - SS-YYC - Fixed language.json and language2.json now both apply and merge correctly for both .kox and folder extensions
@@ -466,6 +468,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     };
     private DateTime _lastExtensionsRefreshUtc = DateTime.MinValue;
     private string? _startupActiveTabPath;
+    private string? _startupFilePath;
     private string _extensionSearchText = string.Empty;
     private bool _isFindPanelVisible;
     private string _findText = string.Empty;
@@ -567,8 +570,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public MainWindow()
+    public MainWindow() : this(null) { }
+
+    public MainWindow(string? startupFilePath)
     {
+        var trimmedStartupPath = startupFilePath?.Trim().Trim('"');
+        _startupFilePath = !string.IsNullOrWhiteSpace(trimmedStartupPath) && File.Exists(trimmedStartupPath)
+            ? trimmedStartupPath
+            : null;
         InitializeComponent();
         LoadWindowIcon();
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
@@ -616,6 +625,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         UpdateDiscordRichPresenceLifecycle();
         ApplyEditorSettings();
         Opened += MainWindow_OnOpened;
+        Closing += MainWindow_OnClosing;
         Closed += MainWindow_OnClosed;
         RefreshState();
     }
@@ -744,6 +754,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"Refresh failed: {ex.Message}";
+            await ShowWarningDialogAsync("Extension refresh", ex);
         }
         finally
         {
@@ -838,6 +849,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             extensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
+            await ShowWarningDialogAsync("Marketplace fetch", ex);
         }
 
         SyncObservableCollection(MarketplaceExtensions, marketplaceExtensions, ext => ext.Id);
@@ -1182,6 +1194,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 GetPreferredLoadedExtension(marketplaceExtension.Id),
                 marketplaceExtension.IsUpdateAvailable);
             ExtensionsStatusText = $"Failed to install {marketplaceExtension.Name}: {ex.Message}";
+            await ShowWarningDialogAsync($"Extension install — {marketplaceExtension.Name}", ex);
         }
         finally
         {
@@ -1225,6 +1238,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"Failed to uninstall {extension.Name}: {ex.Message}";
+            await ShowWarningDialogAsync($"Extension uninstall — {extension.Name}", ex);
         }
     }
 
@@ -2570,24 +2584,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static string TimeOfDay()
     {
         int hour = DateTime.Now.Hour;
+        if (hour < 6)  return "night";
         if (hour < 12) return "morning";
         if (hour < 17) return "afternoon";
-        return "evening";
+        if (hour < 22) return "evening";
+        return "night";
     }
 
-    private static readonly string[] _welcomeMessages =
-    [
-        "Welcome back.",
-        "Good to see you.",
-        "Ready to code?",
-        "Let's build something!",
-        "What are we building today?",
-        "Back at it!",
-        "Let's get to work!",
-        $"Good {TimeOfDay()}.",
-        $"Good {TimeOfDay()}, ready to build?",
-        $"Good {TimeOfDay()}, let's get to it!",
-    ];
+    private static readonly string[] _welcomeMessages = BuildWelcomeMessages();
+
+    private static string[] BuildWelcomeMessages()
+    {
+        var tod = TimeOfDay();
+        var messages = new List<string>
+        {
+            "Welcome back!",
+            "Great to see you!",
+            "Ready to code?",
+            "Let's build something!",
+            "What are we building today?",
+            "Back at it again!",
+            "Let's get to work!",
+            "Hey there!",
+            $"Good {tod}!",
+            $"Good {tod}, ready to build?",
+            $"Good {tod}, let's get to it!",
+            $"It's a great {tod} to code!",
+        };
+
+        if (tod == "morning") messages.Add("Hey there, early bird!");
+        if (tod == "night")   messages.Add("Hey there, night owl!");
+
+        return messages.ToArray();
+    }
 
     public static string WelcomeMessage { get; } =
         _welcomeMessages[Random.Shared.Next(_welcomeMessages.Length)];
@@ -2912,7 +2941,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (!File.Exists(SettingsFilePath)) return new AppSettings();
 
-            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsFilePath));
+            var json = File.ReadAllText(SettingsFilePath);
+
+            // An empty or whitespace-only file means a previous write was interrupted.
+            // Treat it like a missing file rather than overwriting with defaults.
+            if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
+
+            var settings = JsonSerializer.Deserialize<AppSettings>(json);
             if (settings is null) return new AppSettings();
 
             settings.ThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
@@ -2931,39 +2966,51 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { return new AppSettings(); }
     }
 
-    private void SaveSettings() => Task.Run(() =>
+    private void SaveSettings()
     {
-        try
+        // Snapshot all UI-thread-owned state here, before the background task,
+        // so we don't access ObservableCollections or bound properties from a background thread.
+        var snapshot = new AppSettings
         {
-            var dir = Path.GetDirectoryName(SettingsFilePath);
-            if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
+            ThemeName                              = CurrentThemeName,
+            AutoSaveEnabled                        = IsAutoSaveEnabled,
+            DiscordRichPresenceEnabled             = IsDiscordRichPresenceEnabled,
+            StatusBarFilePathVisible               = IsStatusBarFilePathVisible,
+            WordWrapEnabled                        = IsWordWrapEnabled,
+            TabSize                                = TabSize,
+            EditorFontSize                         = EditorFontSize,
+            ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
+            RestoreOpenTabsOnLaunchEnabled          = IsRestoreOpenTabsOnLaunchEnabled,
+            OpenTabPaths = OpenTabs
+                .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
+                .Select(tab => tab.Path)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            ActiveTabPath = ActiveEditorTab is { IsUntitled: false } activeTab
+                ? activeTab.Path
+                : null,
+            RecentFiles = RecentFiles
+                .Select(f => new RecentFileEntry { Path = f.Path, IsFolder = f.IsFolder, LastOpened = f.LastOpened })
+                .ToList()
+        };
 
-            // Snapshot all values on the calling (UI) thread before entering Task.Run
-            // so we don't access UI-thread-owned state from a background thread.
-            File.WriteAllText(SettingsFilePath, JsonSerializer.Serialize(new AppSettings
+        Task.Run(() =>
+        {
+            try
             {
-                ThemeName                  = CurrentThemeName,
-                AutoSaveEnabled            = IsAutoSaveEnabled,
-                DiscordRichPresenceEnabled = IsDiscordRichPresenceEnabled,
-                StatusBarFilePathVisible   = IsStatusBarFilePathVisible,
-                WordWrapEnabled            = IsWordWrapEnabled,
-                TabSize                    = TabSize,
-                EditorFontSize             = EditorFontSize,
-                ConfirmBeforeClosingUnsavedTabsEnabled = IsConfirmBeforeClosingUnsavedTabsEnabled,
-                RestoreOpenTabsOnLaunchEnabled         = IsRestoreOpenTabsOnLaunchEnabled,
-                OpenTabPaths               = OpenTabs
-                    .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
-                    .Select(tab => tab.Path)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList(),
-                ActiveTabPath              = ActiveEditorTab is { IsUntitled: false } activeTab
-                    ? activeTab.Path
-                    : null,
-                RecentFiles                = RecentFiles.Select(f => new RecentFileEntry { Path = f.Path, IsFolder = f.IsFolder, LastOpened = f.LastOpened }).ToList()
-            }));
-        }
-        catch { /* Ignore settings persistence failures. */ }
-    });
+                var dir = Path.GetDirectoryName(SettingsFilePath);
+                if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
+
+                // Write to a temp file first, then atomically replace the real file.
+                // This prevents settings from being wiped if the app is killed or
+                // crashes mid-write, which leaves File.WriteAllText with a zero-byte file.
+                var tempPath = SettingsFilePath + ".tmp";
+                File.WriteAllText(tempPath, JsonSerializer.Serialize(snapshot));
+                File.Move(tempPath, SettingsFilePath, overwrite: true);
+            }
+            catch { /* Ignore settings persistence failures. */ }
+        });
+    }
 
     // ── Theme application ────────────────────────────────────────────────────
 
@@ -3217,7 +3264,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var content = IsImagePreviewFile(path) ? string.Empty : await File.ReadAllTextAsync(path);
+        string content;
+        try
+        {
+            content = IsImagePreviewFile(path) ? string.Empty : await File.ReadAllTextAsync(path);
+        }
+        catch (Exception ex)
+        {
+            await ShowWarningDialogAsync("Open file", ex);
+            return;
+        }
+
         var tab = new EditorTab(path, Path.GetFileName(path), content);
         OpenTabs.Add(tab);
         ActivateTab(tab);
@@ -3248,30 +3305,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Opened -= MainWindow_OnOpened;
 
-        if (!IsRestoreOpenTabsOnLaunchEnabled || _startupOpenTabPaths.Count == 0)
+        if (IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0)
         {
-            return;
-        }
-
-        foreach (var path in _startupOpenTabPaths)
-        {
-            await OpenFileFromPathAsync(path);
-        }
-
-        if (!string.IsNullOrWhiteSpace(_startupActiveTabPath))
-        {
-            var activeTab = OpenTabs.FirstOrDefault(tab =>
-                !tab.IsUntitled &&
-                string.Equals(tab.Path, _startupActiveTabPath, StringComparison.OrdinalIgnoreCase));
-            if (activeTab is not null)
+            foreach (var path in _startupOpenTabPaths)
             {
-                ActivateTab(activeTab);
+                await OpenFileFromPathAsync(path);
             }
+
+            if (!string.IsNullOrWhiteSpace(_startupActiveTabPath))
+            {
+                var activeTab = OpenTabs.FirstOrDefault(tab =>
+                    !tab.IsUntitled &&
+                    string.Equals(tab.Path, _startupActiveTabPath, StringComparison.OrdinalIgnoreCase));
+                if (activeTab is not null)
+                {
+                    ActivateTab(activeTab);
+                }
+            }
+        }
+
+        // Open the file passed on the command line (e.g. via "Open with" or double-click)
+        if (!string.IsNullOrWhiteSpace(_startupFilePath))
+        {
+            await OpenFileFromPathAsync(_startupFilePath);
         }
     }
 
     private void NewFile()
     {
+        // Navigate away from home BEFORE adding the tab, so the CollectionChanged
+        // notification evaluates IsEditorTabsVisible with IsHomePageVisible already false.
+        NavigateTo(Page.Editor);
+
         var tab = CreateUntitledTab();
         OpenTabs.Add(tab);
         ActivateTab(tab);
@@ -3377,6 +3442,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _autoSaveStatusMessage = BuildAutoSaveFailureMessage(ex);
             OnPropertyChanged(nameof(FileSummaryText));
             OnPropertyChanged(nameof(AutoSaveStatusText));
+            await ShowWarningDialogAsync("File save", ex);
             return false;
         }
         finally
@@ -3564,7 +3630,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _suppressDirtyTracking = true;
         EditorTextBox.Document.Text = content;
-        _suppressDirtyTracking = false;
+        // Clear the flag via a posted action so it stays true until after
+        // AvaloniaEdit's async TextChanged event has fired and been handled.
+        Dispatcher.UIThread.Post(
+            () => _suppressDirtyTracking = false,
+            DispatcherPriority.Background);
     }
 
     private void FocusEditor()
@@ -3757,7 +3827,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void OpenExtensionsFolderButton_OnClick(object? sender, RoutedEventArgs e)
+    private async void OpenExtensionsFolderButton_OnClick(object? sender, RoutedEventArgs e)
     {
         try
         {
@@ -3773,6 +3843,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"Could not open extensions folder: {ex.Message}";
+            await ShowWarningDialogAsync("Open extensions folder", ex);
         }
     }
     private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
@@ -3928,7 +3999,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void OpenPathInSystemExplorer(string path, bool selectItem)
+    private async Task OpenPathInSystemExplorer(string path, bool selectItem)
     {
         try
         {
@@ -4010,6 +4081,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"Could not open path: {ex.Message}";
+            await ShowWarningDialogAsync("Open in system explorer", ex);
         }
     }
 
@@ -4224,10 +4296,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(GetRelativePathOrFullPath(tab.Path));
     }
 
-    private void RevealEditorTabInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    private async void RevealEditorTabInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<EditorTab>(sender) is not { IsUntitled: false } tab) return;
-        OpenPathInSystemExplorer(tab.Path, selectItem: true);
+        await OpenPathInSystemExplorer(tab.Path, selectItem: true);
     }
 
     private async void CollapseAllTreeButton_OnClick(object? sender, RoutedEventArgs e)
@@ -4263,6 +4335,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"New file failed: {ex.Message}";
+            await ShowWarningDialogAsync("New file in explorer", ex);
         }
     }
 
@@ -4280,6 +4353,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"New folder failed: {ex.Message}";
+            await ShowWarningDialogAsync("New folder in explorer", ex);
         }
     }
 
@@ -4293,10 +4367,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await OpenFileFromPathAsync(item.FullPath);
     }
 
-    private void RevealExplorerItemMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    private async void RevealExplorerItemMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-        OpenPathInSystemExplorer(item.FullPath, selectItem: !item.IsDirectory);
+        await OpenPathInSystemExplorer(item.FullPath, selectItem: !item.IsDirectory);
     }
 
     private void CopyFileNameMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -4334,6 +4408,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"Duplicate failed: {ex.Message}";
+            await ShowWarningDialogAsync("Duplicate file", ex);
         }
     }
 
@@ -4362,6 +4437,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"Delete failed: {ex.Message}";
+            await ShowWarningDialogAsync("Delete file", ex);
         }
     }
 
@@ -4402,6 +4478,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"Rename failed: {ex.Message}";
+            await ShowWarningDialogAsync("Rename file", ex);
         }
     }
 
@@ -4458,6 +4535,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"Paste failed: {ex.Message}";
+            await ShowWarningDialogAsync("Paste file", ex);
         }
     }
 
@@ -4899,6 +4977,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _autoSaveStatusMessage = BuildAutoSaveFailureMessage(ex);
             OnPropertyChanged(nameof(FileSummaryText));
             OnPropertyChanged(nameof(AutoSaveStatusText));
+            await ShowWarningDialogAsync("Auto-save", ex);
         }
     }
 
@@ -4906,6 +4985,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _autoSaveStatusTimer.Stop();
         ClearAutoSaveStatus();
+    }
+
+    private bool _isConfirmedClose;
+
+    private async void MainWindow_OnClosing(object? sender, WindowClosingEventArgs e)
+    {
+        // If we already confirmed through the dialog loop, let it through.
+        if (_isConfirmedClose) return;
+
+        var dirtyTabs = OpenTabs.Where(t => t.IsDirty).ToList();
+        if (dirtyTabs.Count == 0 || !IsConfirmBeforeClosingUnsavedTabsEnabled) return;
+
+        // Cancel the close and handle it ourselves asynchronously.
+        e.Cancel = true;
+
+        foreach (var tab in dirtyTabs)
+        {
+            var action = await ShowUnsavedTabDialogAsync(tab);
+            switch (action)
+            {
+                case UnsavedTabAction.Cancel:
+                    return; // User aborted — leave the window open.
+
+                case UnsavedTabAction.Save:
+                    ActivateTab(tab, focusEditor: false);
+                    if (!await SaveAsync(allowPromptForPath: true, forcePromptForPath: false))
+                        return; // Save was cancelled — leave the window open.
+                    break;
+
+                // UnsavedTabAction.Discard — just continue to the next tab.
+            }
+        }
+
+        // All dirty tabs resolved — close for real.
+        _isConfirmedClose = true;
+        Close();
     }
 
     private void MainWindow_OnClosed(object? sender, EventArgs e)
@@ -5087,7 +5202,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             Orientation = Orientation.Horizontal,
             Spacing = 10,
-            HorizontalAlignment = HorizontalAlignment.Right,
+            HorizontalAlignment = HorizontalAlignment.Center,
             Children =
             {
                 CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush, cancelAction),
@@ -5113,7 +5228,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     },
                     new TextBlock
                     {
-                        Text = $"{tab.TabTitle} has Unsaved changes.",
+                        Text = $"{tab.DisplayName} has unsaved changes.",
                         Foreground = MutedTextBrush,
                         TextWrapping = TextWrapping.Wrap
                     },
@@ -5145,11 +5260,132 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Foreground = foreground,
             Padding = new Thickness(14, 8),
             CornerRadius = new CornerRadius(8),
-            MinWidth = 86
+            MinWidth = 86,
+            HorizontalContentAlignment = HorizontalAlignment.Center
         };
 
         button.Click += (_, _) => clickAction();
         return button;
+    }
+
+    // Shows a non-fatal warning dialog that mirrors the crash dialog in App.axaml.cs
+    // but uses softer wording. Call this from any recoverable error path where the
+    // user needs to know something went wrong.
+    private async Task ShowWarningDialogAsync(string context, Exception exception)
+    {
+        try
+        {
+            var titleText = new TextBlock
+            {
+                Text = "Something went wrong",
+                FontSize = 16,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = PrimaryTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+            };
+
+            var subtitleText = new TextBlock
+            {
+                Text = "Kodo ran into a problem with this operation. No data was lost — you can try again.",
+                FontSize = 13,
+                Foreground = MutedTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 4, 0, 0),
+            };
+
+            // Context badge (e.g. "File save", "Extension install")
+            var contextBadge = new Border
+            {
+                Background = ButtonBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 5),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Child = new TextBlock
+                {
+                    Text = context,
+                    FontSize = 12,
+                    FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                    Foreground = new SolidColorBrush(Color.Parse("#9CDCFE")),
+                },
+            };
+
+            // Scrollable, selectable exception detail so the user can copy it if needed
+            var exceptionText = new SelectableTextBlock
+            {
+                Text = exception.ToString(),
+                FontSize = 12,
+                FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                Foreground = new SolidColorBrush(Color.Parse("#CE9178")),
+                TextWrapping = TextWrapping.Wrap,
+            };
+
+            var exceptionScroll = new ScrollViewer
+            {
+                Content = exceptionText,
+                MaxHeight = 220,
+                VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            };
+
+            var exceptionBorder = new Border
+            {
+                Background = new SolidColorBrush(Color.Parse("#1A1A1A")),
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12),
+                Child = exceptionScroll,
+            };
+
+            var dismissButton = new Button
+            {
+                Content = "Dismiss",
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Padding = new Thickness(20, 8),
+                Background = AccentBrush,
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(8),
+            };
+
+            var content = new StackPanel
+            {
+                Spacing = 12,
+                Margin = new Thickness(20),
+                Children =
+                {
+                    titleText,
+                    subtitleText,
+                    contextBadge,
+                    exceptionBorder,
+                    dismissButton,
+                },
+            };
+
+            Window? dialog = null;
+            dialog = new Window
+            {
+                Title = "Kodo — Error",
+                Width = 520,
+                SizeToContent = SizeToContent.Height,
+                MinWidth = 380,
+                MinHeight = 160,
+                MaxHeight = 640,
+                CanResize = true,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background = CardBrush,
+                Content = content,
+            };
+
+            dismissButton.Click += (_, _) => dialog!.Close();
+            await dialog.ShowDialog(this);
+        }
+        catch
+        {
+            // The warning dialog itself must never crash the app.
+        }
     }
 
     private sealed class AppSettings

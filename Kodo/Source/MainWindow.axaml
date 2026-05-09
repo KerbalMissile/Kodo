@@ -10,8 +10,11 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:avaloniaEdit="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
+        xmlns:kodo="clr-namespace:Kodo"
+        xmlns:kodoModels="clr-namespace:Kodo.Models"
         mc:Ignorable="d"
         x:Class="Kodo.MainWindow"
+        x:Name="RootWindow"
         x:CompileBindings="False"
         Width="1100"
         Height="760"
@@ -422,14 +425,14 @@
                                    Text="OPEN EDITORS" />
                         <ItemsControl ItemsSource="{Binding OpenTabs}">
                             <ItemsControl.ItemTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="kodoModels:EditorTab">
                                     <Border Classes="tabwrap"
                                             Classes.active="{Binding IsSelected}"
                                             Margin="0,0,0,2"
                                             BorderBrush="Transparent">
                                         <Border.Styles>
                                             <Style Selector="Border.tabwrap.active">
-                                                <Setter Property="BorderBrush" Value="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                <Setter Property="BorderBrush" Value="{Binding #RootWindow.AccentBrush}" />
                                             </Style>
                                         </Border.Styles>
                                         <Grid ColumnDefinitions="*,Auto">
@@ -440,11 +443,8 @@
                                                         IsVisible="{Binding !IsSelected}">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <TextBlock FontSize="12"
-                                                                   Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                   Text="&#x2022;" />
-                                                        <TextBlock FontSize="12"
-                                                                   Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                   Text="{Binding TabTitle}"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="{Binding DisplayName}"
                                                                    TextTrimming="CharacterEllipsis"
                                                                    MaxWidth="150" />
                                                     </StackPanel>
@@ -453,14 +453,15 @@
                                                         Tag="{Binding}"
                                                         Click="OpenEditorTabButton_OnClick"
                                                         IsVisible="{Binding IsSelected}"
-                                                        Background="{Binding DataContext.ButtonHoverBrush, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                        Background="{Binding #RootWindow.ButtonHoverBrush}">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <TextBlock FontSize="12"
-                                                                   Foreground="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Foreground="{Binding #RootWindow.AccentBrush}"
+                                                                   IsVisible="{Binding IsDirty}"
                                                                    Text="&#x25CF;" />
                                                         <TextBlock FontSize="12"
-                                                                   Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                   Text="{Binding TabTitle}"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="{Binding DisplayName}"
                                                                    TextTrimming="CharacterEllipsis"
                                                                    MaxWidth="150" />
                                                     </StackPanel>
@@ -489,7 +490,7 @@
                               VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding FileTreeItems}" Margin="4,4,4,8">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate>
+                            <DataTemplate x:DataType="kodo:FileTreeItem">
                                 <Button Classes="fileitem"
                                         Tag="{Binding}"
                                         Click="FileTreeItem_OnClick"
@@ -561,7 +562,7 @@
                                                    FontSize="10"
                                                    Width="16"
                                                    VerticalAlignment="Center"
-                                                   Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                    Text="{Binding ChevronText}"
                                                    Margin="0,0,2,0" />
 
@@ -576,11 +577,11 @@
                                                        TextAlignment="Center"
                                                        VerticalAlignment="Center"
                                                        Text="{Binding Icon}"
-                                                       Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                       Foreground="{Binding #RootWindow.MutedTextBrush}" />
                                             <TextBlock FontSize="13"
                                                        VerticalAlignment="Center"
                                                        Text="{Binding Name}"
-                                                       Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                        TextTrimming="CharacterEllipsis"
                                                        MaxWidth="148" />
                                         </StackPanel>
@@ -724,7 +725,7 @@
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="kodoModels:EditorTab">
                                     <Border Classes="tabwrap"
                                             Classes.active="{Binding IsSelected}">
                                         <Border.ContextMenu>
@@ -768,10 +769,10 @@
                                                     Padding="14,10,38,10">
                                                 <StackPanel Orientation="Horizontal" Spacing="4">
                                                     <TextBlock FontSize="13"
-                                                               Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                               Text="{Binding TabTitle}" />
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                               Text="{Binding DisplayName}" />
                                                     <TextBlock FontSize="11"
-                                                               Foreground="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Foreground="{Binding #RootWindow.AccentBrush}"
                                                                IsVisible="{Binding IsDirty}"
                                                                Text="●"
                                                                VerticalAlignment="Center" />
@@ -788,10 +789,10 @@
                                                     Padding="14,10,38,10">
                                                 <StackPanel Orientation="Horizontal" Spacing="4">
                                                     <TextBlock FontSize="13"
-                                                               Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                               Text="{Binding TabTitle}" />
+                                                               Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                               Text="{Binding DisplayName}" />
                                                     <TextBlock FontSize="11"
-                                                               Foreground="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Foreground="{Binding #RootWindow.AccentBrush}"
                                                                IsVisible="{Binding IsDirty}"
                                                                Text="●"
                                                                VerticalAlignment="Center" />
@@ -813,7 +814,7 @@
                                                     Grid.ColumnSpan="2"
                                                     Classes="tabunderline tabunderlinebase"
                                                     Height="2"
-                                                    Background="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                    Background="{Binding #RootWindow.AccentBrush}" />
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
@@ -1005,7 +1006,7 @@
                                     <ItemsControl ItemsSource="{Binding RecentFiles}"
                                                   IsVisible="{Binding HasRecentFiles}">
                                         <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
+                                            <DataTemplate x:DataType="kodo:RecentFileItem">
                                                 <Button Classes="recent"
                                                         Tag="{Binding}"
                                                         Click="RecentFileButton_OnClick"
@@ -1015,14 +1016,14 @@
                                                         <TextBlock Grid.Column="0"
                                                                    FontSize="13"
                                                                    FontWeight="SemiBold"
-                                                                   Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                    Text="{Binding DisplayName}"
                                                                    TextTrimming="CharacterEllipsis"
                                                                    VerticalAlignment="Center" />
                                                         <!-- File type / Folder -->
                                                         <TextBlock Grid.Column="1"
                                                                    FontSize="12"
-                                                                   Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                    Text="{Binding FileTypeName}"
                                                                    VerticalAlignment="Center"
                                                                    Margin="16,0,0,0"
@@ -1031,7 +1032,7 @@
                                                         <!-- Time last opened, right-aligned -->
                                                         <TextBlock Grid.Column="2"
                                                                    FontSize="12"
-                                                                   Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                    Text="{Binding LastOpenedText}"
                                                                    VerticalAlignment="Center"
                                                                    Margin="16,0,0,0"
@@ -1218,9 +1219,9 @@
                         <StackPanel IsVisible="{Binding IsInstalledTabSelected}">
                             <ItemsControl ItemsSource="{Binding FilteredInstalledExtensions}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Background="{Binding CardBrush}"
-                                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                    <DataTemplate x:DataType="kodo:LoadedExtension">
+                                        <Border Background="{Binding #RootWindow.CardBrush}"
+                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
                                                 BorderThickness="1"
                                                 CornerRadius="12"
                                                 Padding="16"
@@ -1237,7 +1238,7 @@
                                             </ToolTip.Tip>
                                             <Grid ColumnDefinitions="Auto,*,Auto">
                                                 <!-- Icon: image if available, accent box with abbreviation otherwise -->
-                                                <Border Width="48" Height="48" CornerRadius="8" Background="{Binding AccentBrush}" Margin="0,0,16,0"
+                                                <Border Width="48" Height="48" CornerRadius="8" Background="{Binding #RootWindow.AccentBrush}" Margin="0,0,16,0"
                                                         IsVisible="{Binding !HasIcon}">
                                                     <TextBlock HorizontalAlignment="Center"
                                                                VerticalAlignment="Center"
@@ -1255,15 +1256,15 @@
                                                            Stretch="Uniform" />
                                                 </Border>
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                    <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" Text="{Binding Name}" />
-                                                    <TextBlock FontSize="12" Foreground="{Binding MutedTextBrush}" Text="{Binding Description}" TextWrapping="Wrap" />
+                                                    <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" Text="{Binding Name}" />
+                                                    <TextBlock FontSize="12" Foreground="{Binding #RootWindow.MutedTextBrush}" Text="{Binding Description}" TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2"
                                                             Spacing="8"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center">
                                                     <TextBlock HorizontalAlignment="Right"
-                                                               Foreground="{Binding MutedTextBrush}"
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                Text="{Binding Version}" />
                                                     <StackPanel Orientation="Horizontal"
                                                                 HorizontalAlignment="Right"
@@ -1294,9 +1295,9 @@
                         <StackPanel IsVisible="{Binding IsMarketplaceTabSelected}">
                             <ItemsControl ItemsSource="{Binding FilteredMarketplaceExtensions}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Background="{Binding DataContext.CardBrush, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                BorderBrush="{Binding DataContext.SurfaceBorderBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    <DataTemplate x:DataType="kodo:MarketplaceExtension">
+                                        <Border Background="{Binding #RootWindow.CardBrush}"
+                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
                                                 BorderThickness="1"
                                                 CornerRadius="12"
                                                 Padding="16"
@@ -1304,7 +1305,7 @@
                                             <Grid ColumnDefinitions="Auto,*,Auto">
                                                 <!-- Icon: image if available, accent box with abbreviation otherwise -->
                                                 <Border Width="48" Height="48" CornerRadius="8"
-                                                        Background="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        Background="{Binding #RootWindow.AccentBrush}"
                                                         Margin="0,0,16,0"
                                                         IsVisible="{Binding !HasIcon}">
                                                     <TextBlock HorizontalAlignment="Center"
@@ -1327,14 +1328,14 @@
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
                                                     <TextBlock FontSize="16"
                                                                FontWeight="SemiBold"
-                                                               Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                Text="{Binding Name}" />
                                                     <TextBlock FontSize="12"
-                                                               Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                Text="{Binding Description}"
                                                                TextWrapping="Wrap" />
                                                     <TextBlock FontSize="12"
-                                                               Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                Text="{Binding Author}" />
                                                 </StackPanel>
 
@@ -1343,7 +1344,7 @@
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center">
                                                     <TextBlock HorizontalAlignment="Right"
-                                                               Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                Text="{Binding Version}" />
                                                     <Button Classes="marketaction"
                                                             Tag="{Binding}"
@@ -1490,7 +1491,7 @@
                                         </ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
+                                        <DataTemplate x:DataType="kodo:LoadedExtension">
                                             <Button Classes="chrome"
                                                     Click="ThemeButton_OnClick"
                                                     Tag="{Binding ThemeCardThemeId}"
@@ -1523,18 +1524,18 @@
                                                         <Border Height="96"
                                                                 CornerRadius="12"
                                                                 BorderThickness="2"
-                                                                BorderBrush="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                BorderBrush="{Binding #RootWindow.AccentBrush}"
                                                                 IsVisible="{Binding IsActiveTheme}" />
                                                     </Panel>
                                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
                                                         <TextBlock Grid.Column="0"
                                                                    HorizontalAlignment="Center"
-                                                                   Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                    Text="{Binding ThemeCardDisplayName}"
                                                                    TextTrimming="CharacterEllipsis" />
                                                         <TextBlock Grid.Column="1"
                                                                    FontSize="11"
-                                                                   Foreground="{Binding DataContext.AccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Foreground="{Binding #RootWindow.AccentBrush}"
                                                                    VerticalAlignment="Center"
                                                                    Text="●"
                                                                    IsVisible="{Binding IsActiveTheme}" />
@@ -1875,7 +1876,7 @@
                                                            Text="Links" />
                                                 <ItemsControl ItemsSource="{Binding LatestReleaseLinks}">
                                                     <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
+                                                        <DataTemplate x:DataType="kodo:ReleaseLinkItem">
                                                             <Button Classes="chrome"
                                                                     Tag="{Binding Url}"
                                                                     Click="OpenReleaseLinkButton_OnClick"
@@ -1883,11 +1884,11 @@
                                                                     HorizontalContentAlignment="Left"
                                                                     Margin="0,0,0,6">
                                                                 <StackPanel Spacing="2">
-                                                                    <TextBlock Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    <TextBlock Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                                Text="Full Changelog"
                                                                                TextWrapping="Wrap" />
                                                                     <TextBlock FontSize="12"
-                                                                               Foreground="{Binding DataContext.MutedTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                                Text="{Binding Url}"
                                                                                TextWrapping="Wrap" />
                                                                 </StackPanel>
