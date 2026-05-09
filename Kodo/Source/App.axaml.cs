@@ -1,4 +1,9 @@
 // Licensed under the Kodo Public License v1.0
+// May 9th, 2026 - Fixed crash dialogs never appearing: Post() was fire-and-forget so the
+//                 process exited before the UI thread ran; ShowDialog() was unawaited so
+//                 the dialog closed instantly; and a closing owner caused ShowDialog to throw.
+//                 Now uses InvokeAsync+GetAwaiter().GetResult() to block the crash-handler
+//                 thread, awaits ShowDialog, and guards the owner against closed windows.
 // May 8th, 2026 - Added error popup dialog that mirrors the crash log entry
 // April 19th, 2026 - KerbalMissile - Added proper comments
 using Avalonia;
@@ -110,6 +115,13 @@ public partial class App : Application
 
     // Dispatches an error popup to the UI thread. The dialog mirrors the crash log entry so
     // the user sees the same source and stack trace that was written to disk.
+    //
+    // IMPORTANT: this method blocks the calling thread until the dialog is closed.
+    // That is intentional — AppDomain.UnhandledException fires on a background thread
+    // just before the CLR tears down the process (IsTerminating = true). If we only
+    // Post() the work and return immediately the process exits before the UI thread ever
+    // renders the window. InvokeAsync + GetAwaiter().GetResult() keeps the crash-handler
+    // thread alive until the user dismisses the dialog (or the UI thread faults).
     private static void ShowErrorDialog(string source, Exception exception)
     {
         try
@@ -119,31 +131,50 @@ public partial class App : Application
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "Kodo", "crash.log");
 
-            Dispatcher.UIThread.Post(() =>
+            // InvokeAsync schedules on the UI thread and returns a Task we can wait on.
+            // GetAwaiter().GetResult() blocks this (background) thread until the UI work
+            // completes, preventing the process from exiting prematurely.
+            Dispatcher.UIThread.InvokeAsync(async () =>
             {
                 try
                 {
-                    // Find the current main window to use as the dialog owner, if available.
+                    // Only use the main window as owner when it is still open and visible.
+                    // A closing or already-closed window causes ShowDialog to throw.
                     Window? owner = null;
                     if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-                        owner = desktop.MainWindow;
+                    {
+                        var main = desktop.MainWindow;
+                        if (main is { IsVisible: true })
+                            owner = main;
+                    }
 
                     var dialog = BuildErrorDialog(source, exception, logPath, owner);
 
+                    // ShowDialog must be awaited; discarding its Task lets the window
+                    // close immediately because nothing is keeping the async state alive.
+                    // ShowDialog requires a non-null owner, so fall back to Show() with a
+                    // manual TaskCompletionSource when no owner window is available.
                     if (owner is not null)
-                        dialog.ShowDialog(owner);
+                    {
+                        await dialog.ShowDialog(owner);
+                    }
                     else
+                    {
+                        var tcs = new TaskCompletionSource();
+                        dialog.Closed += (_, _) => tcs.TrySetResult();
                         dialog.Show();
+                        await tcs.Task;
+                    }
                 }
                 catch
                 {
                     // Dialog creation should never crash the app.
                 }
-            }, DispatcherPriority.MaxValue);
+            }, DispatcherPriority.MaxValue).GetAwaiter().GetResult();
         }
         catch
         {
-            // Dispatcher post should never crash the app.
+            // Dispatcher invocation should never crash the app.
         }
     }
 

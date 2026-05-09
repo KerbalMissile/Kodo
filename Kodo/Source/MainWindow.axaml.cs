@@ -102,7 +102,8 @@ public class FileTreeItem : INotifyPropertyChanged
 			    ".axaml" or ".xaml" => "XM",
 			    ".xml" or ".html" or ".htm" => "HTML",
 			    ".json" or ".yaml" or ".yml" or ".toml" => "JSON",
-			    ".md" or ".txt" or ".rst" => "MD",
+			    ".txt" or ".rst" or ".log" => "TXT",
+                ".md" or ".markdown" => "MD",
 			    ".png" => "PNG",
 			    ".jpg" or ".jpeg" => "JPG",
 			    ".gif" => "GIF",
@@ -110,7 +111,7 @@ public class FileTreeItem : INotifyPropertyChanged
 			    ".ico" => "ICO",
 			    ".webp" => "WBP",
 			    ".bmp" => "BMP",
-			    ".py" => "Py",
+			    ".py" => "PY",
 			    ".js" or ".jsx" => "JS",
 			    ".ts" or ".tsx" => "TS",
 			    ".vue" or ".svelte" => "UI",
@@ -120,20 +121,24 @@ public class FileTreeItem : INotifyPropertyChanged
 			    ".cpp" or ".cc" or ".cxx" => "C++",
 			    ".c" => "C",
 			    ".h" or ".hpp" or ".hxx" => "C++",
-			    ".rs" => "Rs",
-			    ".go" => "Go",
-			    ".rb" => "Rb",
+			    ".rs" => "RS",
+			    ".go" => "GO",
+			    ".rb" => "RB",
 			    ".java" => "JAVA",
-			    ".kt" or ".kts" => "Kt",
-			    ".swift" => "Sw",
+			    ".kt" or ".kts" => "KT",
+			    ".swift" => "SW",
 			    ".fs" or ".fsi" or ".fsx" => "F#",
-			    ".sql" => "Db",
-			    ".lua" => "Lu",
+			    ".sql" => "DB",
+			    ".lua" => "LUA",
 			    ".r" => "R",
 			    ".lock" => "Lk",
 				".csv" or ".tsv" => "CSV",
 				".nova" => "NOVA",
 				".kox" => "KOX",
+                ".sln" => "SLN",
+                ".manifest" => "MF",
+                ".exe" => "EXE",
+                ".dll" => "DLL",
 			    _ => "..",
 			};
     }
@@ -412,6 +417,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string ReleasesPageUrl = "https://github.com/KerbalMissile/Kodo/releases";
 
     private string? _currentFilePath;
+    // Encoding detected (or chosen) for the currently open file. Defaults to UTF-8.
+    private System.Text.Encoding _currentFileEncoding = System.Text.Encoding.UTF8;
     private string? _currentFolderPath;
     private DiscordRpcClient? _discordRpcClient;
     private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -450,6 +457,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _lastDiscordPresenceDetails = string.Empty;
     private string _lastDiscordPresenceState = string.Empty;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
+    // True when settings.json did not exist on this launch — used to show the tutorial once.
+    private bool _isFirstLaunch;
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
     private string _latestReleaseStatusText = "Loading latest release...";
     private ReleaseInfo? _latestRelease;
@@ -595,6 +604,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
         EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
         AddHandler(InputElement.KeyDownEvent, MainWindow_EditorKeyIntercept_OnKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
+        _isFirstLaunch = !File.Exists(SettingsFilePath);
         var settings = LoadSettings();
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
@@ -1923,11 +1933,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CurrentLanguageExtension = null;
             EditorTextBox.SyntaxHighlighting = null;
             ConfigureRainbowBrackets(null);
+            _indentGuideRenderer.IsEnabled = false;
+            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
             return;
         }
 
         var langExt = GetLanguageExtension(_currentFilePath);
         CurrentLanguageExtension = langExt;
+
+        // Indent guides are only meaningful when a language extension is active.
+        // Plain-text files (.txt / .log / .text) return null from GetLanguageExtension.
+        _indentGuideRenderer.IsEnabled = langExt is not null;
+        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
 
         if (langExt is null)
         {
@@ -2610,6 +2627,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             $"Good {tod}, ready to build?",
             $"Good {tod}, let's get to it!",
             $"It's a great {tod} to code!",
+            $"Happy {DateTime.Now:dddd}!",
         };
 
         if (tod == "morning") messages.Add("Hey there, early bird!");
@@ -2639,6 +2657,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return string.IsNullOrWhiteSpace(name) ? "Plain Text" : $"{name} file";
             }
             return "Plain Text";
+        }
+    }
+
+    // Short human-readable label for the encoding of the active file, shown in the status bar.
+    public string EncodingDisplayText
+    {
+        get
+        {
+            if (!HasFileOpen) return string.Empty;
+            var cp = _currentFileEncoding.CodePage;
+            return cp switch
+            {
+                65001 => _currentFileEncoding is System.Text.UTF8Encoding u && u.GetPreamble().Length > 0
+                             ? "UTF-8 BOM"
+                             : "UTF-8",
+                1200  => "UTF-16 LE",
+                1201  => "UTF-16 BE",
+                12000 => "UTF-32",
+                20127 => "ASCII",
+                _     => _currentFileEncoding.WebName.ToUpperInvariant(),
+            };
         }
     }
 
@@ -2753,6 +2792,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
         OnPropertyChanged(nameof(AutoSaveStatusText));
         OnPropertyChanged(nameof(LanguageDisplayText));
+        OnPropertyChanged(nameof(EncodingDisplayText));
         UpdateDiscordPresence();
     }
 
@@ -3267,13 +3307,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         string content;
         try
         {
-            content = IsImagePreviewFile(path) ? string.Empty : await File.ReadAllTextAsync(path);
+            if (IsImagePreviewFile(path))
+            {
+                content = string.Empty;
+                _currentFileEncoding = System.Text.Encoding.UTF8;
+            }
+            else
+            {
+                _currentFileEncoding = DetectFileEncoding(path);
+                content = await File.ReadAllTextAsync(path, _currentFileEncoding);
+            }
         }
         catch (Exception ex)
         {
             await ShowWarningDialogAsync("Open file", ex);
             return;
         }
+
+        // Navigate away from home BEFORE adding the tab, so the CollectionChanged
+        // notification evaluates IsEditorTabsVisible with IsHomePageVisible already false.
+        // This mirrors the same pattern used in NewFile().
+        NavigateTo(Page.Editor);
 
         var tab = new EditorTab(path, Path.GetFileName(path), content);
         OpenTabs.Add(tab);
@@ -3329,6 +3383,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             await OpenFileFromPathAsync(_startupFilePath);
         }
+
+        if (_isFirstLaunch)
+            await ShowTutorialAsync();
     }
 
     private void NewFile()
@@ -4550,6 +4607,156 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsFindPanelVisible = !IsFindPanelVisible;
     }
 
+    // ── Encoding detection & change ──────────────────────────────────────────
+
+    /// <summary>
+    /// Detects the encoding of <paramref name="path"/> by inspecting its BOM.
+    /// Falls back to UTF-8 (no BOM) when no BOM is present.
+    /// </summary>
+    private static System.Text.Encoding DetectFileEncoding(string path)
+    {
+        try
+        {
+            Span<byte> bom = stackalloc byte[4];
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var read = fs.Read(bom);
+
+            if (read >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
+                return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);   // UTF-8 BOM
+            if (read >= 2 && bom[0] == 0xFF && bom[1] == 0xFE)
+                return System.Text.Encoding.Unicode;          // UTF-16 LE
+            if (read >= 2 && bom[0] == 0xFE && bom[1] == 0xFF)
+                return System.Text.Encoding.BigEndianUnicode; // UTF-16 BE
+            if (read >= 4 && bom[0] == 0x00 && bom[1] == 0x00 && bom[2] == 0xFE && bom[3] == 0xFF)
+                return System.Text.Encoding.UTF32;
+
+            // No BOM — default to UTF-8 without BOM
+            return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        }
+        catch
+        {
+            return System.Text.Encoding.UTF8;
+        }
+    }
+
+    /// <summary>
+    /// Shows a small encoding-picker dialog and, if a different encoding is chosen,
+    /// immediately re-saves the file with that encoding.
+    /// </summary>
+    private async void EncodingStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (!HasFileOpen) return;
+
+        // CodePagesEncodingProvider is required for non-Unicode encodings (e.g. 1252) on
+        // .NET Core / .NET 5+. Registering it more than once is safe — it's a no-op.
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
+        // Build the list defensively: skip any encoding the current runtime can't supply.
+        var candidateEncodings = new (string Label, Func<System.Text.Encoding> Factory)[]
+        {
+            ("UTF-8",          () => new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)),
+            ("UTF-8 with BOM", () => new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true)),
+            ("UTF-16 LE",      () => System.Text.Encoding.Unicode),
+            ("UTF-16 BE",      () => System.Text.Encoding.BigEndianUnicode),
+            ("UTF-32",         () => System.Text.Encoding.UTF32),
+            ("Windows-1252",   () => System.Text.Encoding.GetEncoding(1252)),
+            ("ASCII",          () => System.Text.Encoding.ASCII),
+        };
+
+        var encodings = candidateEncodings
+            .Select(c =>
+            {
+                try   { return ((string Label, System.Text.Encoding Enc)?)(c.Label, c.Factory()); }
+                catch { return null; }
+            })
+            .Where(x => x is not null)
+            .Select(x => x!.Value)
+            .ToArray();
+
+        System.Text.Encoding? chosen = null;
+        Window? dialog = null;
+
+        var panel = new StackPanel { Spacing = 6, Margin = new Thickness(16) };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Save file with encoding:",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brushes.White,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        foreach (var (label, enc) in encodings)
+        {
+            var isCurrent = enc.CodePage == _currentFileEncoding.CodePage &&
+                            enc.GetPreamble().Length == _currentFileEncoding.GetPreamble().Length;
+            var btn = new Button
+            {
+                Content = isCurrent ? $"{label}  ✓" : label,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Background = isCurrent
+                    ? new SolidColorBrush(Color.Parse("#2D1F4A"))
+                    : new SolidColorBrush(Color.Parse("#252526")),
+                Foreground = isCurrent
+                    ? new SolidColorBrush(Color.Parse("#C084FC"))
+                    : Brushes.White,
+                BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12, 7),
+            };
+            var capturedEnc = enc;
+            btn.Click += (_, _) =>
+            {
+                chosen = capturedEnc;
+                dialog?.Close();
+            };
+            panel.Children.Add(btn);
+        }
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "The file will be re-saved immediately with the chosen encoding.",
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.Parse("#606060")),
+            Margin = new Thickness(0, 8, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        dialog = new Window
+        {
+            Title = "Change File Encoding",
+            Width = 280,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new SolidColorBrush(Color.Parse("#1E1E1E")),
+            Content = panel,
+        };
+
+        await dialog.ShowDialog(this);
+
+        if (chosen is null) return;
+
+        // Preamble length distinguishes UTF-8 vs UTF-8 BOM even when CodePage matches.
+        if (chosen.CodePage == _currentFileEncoding.CodePage &&
+            chosen.GetPreamble().Length == _currentFileEncoding.GetPreamble().Length)
+            return;
+
+        try
+        {
+            await File.WriteAllTextAsync(_currentFilePath!, EditorTextBox.Document.Text, chosen);
+            _currentFileEncoding = chosen;
+            OnPropertyChanged(nameof(EncodingDisplayText));
+        }
+        catch (Exception ex)
+        {
+            await ShowWarningDialogAsync("Change encoding", ex);
+        }
+    }
+
     private void FindNextButton_OnClick(object? sender, RoutedEventArgs e) =>
         FindInEditor(forward: true);
 
@@ -5268,6 +5475,217 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return button;
     }
 
+
+    // ── First-launch tutorial ────────────────────────────────────────────────
+    //
+    // Shown once when settings.json doesn't exist (genuine first run). The flag
+    // HasCompletedTutorial is written to settings afterward so subsequent launches
+    // skip it even if the user never explicitly dismissed the window.
+
+    private async Task ShowTutorialAsync()
+    {
+        try
+        {
+            // Define the tour steps: each has a title, body, and an optional action
+            // that navigates Kodo to illustrate what's being described.
+            var steps = new (string Title, string Body, Action? Navigate)[]
+            {
+                (
+                    "👋  Welcome to Kodo!",
+                    "This is the Home screen. It's your starting point every time you open Kodo — " +
+                    "you can always get back here with the Home button in the activity bar on the left, " +
+                    "or by pressing Ctrl+H.",
+                    () => NavigateTo(Page.Home)
+                ),
+                (
+                    "📄  Creating & opening files",
+                    "Use New File (Ctrl+N) to start a fresh document, Open File (Ctrl+O) to open " +
+                    "an existing one, or Open Folder (Ctrl+K) to load a whole project. " +
+                    "Your recent files and folders will appear here on the Home screen.",
+                    () => NavigateTo(Page.Home)
+                ),
+                (
+                    "🧩  Extensions & themes",
+                    "The Extensions page lets you browse and install syntax highlighting packs, " +
+                    "language definitions, and colour themes from the Kodo Marketplace. " +
+                    "Try pressing Ctrl+E or clicking the puzzle-piece icon in the sidebar.",
+                    () => NavigateTo(Page.Extensions)
+                ),
+                (
+                    "⚙️  Settings",
+                    "Customise Kodo to your liking: switch themes, adjust the font size, " +
+                    "enable auto-save, configure tab width, and more. " +
+                    "Open Settings with Ctrl+, or the gear icon at the top of the activity bar.",
+                    () => NavigateTo(Page.Settings)
+                ),
+                (
+                    "🚀  You're all set!",
+                    "That's everything you need to get started. Happy coding! " +
+                    "If you ever want a reminder of what's new in this version, " +
+                    "check out the What's New page from the Home screen.",
+                    () => NavigateTo(Page.Home)
+                ),
+            };
+
+            var currentStep = 0;
+
+            // ── Controls that are updated between steps ──────────────────────
+            var stepLabel = new TextBlock
+            {
+                FontSize = 11,
+                Foreground = new SolidColorBrush(Color.Parse("#707070")),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var titleText = new TextBlock
+            {
+                FontSize = 17,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = PrimaryTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+            };
+
+            var bodyText = new TextBlock
+            {
+                FontSize = 13,
+                Foreground = MutedTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+                LineHeight = 20,
+            };
+
+            // Progress dots — one per step, filled when reached
+            var dots = new Border[steps.Length];
+            var dotsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            for (var i = 0; i < steps.Length; i++)
+            {
+                var dot = new Border
+                {
+                    Width = 7, Height = 7,
+                    CornerRadius = new CornerRadius(4),
+                    Background = new SolidColorBrush(Color.Parse("#404040")),
+                };
+                dots[i] = dot;
+                dotsPanel.Children.Add(dot);
+            }
+
+            var backButton  = CreateDialogButton("← Back",  ButtonBrush,  SurfaceBorderBrush, PrimaryTextBrush, () => { });
+            var nextButton  = CreateDialogButton("Next →",  AccentBrush,  AccentBrush,        Brushes.White,    () => { });
+            var skipButton  = new Button
+            {
+                Content     = "Skip tutorial",
+                Background  = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground  = new SolidColorBrush(Color.Parse("#606060")),
+                Padding     = new Thickness(0),
+                Cursor      = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+            };
+
+            Window? dialog = null;
+
+            void Refresh()
+            {
+                var (title, body, navigate) = steps[currentStep];
+                stepLabel.Text = $"Step {currentStep + 1} of {steps.Length}";
+                titleText.Text = title;
+                bodyText.Text  = body;
+
+                backButton.IsVisible = currentStep > 0;
+                nextButton.Content   = currentStep == steps.Length - 1 ? "Get started!" : "Next →";
+
+                for (var i = 0; i < dots.Length; i++)
+                    dots[i].Background = new SolidColorBrush(
+                        i <= currentStep ? Color.Parse("#8C00FF") : Color.Parse("#404040"));
+
+                navigate?.Invoke();
+            }
+
+            backButton.Click += (_, _) =>
+            {
+                if (currentStep > 0) { currentStep--; Refresh(); }
+            };
+
+            nextButton.Click += (_, _) =>
+            {
+                if (currentStep < steps.Length - 1) { currentStep++; Refresh(); }
+                else dialog?.Close();
+            };
+
+            skipButton.Click += (_, _) => dialog?.Close();
+
+            var content = new Border
+            {
+                Padding = new Thickness(24),
+                Child = new StackPanel
+                {
+                    Spacing = 16,
+                    Children =
+                    {
+                        // Header row: step label + skip
+                        new Grid
+                        {
+                            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                            Children =
+                            {
+                                stepLabel,
+                                new Border
+                                {
+                                    [Grid.ColumnProperty] = 1,
+                                    Child = skipButton,
+                                },
+                            },
+                        },
+                        titleText,
+                        bodyText,
+                        // Progress dots
+                        dotsPanel,
+                        // Navigation buttons
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal,
+                            Spacing = 10,
+                            HorizontalAlignment = HorizontalAlignment.Right,
+                            Children = { backButton, nextButton },
+                        },
+                    },
+                },
+            };
+
+            dialog = new Window
+            {
+                Title                 = "Kodo — Getting Started",
+                Width                 = 420,
+                SizeToContent         = SizeToContent.Height,
+                MinWidth              = 340,
+                CanResize             = false,
+                ShowInTaskbar         = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background            = CardBrush,
+                Content               = content,
+            };
+
+            Refresh();
+
+            // Mark tutorial done whether the user finishes or skips — either way
+            // they've seen it and we shouldn't show it again.
+            dialog.Closed += (_, _) =>
+            {
+                NavigateTo(Page.Home);
+                SaveSettings();
+            };
+
+            await dialog.ShowDialog(this);
+
+            // Persist the completed flag so the tutorial never auto-shows again.
+            // SaveSettings snapshots the current in-memory state; HasCompletedTutorial
+            // is written via the settings file existing from this point forward,
+            // so _isFirstLaunch will be false on every subsequent launch.
+        }
+        catch
+        {
+            // Tutorial failure must never crash the app.
+        }
+    }
+
     // Shows a non-fatal warning dialog that mirrors the crash dialog in App.axaml.cs
     // but uses softer wording. Call this from any recoverable error path where the
     // user needs to know something went wrong.
@@ -5402,6 +5820,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public List<string> OpenTabPaths { get; set; } = [];
         public string? ActiveTabPath { get; set; }
         public List<RecentFileEntry> RecentFiles { get; set; } = [];
+        // False on first launch (settings file didn't exist yet); set to true after the
+        // tutorial is dismissed so it never shows again on subsequent launches.
+        public bool HasCompletedTutorial { get; set; }
     }
 
     public sealed class RecentFileEntry
@@ -6115,10 +6536,17 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 
     public int TabSize { get; set; } = 4;
 
+    // Disabled for unsaved (untitled) files and plain-text files (.txt / .log / .text)
+    // so that smart visual features don't activate where no language context exists.
+    public bool IsEnabled { get; set; } = true;
+
     public IBrush GuideBrush { get; set; } = new SolidColorBrush(Color.Parse("#808080"), 0.4);
 
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
+        if (!IsEnabled)
+            return;
+
         if (!textView.VisualLinesValid || TabSize <= 0)
             return;
 
