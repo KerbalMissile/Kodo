@@ -1,21 +1,4 @@
 // Licensed under the Kodo Public License v1.1
-// May 8th, 2026 - Fixed settings.json resetting by using atomic write (temp file + replace)
-// May 8th, 2026 - Added ShowWarningDialogAsync for non-fatal recoverable errors
-// May 5th, 2026 - SS-YYC - Added Unsaved dot indicator on editor tabs, close other/all tabs context menu, last-modified time on recent files, language indicator in status bar, font size setting, collapse all tree button, extension search filter, active theme indicator, find in file panel (Ctrl+F), file tree right-click context menu (copy path, delete)
-// April 29th, 2026 - SS-YYC - Fixed syntax highlighting: keywords/numbers no longer colour inside comments or strings by isolating rules into a code-only ruleset that comment and string spans cannot inherit from
-// April 29th, 2026 - SS-YYC - Fixed language.json and language2.json now both apply and merge correctly for both .kox and folder extensions
-// April 29th, 2026 - SS-YYC - Fixed marketplace icons always showing abbreviation boxes instead of index icons
-// April 29th, 2026 - SS-YYC - Fixed installed extensions not showing index icons in the Installed tab
-// April 29th, 2026 - SS-YYC - Fixed install/uninstall not refreshing due to cooldown, safe URI parsing in install path, HttpClient timeout, removed redundant binPath variable
-// April 29th, 2026 - SS-YYC - Marketplace now pulls exclusively from the web, removed local index file lookup
-// April 24th, 2026 - SS-YYC - Fixed multi-theme support: theme.json arrays now create one LoadedExtension per theme entry
-// April 19th, 2026 - KerbalMissile - Changed "One file at a time" note to "No file open"
-// April 19th, 2026 - KerbalMissile - Added proper comments
-// April 19th, 2026 - KerbalMissile - Changed "No File Open" at top bar to be empty when no file is open, and to show the file name when a file is open, also shows "Unsaved" if there are Unsaved changes
-// April 19th, 2026 - KerbalMissile - Changed open file icon to fit in better
-// April 19th, 2026 - KerbalMissile - Re-added SS-YYC's changes to improve Kodo's UI, did some changes the New File buttons but they still do not work
-// April 20th, 2026 - SS-YYC - Added collapsible file explorer panel with folder tree and expand/collapse
-// April 20th, 2026 - KerbalMissile - Added extension support, re-added full screen by default, updated open / close folder icon
 using System;
 using System.Reflection;
 using System.Collections.Generic;
@@ -26,6 +9,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
 using System.Net.Http;
 using System.Text.Json;
@@ -438,6 +422,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isRefreshingLatestRelease;
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
+    private bool _isTutorialPageVisible;
     private bool _isWhatsNewPageVisible;
     private bool _isWhatsNewExpanded;
     private bool _isHomePageVisible;
@@ -459,8 +444,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DateTime _sessionStart = DateTime.UtcNow;
     // True when settings.json did not exist on this launch — used to show the tutorial once.
     private bool _isFirstLaunch;
+    private bool _hasCompletedTutorial;
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
     private string _latestReleaseStatusText = "Loading latest release...";
+    private string _marketplaceConnectivityMessage = string.Empty;
+    private bool _isMarketplaceConnectivityWarningVisible;
     private ReleaseInfo? _latestRelease;
     private LoadedExtension? _currentLanguageExtension;
     private Bitmap? _currentImagePreview;
@@ -480,7 +468,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _startupFilePath;
     private string _extensionSearchText = string.Empty;
     private bool _isFindPanelVisible;
+    private bool _isFileCorrupted;
+    private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
     private string _findText = string.Empty;
+    private int _tutorialStepIndex;
 
     // File tree clipboard state (cut/copy/paste)
     private string? _clipboardItemPath;
@@ -488,6 +479,49 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _clipboardIsCut;
     private event PropertyChangedEventHandler? ViewModelPropertyChanged;
     private static readonly HttpClient MarketplaceHttpClient = CreateHttpClient();
+    private static readonly TutorialStep[] TutorialSteps =
+    [
+        new(
+            "Welcome",
+            "Meet your workspace",
+            "Kodo starts on Home so you can jump straight into a recent project, create a new file, or open an existing folder without hunting through menus.",
+            "Ctrl+H",
+            "Home is your launchpad",
+            "Open recent files and folders in one click.",
+            "Start fresh work quickly with New File or Open Folder.",
+            "Jump back here anytime from the activity bar."
+        ),
+        new(
+            "Editing",
+            "Create and work fast",
+            "Use the editor for scratch files or full projects, then lean on autosave, tab restore, and the file explorer when you are moving across a bigger codebase.",
+            "Ctrl+N / Ctrl+O / Ctrl+K",
+            "Core editing flow",
+            "Create a file instantly with Ctrl+N.",
+            "Open a file with Ctrl+O or a folder with Ctrl+K.",
+            "Keep momentum with tabs, autosave, and explorer tools."
+        ),
+        new(
+            "Marketplace",
+            "Install language support and themes",
+            "The Marketplace is where Kodo pulls syntax highlighting packs, language definitions, and theme extensions from the web so you can tailor the app to your stack.",
+            "Ctrl+E",
+            "Extensions, themes, updates",
+            "Browse installable extensions from inside the app.",
+            "Update installed packages when newer versions appear.",
+            "Watch for connectivity warnings if downloads cannot reach the internet."
+        ),
+        new(
+            "Settings",
+            "Tune Kodo to your workflow",
+            "Adjust themes, font size, tab width, autosave, and other quality-of-life settings so the editor feels right for the way you work.",
+            "Ctrl+,",
+            "Personalize the experience",
+            "Switch between built-in and extension themes.",
+            "Set editor font size and tab behavior.",
+            "Control autosave and launch preferences."
+        )
+    ];
 
     // ── Auto-completion ──────────────────────────────────────────────────────
 
@@ -613,6 +647,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isWordWrapEnabled = settings.WordWrapEnabled;
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
+        _hasCompletedTutorial = settings.HasCompletedTutorial;
         _tabSize = NormalizeTabSize(settings.TabSize);
         _editorFontSize = settings.EditorFontSize is >= 8 and <= 32 ? settings.EditorFontSize : 14;
         _startupOpenTabPaths.AddRange(settings.OpenTabPaths
@@ -630,6 +665,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ApplyTheme(_requestedThemeName);
         EnsureExtensionsFolder();
         SetupExtensionFolderWatchers();
+        NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
+        NetworkChange.NetworkAddressChanged += NetworkChange_OnNetworkAddressChanged;
+        RefreshMarketplaceConnectivityState();
         _ = RefreshExtensionsDataAsync();
         _ = RefreshLatestReleaseAsync();
         UpdateDiscordRichPresenceLifecycle();
@@ -838,6 +876,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var marketplaceExtensions = new List<MarketplaceExtension>();
         var extensionLoadErrors = new List<string>();
+        RefreshMarketplaceConnectivityState();
 
         try
         {
@@ -859,6 +898,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             extensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
+            RefreshMarketplaceConnectivityState("Marketplace fetch", ex);
             await ShowWarningDialogAsync("Marketplace fetch", ex);
         }
 
@@ -1179,6 +1219,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (marketplaceExtension.IsInstalling || (marketplaceExtension.IsInstalled && !marketplaceExtension.IsUpdateAvailable))
             return;
 
+        RefreshMarketplaceConnectivityState();
         marketplaceExtension.IsInstalling = true;
         var action = marketplaceExtension.IsUpdateAvailable ? "Updating" : "Installing";
         marketplaceExtension.InstallButtonText = $"{action}...";
@@ -1203,6 +1244,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             marketplaceExtension.SetInstalledState(
                 GetPreferredLoadedExtension(marketplaceExtension.Id),
                 marketplaceExtension.IsUpdateAvailable);
+            RefreshMarketplaceConnectivityState($"Extension install - {marketplaceExtension.Name}", ex);
             ExtensionsStatusText = $"Failed to install {marketplaceExtension.Name}: {ex.Message}";
             await ShowWarningDialogAsync($"Extension install — {marketplaceExtension.Name}", ex);
         }
@@ -1855,6 +1897,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return ImagePreviewExtensions.Contains(ext);
     }
 
+    // Returns true when the byte content of a file indicates it is binary (non-text).
+    // We sample up to 8 KB and treat the file as binary if it contains any null bytes,
+    // which is the standard heuristic used by git and most editors.
+    private static bool IsBinaryContent(string path)
+    {
+        try
+        {
+            const int sampleSize = 8192;
+            Span<byte> buffer = stackalloc byte[sampleSize];
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var read = fs.Read(buffer);
+            for (var i = 0; i < read; i++)
+            {
+                if (buffer[i] == 0x00)
+                    return true;
+            }
+            return false;
+        }
+        catch
+        {
+            // If we can't read the file at all, treat it as corrupted.
+            return true;
+        }
+    }
+
     private static Bitmap? TryLoadImagePreview(string? filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath) || !IsImagePreviewFile(filePath))
@@ -1881,6 +1948,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         return _currentFilePath is null && _hasUntitledDocument;
     }
+
+    private bool IsSmartSyntaxEnabled() =>
+        !IsPlainTextMode() &&
+        HasFileOpen &&
+        ActiveEditorTab is { IsUntitled: false };
 
     // ── Theme / editor appearance ────────────────────────────────────────────
 
@@ -1962,6 +2034,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (imagePreview is not null)
         {
+            SetFileCorrupted(false);
             CurrentLanguageExtension = null;
             EditorTextBox.SyntaxHighlighting = null;
             ConfigureRainbowBrackets(null);
@@ -1969,6 +2042,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         RefreshCurrentFileSyntaxHighlighting();
+    }
+
+    // Sets the corrupted/unsupported state and fires all dependent property notifications.
+    private void SetFileCorrupted(bool corrupted)
+    {
+        if (_isFileCorrupted == corrupted) return;
+        _isFileCorrupted = corrupted;
+        OnPropertyChanged(nameof(IsCorruptedFileViewVisible));
+        OnPropertyChanged(nameof(IsTextEditorVisible));
+        OnPropertyChanged(nameof(CanShowFindInFile));
+        OnPropertyChanged(nameof(IsFindPanelActive));
+        OnPropertyChanged(nameof(CanShowSaveActions));
     }
 
     private void ConfigureRainbowBrackets(LoadedExtension? ext)
@@ -1998,6 +2083,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (_isExtensionsPageVisible == value) return;
             _isExtensionsPageVisible = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsEditorPageVisible));
+        }
+    }
+
+    public bool IsTutorialPageVisible
+    {
+        get => _isTutorialPageVisible;
+        set
+        {
+            if (_isTutorialPageVisible == value) return;
+            _isTutorialPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
         }
@@ -2070,25 +2167,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public bool IsEditorPageVisible => !IsSettingsPageVisible && !IsExtensionsPageVisible && !IsWhatsNewPageVisible;
+    public bool IsEditorPageVisible => !IsSettingsPageVisible && !IsExtensionsPageVisible && !IsTutorialPageVisible && !IsWhatsNewPageVisible;
 
     public bool HasDocumentOpen => _currentFilePath is not null || _hasUntitledDocument;
 
     public bool HasOpenEditors => OpenTabs.Count > 0;
 
-    public bool IsDocumentViewVisible => HasDocumentOpen && !IsHomePageVisible;
+    public bool IsDocumentViewVisible => HasDocumentOpen && IsEditorPageVisible && !IsHomePageVisible;
 
     public bool HasImagePreview => CurrentImagePreview is not null;
 
     public bool IsImagePreviewVisible => IsDocumentViewVisible && HasImagePreview;
 
-    public bool IsTextEditorVisible => IsDocumentViewVisible && !HasImagePreview;
+    public bool IsCorruptedFileViewVisible => IsDocumentViewVisible && !HasImagePreview && _isFileCorrupted;
+
+    public bool IsTextEditorVisible => IsDocumentViewVisible && !HasImagePreview && !_isFileCorrupted;
 
     public bool CanShowFindInFile => IsTextEditorVisible;
 
     public bool IsFindPanelActive => IsFindPanelVisible && CanShowFindInFile;
 
-    public bool IsEditorTabsVisible => OpenTabs.Count >= 1 && !IsHomePageVisible;
+    public bool IsEditorTabsVisible => OpenTabs.Count >= 1 && IsEditorPageVisible && !IsHomePageVisible;
 
     public bool CanShowSaveActions => IsTextEditorVisible;
 
@@ -2100,7 +2199,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsFolderOpen => _currentFolderPath is not null;
 
-    public bool IsEmptyStateVisible => IsHomePageVisible || !HasDocumentOpen;
+    public bool IsEmptyStateVisible => IsHomePageVisible || (IsEditorPageVisible && !HasDocumentOpen);
 
     public bool HasRecentFiles => RecentFiles.Count > 0;
 
@@ -2377,6 +2476,65 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsMarketplaceEmptyVisible => MarketplaceExtensions.Count == 0;
 
+    public bool IsMarketplaceConnectivityWarningVisible
+    {
+        get => _isMarketplaceConnectivityWarningVisible;
+        private set
+        {
+            if (_isMarketplaceConnectivityWarningVisible == value) return;
+            _isMarketplaceConnectivityWarningVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string TutorialStepLabel => $"Step {TutorialStepIndex + 1} of {TutorialSteps.Length}";
+
+    public string TutorialProgressDotsText =>
+        string.Join(" ", Enumerable.Range(0, TutorialSteps.Length).Select(index => index <= TutorialStepIndex ? "●" : "○"));
+
+    public string TutorialSectionTitle => CurrentTutorialStep.SectionTitle;
+
+    public string TutorialTitle => CurrentTutorialStep.Title;
+
+    public string TutorialBody => CurrentTutorialStep.Body;
+
+    public string TutorialShortcutText => CurrentTutorialStep.Shortcut;
+
+    public string TutorialSpotlightTitle => CurrentTutorialStep.SpotlightTitle;
+
+    public string TutorialHighlightOne => CurrentTutorialStep.HighlightOne;
+
+    public string TutorialHighlightTwo => CurrentTutorialStep.HighlightTwo;
+
+    public string TutorialHighlightThree => CurrentTutorialStep.HighlightThree;
+
+    public bool CanGoToPreviousTutorialStep => TutorialStepIndex > 0;
+
+    public string TutorialPrimaryButtonText => TutorialStepIndex >= TutorialSteps.Length - 1 ? "Finish tutorial" : "Next";
+
+    public int TutorialStepIndex
+    {
+        get => _tutorialStepIndex;
+        private set
+        {
+            var clamped = Math.Clamp(value, 0, TutorialSteps.Length - 1);
+            if (_tutorialStepIndex == clamped) return;
+            _tutorialStepIndex = clamped;
+            OnTutorialStepChanged();
+        }
+    }
+
+    public string MarketplaceConnectivityMessage
+    {
+        get => _marketplaceConnectivityMessage;
+        private set
+        {
+            if (string.Equals(_marketplaceConnectivityMessage, value, StringComparison.Ordinal)) return;
+            _marketplaceConnectivityMessage = value;
+            OnPropertyChanged();
+        }
+    }
+
     public bool IsDiscordRichPresenceEnabled
     {
         get => _isDiscordRichPresenceEnabled;
@@ -2576,13 +2734,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // Displays the file name and Unsaved/autosave status in the top bar
-    public string FileSummaryText => IsHomePageVisible
+    public string FileSummaryText => IsTutorialPageVisible
+        ? "Tutorial"
+        : IsHomePageVisible
         ? "Home"
         : HasDocumentOpen
         ? $"{GetDocumentDisplayName()}{GetDocumentStatusSuffix()}"
         : "Editor";
 
-    public string FilePathText => IsHomePageVisible
+    public string FilePathText => IsTutorialPageVisible
+        ? "Getting started with Kodo"
+        : IsHomePageVisible
         ? "Welcome to Kodo!"
         : HasFileOpen
         ? (IsStatusBarFilePathVisible ? _currentFilePath! : GetDocumentDisplayName())
@@ -3021,6 +3183,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             EditorFontSize                         = EditorFontSize,
             ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
             RestoreOpenTabsOnLaunchEnabled          = IsRestoreOpenTabsOnLaunchEnabled,
+            HasCompletedTutorial                    = _hasCompletedTutorial,
             OpenTabPaths = OpenTabs
                 .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
                 .Select(tab => tab.Path)
@@ -3182,6 +3345,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isDirty = tab.IsDirty;
         _autoSaveTimer.Stop();
         ClearAutoSaveStatus();
+        SetFileCorrupted(_corruptedTabs.Contains(tab));
         SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
         UpdateCurrentDocumentPresentation();
 
@@ -3203,6 +3367,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
 
         OpenTabs.RemoveAt(index);
+        _corruptedTabs.Remove(tab);
 
         if (!closingActiveTab)
         {
@@ -3223,6 +3388,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isDirty = false;
         CurrentLanguageExtension = null;
         CurrentImagePreview = null;
+        SetFileCorrupted(false);
         EditorTextBox.SyntaxHighlighting = null;
         ConfigureRainbowBrackets(null);
         SetEditorContent(string.Empty);
@@ -3305,17 +3471,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         string content;
+        bool isCorrupted;
         try
         {
             if (IsImagePreviewFile(path))
             {
                 content = string.Empty;
+                isCorrupted = false;
+                _currentFileEncoding = System.Text.Encoding.UTF8;
+            }
+            else if (IsBinaryContent(path))
+            {
+                content = string.Empty;
+                isCorrupted = true;
                 _currentFileEncoding = System.Text.Encoding.UTF8;
             }
             else
             {
                 _currentFileEncoding = DetectFileEncoding(path);
                 content = await File.ReadAllTextAsync(path, _currentFileEncoding);
+                isCorrupted = false;
             }
         }
         catch (Exception ex)
@@ -3330,6 +3505,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NavigateTo(Page.Editor);
 
         var tab = new EditorTab(path, Path.GetFileName(path), content);
+        if (isCorrupted)
+            _corruptedTabs.Add(tab);
         OpenTabs.Add(tab);
         ActivateTab(tab);
     }
@@ -3384,7 +3561,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await OpenFileFromPathAsync(_startupFilePath);
         }
 
-        if (_isFirstLaunch)
+        if (_isFirstLaunch && !_hasCompletedTutorial)
             await ShowTutorialAsync();
     }
 
@@ -3707,30 +3884,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Switches the visible page in one pass — sets all backing fields before firing
     // any notifications, so the UI only re-renders once instead of once per property set.
-    private enum Page { Home, Editor, Settings, Extensions, WhatsNew }
+    private enum Page { Home, Editor, Settings, Extensions, Tutorial, WhatsNew }
 
     private void NavigateTo(Page page)
     {
         var newHome       = page == Page.Home;
         var newSettings   = page == Page.Settings;
         var newExtensions = page == Page.Extensions;
+        var newTutorial   = page == Page.Tutorial;
         var newWhatsNew   = page == Page.WhatsNew;
 
         // Bail early if nothing actually changed
         if (_isHomePageVisible       == newHome       &&
             _isSettingsPageVisible   == newSettings   &&
             _isExtensionsPageVisible == newExtensions &&
+            _isTutorialPageVisible   == newTutorial   &&
             _isWhatsNewPageVisible   == newWhatsNew)
             return;
 
         _isHomePageVisible       = newHome;
         _isSettingsPageVisible   = newSettings;
         _isExtensionsPageVisible = newExtensions;
+        _isTutorialPageVisible   = newTutorial;
         _isWhatsNewPageVisible   = newWhatsNew;
 
         OnPropertyChanged(nameof(IsHomePageVisible));
         OnPropertyChanged(nameof(IsSettingsPageVisible));
         OnPropertyChanged(nameof(IsExtensionsPageVisible));
+        OnPropertyChanged(nameof(IsTutorialPageVisible));
         OnPropertyChanged(nameof(IsWhatsNewPageVisible));
         OnPropertyChanged(nameof(IsEditorPageVisible));
         OnPropertyChanged(nameof(IsEditorTabsVisible));
@@ -3780,6 +3961,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
     {
         NavigateTo(Page.Extensions);
+        RefreshMarketplaceConnectivityState();
         _ = RefreshExtensionsDataAsync();
     }
 
@@ -3790,37 +3972,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsMarketplaceTabSelected = false;
 
     // Used by the tab strip inside the Extensions page — only switches the tab
-    private void MarketplaceTabButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private void MarketplaceTabButton_OnClick(object? sender, RoutedEventArgs e)
+    {
         IsMarketplaceTabSelected = true;
+        RefreshMarketplaceConnectivityState();
+    }
 
     // Used by the "Visit Marketplace" button on the home screen —
     // opens the Extensions page AND switches to the Marketplace tab
     private void OpenMarketplaceButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        IsSettingsPageVisible = false;
-        IsWhatsNewPageVisible = false;
-        IsHomePageVisible = false;
+        NavigateTo(Page.Extensions);
         IsMarketplaceTabSelected = true;
-        IsExtensionsPageVisible = true;
+        RefreshMarketplaceConnectivityState();
         _ = RefreshExtensionsDataAsync(force: true);
+    }
+
+    private void OpenTutorialButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        TutorialStepIndex = 0;
+        NavigateTo(Page.Tutorial);
     }
 
     private void OpenWhatsNewButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        IsExtensionsPageVisible = false;
-        IsSettingsPageVisible = false;
-        IsHomePageVisible = false;
-        IsWhatsNewPageVisible = true;
+        NavigateTo(Page.WhatsNew);
         IsWhatsNewExpanded = true;
         _ = RefreshLatestReleaseAsync();
     }
 
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        IsSettingsPageVisible = false;
-        IsExtensionsPageVisible = false;
-        IsWhatsNewPageVisible = false;
-        IsHomePageVisible = false;
+        NavigateTo(Page.Editor);
         FocusEditor();
     }
 
@@ -3846,11 +4029,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _extensionUpdateBannerDismissed = true;
         OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
-        IsSettingsPageVisible = false;
-        IsWhatsNewPageVisible = false;
-        IsHomePageVisible = false;
+        NavigateTo(Page.Extensions);
         IsMarketplaceTabSelected = true;
-        IsExtensionsPageVisible = true;
+        RefreshMarketplaceConnectivityState();
     }
 
     private void OpenReleasesPageButton_OnClick(object? sender, RoutedEventArgs e) =>
@@ -4853,14 +5034,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // instead of inserting a duplicate.
     private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
     {
-        if (IsPlainTextMode()) return;
+        if (!IsSmartSyntaxEnabled()) return;
         if (string.IsNullOrEmpty(e.Text)) return;
         var ch     = e.Text[0];
         var caret  = EditorTextBox.TextArea.Caret;
         var doc    = EditorTextBox.Document;
         var offset = caret.Offset;
+        var selection = EditorTextBox.TextArea.Selection;
+
+        if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing))
+        {
+            var segment = selection.SurroundingSegment;
+            if (segment is not null)
+            {
+                var selectedText = selection.GetText();
+                doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}");
+                caret.Offset = segment.Offset + selectedText.Length + 2;
+                e.Handled = true;
+                return;
+            }
+        }
 
         if (!ClosingChars.Contains(ch)) return;
+
+        if (ch == '}' && TryAlignClosingDelimiterBeforeInsert(doc, caret, '}'))
+            offset = caret.Offset;
+
         if (offset >= doc.TextLength) return;
         if (doc.GetCharAt(offset) != ch) return;
 
@@ -4883,7 +5082,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Used to insert the matching closing character right after the opener.
     private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
     {
-        if (IsPlainTextMode()) return;
+        if (!IsSmartSyntaxEnabled()) return;
         if (string.IsNullOrEmpty(e.Text)) return;
         var ch = e.Text[0];
 
@@ -4892,16 +5091,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var caret  = EditorTextBox.TextArea.Caret;
         var doc    = EditorTextBox.Document;
         var offset = caret.Offset;
-        var selection = EditorTextBox.TextArea.Selection;
-
-        if (!selection.IsEmpty)
-        {
-            var startOffset = selection.SurroundingSegment.Offset;
-            var selectedText = selection.GetText();
-            doc.Replace(selection.SurroundingSegment, $"{ch}{selectedText}{closing}");
-            caret.Offset = startOffset + selectedText.Length + 2;
-            return;
-        }
 
         // For symmetric pairs, don't auto-close when the next char is alphanumeric
         // (avoids nuisance completions mid-word, e.g. typing " in  it's).
@@ -4932,18 +5121,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var doc = EditorTextBox.Document;
         switch (e.Key)
         {
-            case Key.Enter when !IsPlainTextMode() && (e.KeyModifiers & KeyModifiers.Shift) != KeyModifiers.Shift:
+            case Key.Enter when IsSmartSyntaxEnabled() && (e.KeyModifiers & KeyModifiers.Shift) != KeyModifiers.Shift:
                 HandleSmartEnter(doc, caret);
                 e.Handled = true;
                 return;
 
-            case Key.Tab when e.KeyModifiers == KeyModifiers.Shift:
+            case Key.Tab when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.Shift:
                 HandleTabKey(() => HandleOutdent(doc, textArea.Selection, caret), doc, caret);
                 e.Handled = true;
                 return;
 
-            case Key.Tab when e.KeyModifiers == KeyModifiers.None:
+            case Key.Tab when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.None:
                 HandleTabKey(() => HandleIndent(doc, textArea.Selection, caret), doc, caret);
+                e.Handled = true;
+                return;
+
+            case Key.Back when IsSmartSyntaxEnabled():
+                if (HandleSmartBackspace(doc, caret))
+                {
+                    e.Handled = true;
+                    return;
+                }
+                break;
+
+            case Key.V when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.Control:
+                e.Handled = true;
+                _ = HandleSmartPasteAsync(doc, textArea, caret);
+                return;
+
+            case Key.Oem2 when IsSmartSyntaxEnabled() && (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control:
+                ToggleLineComment(doc, textArea, textArea.Selection, caret);
                 e.Handled = true;
                 return;
         }
@@ -5011,6 +5218,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var newLineText = Environment.NewLine + adjustedIndent + extraIndent;
         doc.Insert(offset, newLineText);
         caret.Offset = offset + newLineText.Length;
+    }
+
+    private bool HandleSmartBackspace(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
+    {
+        var selection = EditorTextBox.TextArea.Selection;
+        if (selection is not null && !selection.IsEmpty)
+            return false;
+
+        var offset = caret.Offset;
+        if (offset <= 0 || offset >= doc.TextLength)
+            return false;
+
+        var opening = doc.GetCharAt(offset - 1);
+        if (!BracketPairs.TryGetValue(opening, out var closing))
+            return false;
+
+        if (doc.GetCharAt(offset) != closing)
+            return false;
+
+        doc.Remove(offset - 1, 2);
+        SetCaretOffsetSafely(caret, doc, offset - 1);
+        return true;
     }
 
     private void HandleIndent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
@@ -5118,6 +5347,179 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return trimmed.StartsWith("}", StringComparison.Ordinal) ||
                trimmed.StartsWith("]", StringComparison.Ordinal) ||
                trimmed.StartsWith(")", StringComparison.Ordinal);
+    }
+
+    private bool TryAlignClosingDelimiterBeforeInsert(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret, char closing)
+    {
+        var offset = caret.Offset;
+        var line = doc.GetLineByOffset(offset);
+        var lineText = doc.GetText(line);
+        var caretColumnInLine = offset - line.Offset;
+        var textBeforeCaret = lineText[..Math.Min(caretColumnInLine, lineText.Length)];
+
+        if (textBeforeCaret.Length == 0 || !string.IsNullOrWhiteSpace(textBeforeCaret))
+            return false;
+
+        var removable = GetOutdentLength(textBeforeCaret, textBeforeCaret.Length);
+        if (removable <= 0)
+            return false;
+
+        doc.Remove(line.Offset, removable);
+        SetCaretOffsetSafely(caret, doc, offset - removable);
+        return true;
+    }
+
+    private static string NormalizeLineEndings(string text) =>
+        text.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    private string ReindentPastedText(string text, AvaloniaEdit.Document.TextDocument doc, int offset)
+    {
+        var normalized = NormalizeLineEndings(text);
+        if (!normalized.Contains('\n'))
+            return text;
+
+        var line = doc.GetLineByOffset(Math.Clamp(offset, 0, doc.TextLength));
+        var lineText = doc.GetText(line);
+        var caretColumnInLine = Math.Clamp(offset - line.Offset, 0, lineText.Length);
+        var textBeforeCaret = lineText[..caretColumnInLine];
+        var baseIndent = GetLeadingWhitespace(textBeforeCaret);
+        var pasteLines = normalized.Split('\n');
+
+        if (pasteLines.Length <= 1)
+            return text;
+
+        var firstNonEmptyIndex = Array.FindIndex(pasteLines, static l => !string.IsNullOrWhiteSpace(l));
+        if (firstNonEmptyIndex < 0)
+            return text;
+
+        var commonIndent = GetLeadingWhitespace(pasteLines[firstNonEmptyIndex]);
+        for (var i = firstNonEmptyIndex + 1; i < pasteLines.Length; i++)
+        {
+            if (string.IsNullOrWhiteSpace(pasteLines[i]))
+                continue;
+
+            commonIndent = GetSharedIndent(commonIndent, GetLeadingWhitespace(pasteLines[i]));
+            if (commonIndent.Length == 0)
+                break;
+        }
+
+        for (var i = 1; i < pasteLines.Length; i++)
+        {
+            if (pasteLines[i].Length == 0)
+                continue;
+
+            var trimmedLine = pasteLines[i];
+            if (commonIndent.Length > 0 && trimmedLine.StartsWith(commonIndent, StringComparison.Ordinal))
+                trimmedLine = trimmedLine[commonIndent.Length..];
+
+            pasteLines[i] = baseIndent + trimmedLine;
+        }
+
+        return string.Join(Environment.NewLine, pasteLines);
+    }
+
+    private static string GetSharedIndent(string left, string right)
+    {
+        var max = Math.Min(left.Length, right.Length);
+        var length = 0;
+        while (length < max && left[length] == right[length])
+            length++;
+
+        return left[..length];
+    }
+
+    private async Task HandleSmartPasteAsync(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, AvaloniaEdit.Editing.Caret caret)
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null)
+            return;
+
+        var text = await clipboard.TryGetTextAsync();
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        var insertionText = ReindentPastedText(text, doc, caret.Offset);
+        var selection = textArea.Selection;
+        if (selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null)
+        {
+            var segment = selection.SurroundingSegment;
+            doc.Replace(segment, insertionText);
+            SetCaretOffsetSafely(caret, doc, segment.Offset + insertionText.Length);
+            return;
+        }
+
+        var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+        doc.Insert(safeOffset, insertionText);
+        SetCaretOffsetSafely(caret, doc, safeOffset + insertionText.Length);
+    }
+
+    private void ToggleLineComment(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
+    {
+        var lineCommentToken = CurrentLanguageExtension?.CommentLine;
+        if (string.IsNullOrWhiteSpace(lineCommentToken))
+            return;
+
+        var startOffset = selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null
+            ? selection.SurroundingSegment.Offset
+            : caret.Offset;
+        var endOffset = selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null
+            ? selection.SurroundingSegment.EndOffset
+            : caret.Offset;
+
+        var lines = GetSelectedLines(doc, startOffset, endOffset);
+        if (lines.Count == 0)
+            return;
+
+        var shouldUncomment = lines
+            .Where(line => !string.IsNullOrWhiteSpace(doc.GetText(line)))
+            .All(line =>
+            {
+                var text = doc.GetText(line);
+                var indent = GetLeadingWhitespace(text);
+                return text[indent.Length..].StartsWith(lineCommentToken, StringComparison.Ordinal);
+            });
+
+        var delta = 0;
+        foreach (var line in lines.OrderByDescending(l => l.Offset))
+        {
+            var text = doc.GetText(line);
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            var indent = GetLeadingWhitespace(text);
+            var commentOffset = line.Offset + indent.Length;
+            if (shouldUncomment)
+            {
+                if (text[indent.Length..].StartsWith(lineCommentToken, StringComparison.Ordinal))
+                {
+                    var removedForLine = lineCommentToken.Length;
+                    doc.Remove(commentOffset, lineCommentToken.Length);
+                    if (text.Length > indent.Length + lineCommentToken.Length && text[indent.Length + lineCommentToken.Length] == ' ')
+                    {
+                        doc.Remove(commentOffset, 1);
+                        removedForLine++;
+                    }
+
+                    delta -= removedForLine;
+                }
+            }
+            else
+            {
+                doc.Insert(commentOffset, lineCommentToken + " ");
+                delta += lineCommentToken.Length + 1;
+            }
+        }
+
+        if (selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null)
+        {
+            var segment = selection.SurroundingSegment;
+            var newEnd = Math.Max(segment.Offset, segment.EndOffset + delta);
+            textArea.Selection = AvaloniaEdit.Editing.Selection.Create(textArea, segment.Offset, newEnd);
+        }
+        else
+        {
+            SetCaretOffsetSafely(caret, doc, caret.Offset + delta);
+        }
     }
 
     private string RemoveOneIndentUnit(string indent)
@@ -5236,24 +5638,122 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _autoSaveStatusTimer.Stop();
         _discordReconnectTimer.Stop();
         _extensionsRefreshDebounceTimer.Stop();
+        NetworkChange.NetworkAvailabilityChanged -= NetworkChange_OnNetworkAvailabilityChanged;
+        NetworkChange.NetworkAddressChanged -= NetworkChange_OnNetworkAddressChanged;
         DisposeExtensionFolderWatchers();
         DisposeDiscordPresence();
         CurrentImagePreview = null;
     }
+
+    private void NetworkChange_OnNetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) =>
+        Dispatcher.UIThread.Post(() => RefreshMarketplaceConnectivityState());
+
+    private void NetworkChange_OnNetworkAddressChanged(object? sender, EventArgs e) =>
+        Dispatcher.UIThread.Post(() => RefreshMarketplaceConnectivityState());
+
+    private static bool HasActiveWirelessConnection() =>
+        NetworkInterface.GetAllNetworkInterfaces().Any(networkInterface =>
+            networkInterface.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 &&
+            networkInterface.OperationalStatus == OperationalStatus.Up &&
+            networkInterface.GetIPProperties().UnicastAddresses.Any(address => !System.Net.IPAddress.IsLoopback(address.Address)));
+
+    private static bool HasActiveInternetConnection() =>
+        NetworkInterface.GetIsNetworkAvailable() &&
+        NetworkInterface.GetAllNetworkInterfaces().Any(networkInterface =>
+            networkInterface.OperationalStatus == OperationalStatus.Up &&
+            networkInterface.NetworkInterfaceType is not NetworkInterfaceType.Loopback &&
+            networkInterface.NetworkInterfaceType is not NetworkInterfaceType.Tunnel);
+
+    private static bool IsConnectivityFailure(Exception exception) =>
+        exception is HttpRequestException or TaskCanceledException;
+
+    private void RefreshMarketplaceConnectivityState(string? operation = null, Exception? exception = null)
+    {
+        var hasWirelessConnection = HasActiveWirelessConnection();
+        var hasInternetConnection = HasActiveInternetConnection();
+
+        string message = string.Empty;
+
+        if (!hasInternetConnection)
+        {
+            message = hasWirelessConnection
+                ? "Kodo cannot reach the internet right now. Marketplace installs and updates may fail until your connection comes back."
+                : "No Wi-Fi or internet connection detected. Marketplace installs and downloads may fail until you are back online.";
+        }
+        else if (!hasWirelessConnection && exception is not null && IsConnectivityFailure(exception))
+        {
+            message = "No Wi-Fi connection detected. If you are expecting wireless access, reconnect first. Marketplace downloads can fail while the app is offline or the network is unstable.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(operation) && !string.IsNullOrWhiteSpace(message))
+            message = $"{message} Latest issue: {operation}.";
+
+        MarketplaceConnectivityMessage = message;
+        IsMarketplaceConnectivityWarningVisible = !string.IsNullOrWhiteSpace(message);
+    }
+
+    private TutorialStep CurrentTutorialStep => TutorialSteps[TutorialStepIndex];
+
+    private void OnTutorialStepChanged()
+    {
+        OnPropertyChanged(nameof(TutorialStepIndex));
+        OnPropertyChanged(nameof(TutorialStepLabel));
+        OnPropertyChanged(nameof(TutorialProgressDotsText));
+        OnPropertyChanged(nameof(TutorialSectionTitle));
+        OnPropertyChanged(nameof(TutorialTitle));
+        OnPropertyChanged(nameof(TutorialBody));
+        OnPropertyChanged(nameof(TutorialShortcutText));
+        OnPropertyChanged(nameof(TutorialSpotlightTitle));
+        OnPropertyChanged(nameof(TutorialHighlightOne));
+        OnPropertyChanged(nameof(TutorialHighlightTwo));
+        OnPropertyChanged(nameof(TutorialHighlightThree));
+        OnPropertyChanged(nameof(CanGoToPreviousTutorialStep));
+        OnPropertyChanged(nameof(TutorialPrimaryButtonText));
+    }
+
+    private void CompleteTutorialAndReturnHome()
+    {
+        _hasCompletedTutorial = true;
+        SaveSettings();
+        NavigateTo(Page.Home);
+    }
+
+    private void PreviousTutorialStepButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TutorialStepIndex > 0)
+            TutorialStepIndex--;
+    }
+
+    private void NextTutorialStepButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TutorialStepIndex < TutorialSteps.Length - 1)
+        {
+            TutorialStepIndex++;
+            return;
+        }
+
+        CompleteTutorialAndReturnHome();
+    }
+
+    private void SkipTutorialButton_OnClick(object? sender, RoutedEventArgs e) =>
+        CompleteTutorialAndReturnHome();
 
     private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
     {
         var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
         var hasShift   = (e.KeyModifiers & KeyModifiers.Shift)   == KeyModifiers.Shift;
 
-        // Escape — dismiss Settings / Extensions / WhatsNew and return to editor
+        // Escape — dismiss Settings / Extensions / Tutorial / WhatsNew and return to editor
         if (e.Key == Key.Escape && !hasControl)
         {
-            if (IsSettingsPageVisible || IsExtensionsPageVisible || IsWhatsNewPageVisible)
+            if (IsTutorialPageVisible)
             {
-                IsSettingsPageVisible  = false;
-                IsExtensionsPageVisible = false;
-                IsWhatsNewPageVisible  = false;
+                CompleteTutorialAndReturnHome();
+                e.Handled = true;
+            }
+            else if (IsSettingsPageVisible || IsExtensionsPageVisible || IsWhatsNewPageVisible)
+            {
+                NavigateTo(Page.Editor);
                 FocusEditor();
                 e.Handled = true;
             }
@@ -5273,18 +5773,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (hasShift)
                 {
                     // Ctrl+Shift+E — back to editor (original behaviour)
-                    IsSettingsPageVisible  = false;
-                    IsExtensionsPageVisible = false;
+                    NavigateTo(Page.Editor);
                     FocusEditor();
                     e.Handled = true;
                 }
                 else
                 {
                     // Ctrl+E — open Extensions
-                    IsSettingsPageVisible  = false;
-                    IsWhatsNewPageVisible  = false;
-                    IsHomePageVisible      = false;
-                    IsExtensionsPageVisible = true;
+                    NavigateTo(Page.Extensions);
+                    RefreshMarketplaceConnectivityState();
                     _ = RefreshExtensionsDataAsync();
                     e.Handled = true;
                 }
@@ -5292,19 +5789,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             case Key.OemComma:
                 // Ctrl+, — open Settings
-                IsExtensionsPageVisible = false;
-                IsWhatsNewPageVisible   = false;
-                IsHomePageVisible       = false;
-                IsSettingsPageVisible   = true;
+                NavigateTo(Page.Settings);
                 e.Handled = true;
                 break;
 
             case Key.H:
                 // Ctrl+H — go to Home
-                IsSettingsPageVisible   = false;
-                IsExtensionsPageVisible = false;
-                IsWhatsNewPageVisible   = false;
-                IsHomePageVisible       = true;
+                NavigateTo(Page.Home);
                 e.Handled = true;
                 break;
 
@@ -5361,10 +5852,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             case Key.X when hasShift:
                 // Ctrl+Shift+X — open Extensions (secondary binding)
-                IsSettingsPageVisible   = false;
-                IsWhatsNewPageVisible   = false;
-                IsHomePageVisible       = false;
-                IsExtensionsPageVisible = true;
+                NavigateTo(Page.Extensions);
+                RefreshMarketplaceConnectivityState();
                 _ = RefreshExtensionsDataAsync();
                 e.Handled = true;
                 break;
@@ -5482,208 +5971,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // HasCompletedTutorial is written to settings afterward so subsequent launches
     // skip it even if the user never explicitly dismissed the window.
 
-    private async Task ShowTutorialAsync()
+    private Task ShowTutorialAsync()
     {
         try
         {
-            // Define the tour steps: each has a title, body, and an optional action
-            // that navigates Kodo to illustrate what's being described.
-            var steps = new (string Title, string Body, Action? Navigate)[]
-            {
-                (
-                    "👋  Welcome to Kodo!",
-                    "This is the Home screen. It's your starting point every time you open Kodo — " +
-                    "you can always get back here with the Home button in the activity bar on the left, " +
-                    "or by pressing Ctrl+H.",
-                    () => NavigateTo(Page.Home)
-                ),
-                (
-                    "📄  Creating & opening files",
-                    "Use New File (Ctrl+N) to start a fresh document, Open File (Ctrl+O) to open " +
-                    "an existing one, or Open Folder (Ctrl+K) to load a whole project. " +
-                    "Your recent files and folders will appear here on the Home screen.",
-                    () => NavigateTo(Page.Home)
-                ),
-                (
-                    "🧩  Extensions & themes",
-                    "The Extensions page lets you browse and install syntax highlighting packs, " +
-                    "language definitions, and colour themes from the Kodo Marketplace. " +
-                    "Try pressing Ctrl+E or clicking the puzzle-piece icon in the sidebar.",
-                    () => NavigateTo(Page.Extensions)
-                ),
-                (
-                    "⚙️  Settings",
-                    "Customise Kodo to your liking: switch themes, adjust the font size, " +
-                    "enable auto-save, configure tab width, and more. " +
-                    "Open Settings with Ctrl+, or the gear icon at the top of the activity bar.",
-                    () => NavigateTo(Page.Settings)
-                ),
-                (
-                    "🚀  You're all set!",
-                    "That's everything you need to get started. Happy coding! " +
-                    "If you ever want a reminder of what's new in this version, " +
-                    "check out the What's New page from the Home screen.",
-                    () => NavigateTo(Page.Home)
-                ),
-            };
-
-            var currentStep = 0;
-
-            // ── Controls that are updated between steps ──────────────────────
-            var stepLabel = new TextBlock
-            {
-                FontSize = 11,
-                Foreground = new SolidColorBrush(Color.Parse("#707070")),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            var titleText = new TextBlock
-            {
-                FontSize = 17,
-                FontWeight = FontWeight.SemiBold,
-                Foreground = PrimaryTextBrush,
-                TextWrapping = TextWrapping.Wrap,
-            };
-
-            var bodyText = new TextBlock
-            {
-                FontSize = 13,
-                Foreground = MutedTextBrush,
-                TextWrapping = TextWrapping.Wrap,
-                LineHeight = 20,
-            };
-
-            // Progress dots — one per step, filled when reached
-            var dots = new Border[steps.Length];
-            var dotsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            for (var i = 0; i < steps.Length; i++)
-            {
-                var dot = new Border
-                {
-                    Width = 7, Height = 7,
-                    CornerRadius = new CornerRadius(4),
-                    Background = new SolidColorBrush(Color.Parse("#404040")),
-                };
-                dots[i] = dot;
-                dotsPanel.Children.Add(dot);
-            }
-
-            var backButton  = CreateDialogButton("← Back",  ButtonBrush,  SurfaceBorderBrush, PrimaryTextBrush, () => { });
-            var nextButton  = CreateDialogButton("Next →",  AccentBrush,  AccentBrush,        Brushes.White,    () => { });
-            var skipButton  = new Button
-            {
-                Content     = "Skip tutorial",
-                Background  = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Foreground  = new SolidColorBrush(Color.Parse("#606060")),
-                Padding     = new Thickness(0),
-                Cursor      = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
-            };
-
-            Window? dialog = null;
-
-            void Refresh()
-            {
-                var (title, body, navigate) = steps[currentStep];
-                stepLabel.Text = $"Step {currentStep + 1} of {steps.Length}";
-                titleText.Text = title;
-                bodyText.Text  = body;
-
-                backButton.IsVisible = currentStep > 0;
-                nextButton.Content   = currentStep == steps.Length - 1 ? "Get started!" : "Next →";
-
-                for (var i = 0; i < dots.Length; i++)
-                    dots[i].Background = new SolidColorBrush(
-                        i <= currentStep ? Color.Parse("#8C00FF") : Color.Parse("#404040"));
-
-                navigate?.Invoke();
-            }
-
-            backButton.Click += (_, _) =>
-            {
-                if (currentStep > 0) { currentStep--; Refresh(); }
-            };
-
-            nextButton.Click += (_, _) =>
-            {
-                if (currentStep < steps.Length - 1) { currentStep++; Refresh(); }
-                else dialog?.Close();
-            };
-
-            skipButton.Click += (_, _) => dialog?.Close();
-
-            var content = new Border
-            {
-                Padding = new Thickness(24),
-                Child = new StackPanel
-                {
-                    Spacing = 16,
-                    Children =
-                    {
-                        // Header row: step label + skip
-                        new Grid
-                        {
-                            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-                            Children =
-                            {
-                                stepLabel,
-                                new Border
-                                {
-                                    [Grid.ColumnProperty] = 1,
-                                    Child = skipButton,
-                                },
-                            },
-                        },
-                        titleText,
-                        bodyText,
-                        // Progress dots
-                        dotsPanel,
-                        // Navigation buttons
-                        new StackPanel
-                        {
-                            Orientation = Orientation.Horizontal,
-                            Spacing = 10,
-                            HorizontalAlignment = HorizontalAlignment.Right,
-                            Children = { backButton, nextButton },
-                        },
-                    },
-                },
-            };
-
-            dialog = new Window
-            {
-                Title                 = "Kodo — Getting Started",
-                Width                 = 420,
-                SizeToContent         = SizeToContent.Height,
-                MinWidth              = 340,
-                CanResize             = false,
-                ShowInTaskbar         = false,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Background            = CardBrush,
-                Content               = content,
-            };
-
-            Refresh();
-
-            // Mark tutorial done whether the user finishes or skips — either way
-            // they've seen it and we shouldn't show it again.
-            dialog.Closed += (_, _) =>
-            {
-                NavigateTo(Page.Home);
-                SaveSettings();
-            };
-
-            await dialog.ShowDialog(this);
-
-            // Persist the completed flag so the tutorial never auto-shows again.
-            // SaveSettings snapshots the current in-memory state; HasCompletedTutorial
-            // is written via the settings file existing from this point forward,
-            // so _isFirstLaunch will be false on every subsequent launch.
+            TutorialStepIndex = 0;
+            NavigateTo(Page.Tutorial);
         }
         catch
         {
             // Tutorial failure must never crash the app.
         }
+
+        return Task.CompletedTask;
     }
 
     // Shows a non-fatal warning dialog that mirrors the crash dialog in App.axaml.cs
@@ -5838,6 +6138,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Discard,
         Cancel
     }
+
+    private sealed record TutorialStep(
+        string SectionTitle,
+        string Title,
+        string Body,
+        string Shortcut,
+        string SpotlightTitle,
+        string HighlightOne,
+        string HighlightTwo,
+        string HighlightThree);
 }
 
 public sealed class RecentFileItem
@@ -5933,10 +6243,15 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
     private string[] _stringDelimiters = ["\"", "'"];
     private string[] _multiLineStringDelimiters = [];
 
+    // Disabled for unsaved (untitled) files and plain-text files (.txt / .log / .text)
+    // so that smart visual features don't activate where no language context exists.
+    public bool IsEnabled { get; set; } = true;
+
     public void UpdateSyntax(LoadedExtension? extension)
     {
         if (extension is null)
         {
+            IsEnabled = false;
             _commentLine = "//";
             _commentBlockStart = "/*";
             _commentBlockEnd = "*/";
@@ -5945,6 +6260,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         }
         else
         {
+            IsEnabled = true;
             _commentLine = extension.CommentLine;
             _commentBlockStart = extension.CommentBlockStart;
             _commentBlockEnd = extension.CommentBlockEnd;
@@ -5965,6 +6281,9 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
     protected override void ColorizeLine(AvaloniaEdit.Document.DocumentLine line)
     {
+        if (!IsEnabled)
+            return;
+
         var document = CurrentContext.Document;
         if (document is null || line.Length <= 0)
             return;
