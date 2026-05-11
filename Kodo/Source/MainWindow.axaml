@@ -267,8 +267,8 @@
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="Width" Value="24" />
-            <Setter Property="Height" Value="24" />
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
             <Setter Property="CornerRadius" Value="6" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -287,7 +287,7 @@
         </Style>
         <Style Selector="Border.tabwrap.active Button.tabclose">
             <Setter Property="Opacity" Value="1" />
-            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
 
         <!-- Underline: hidden by default, shown on hover and always on active tab -->
@@ -388,7 +388,7 @@
                             Click="OpenFolderButton_OnClick"
                             ToolTip.Tip="Open Folder (Ctrl+K)"
                             IsVisible="{Binding !IsFolderOpen}">
-                        <TextBlock FontSize="18" Text="&#x25A1;"
+                        <TextBlock FontSize="18" Text="&#x1F4C1;&#xFE0E;"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    TextAlignment="Center" />
                     </Button>
@@ -396,7 +396,7 @@
                             Click="CloseFolderButton_OnClick"
                             ToolTip.Tip="Close Folder (Ctrl+K)"
                             IsVisible="{Binding IsFolderOpen}">
-                        <TextBlock FontSize="18" Text="&#x25A3;"
+                        <TextBlock FontSize="18" Text="&#x1F4C2;&#xFE0E;"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    TextAlignment="Center" />
                     </Button>
@@ -464,13 +464,24 @@
                         Background="{Binding SidebarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,0,0,1"
-                        Padding="8,10,8,8">
-                    <StackPanel Spacing="6">
-                        <TextBlock FontSize="11"
-                                   FontWeight="SemiBold"
-                                   Foreground="{Binding MutedTextBrush}"
-                                   Text="OPEN EDITORS" />
-                        <ItemsControl ItemsSource="{Binding OpenTabs}">
+                        Padding="12,10,12,8">
+                    <StackPanel Spacing="6" HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Border Width="3" Height="16" CornerRadius="2" Background="{Binding AccentBrush}" />
+                            <TextBlock FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding MutedTextBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="OPEN EDITORS" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding OpenTabs}"
+                                      HorizontalAlignment="Stretch">
+                            <ItemsControl.ItemContainerTheme>
+                                <ControlTheme TargetType="ContentPresenter">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                </ControlTheme>
+                            </ItemsControl.ItemContainerTheme>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="kodoModels:EditorTab">
                                     <Border Classes="tabwrap"
@@ -519,8 +530,10 @@
                                                     Classes.active="{Binding IsSelected}"
                                                     Tag="{Binding}"
                                                     Click="CloseEditorTabButton_OnClick"
+                                                    Margin="4,0,3,0"
                                                     ToolTip.Tip="Close tab">
-                                                <TextBlock FontSize="11" Text="&#x2715;" />
+                                                <TextBlock FontSize="11" Text="&#x2715;"
+                                                           Foreground="{Binding #RootWindow.PrimaryTextBrush}" />
                                             </Button>
                                         </Grid>
                                     </Border>
@@ -854,7 +867,8 @@
                                                     Margin="0,0,6,0"
                                                     HorizontalAlignment="Right"
                                                     VerticalAlignment="Center">
-                                                <TextBlock FontSize="11" Text="&#x2715;" />
+                                                <TextBlock FontSize="11" Text="&#x2715;"
+                                                           Foreground="{Binding #RootWindow.PrimaryTextBrush}" />
                                             </Button>
                                             <Border Grid.Row="1"
                                                     Grid.Column="0"
@@ -884,7 +898,23 @@
                                              WordWrap="{Binding IsWordWrapEnabled}"
                                              HorizontalScrollBarVisibility="Auto"
                                              VerticalScrollBarVisibility="Auto"
-                                             IsVisible="{Binding IsTextEditorVisible}" />
+                                             IsVisible="{Binding IsTextEditorVisible}">
+                        <avaloniaEdit:TextEditor.ContextMenu>
+                            <ContextMenu Opening="EditorContextMenu_Opening">
+                                <MenuItem Name="EditorCutMenuItem"
+                                          Header="Cut"
+                                          InputGesture="Ctrl+X"
+                                          Click="EditorCutMenuItem_OnClick" />
+                                <MenuItem Name="EditorCopyMenuItem"
+                                          Header="Copy"
+                                          InputGesture="Ctrl+C"
+                                          Click="EditorCopyMenuItem_OnClick" />
+                                <MenuItem Header="Paste"
+                                          InputGesture="Ctrl+V"
+                                          Click="EditorPasteMenuItem_OnClick" />
+                            </ContextMenu>
+                        </avaloniaEdit:TextEditor.ContextMenu>
+                    </avaloniaEdit:TextEditor>
                     <Grid IsVisible="{Binding IsImagePreviewVisible}"
                           Margin="24"
                           HorizontalAlignment="Stretch"
@@ -1171,15 +1201,30 @@
                                         IsVisible="{Binding HasFileOpen}"
                                         VerticalAlignment="Center"
                                         VerticalContentAlignment="Center"
+                                        Margin="4,0,0,0"
                                         Click="EncodingStatusBarButton_OnClick">
                                     <TextBlock FontSize="12"
-                                               VerticalAlignment="Center"
                                                Text="{Binding EncodingDisplayText}" />
                                 </Button>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            VerticalAlignment="Center"
                                            Opacity="0.4"
                                            Margin="6,0,0,0"
+                                           Text="|" />
+                            </StackPanel>
+
+                            <!-- Word count (text files only) -->
+                            <StackPanel Orientation="Horizontal"
+                                        VerticalAlignment="Center"
+                                        Spacing="6"
+                                        IsVisible="{Binding IsWordCountVisible}">
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           VerticalAlignment="Center"
+                                           Margin="6,0,0,0"
+                                           Text="{Binding WordCountText}" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           VerticalAlignment="Center"
+                                           Opacity="0.4"
                                            Text="|" />
                             </StackPanel>
 

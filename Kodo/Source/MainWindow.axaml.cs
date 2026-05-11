@@ -439,6 +439,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _currentThemeName = "Dark";
     private string _requestedThemeName = "Dark";
     private string _editorStatsText = "0 lines";
+    private string _wordCountText = string.Empty;
     private string _lastDiscordPresenceDetails = string.Empty;
     private string _lastDiscordPresenceState = string.Empty;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
@@ -2879,6 +2880,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string WordCountText
+    {
+        get => _wordCountText;
+        private set
+        {
+            if (_wordCountText == value) return;
+            _wordCountText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsWordCountVisible));
+        }
+    }
+
+    // Only visible for plain-text files (.txt / .text / .log) that are open in the editor.
+    public bool IsWordCountVisible =>
+        IsTextEditorVisible && IsPlainTextFile(_currentFilePath);
+
     public IBrush WindowBackgroundBrush { get; private set; } = Brush.Parse("#1E1E1E");
     public IBrush TopBarBrush           { get; private set; } = Brush.Parse("#181818");
     public IBrush SidebarBrush          { get; private set; } = Brush.Parse("#181818");
@@ -2928,6 +2945,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var ln         = caret?.Line ?? 1;
                 var col        = caret?.Column ?? 1;
                 EditorStatsText = $"Ln {ln}, Col {col}  |  {lines} lines  |  {characters} characters";
+
+                // Word count — only shown for plain-text files
+                if (IsPlainTextFile(_currentFilePath) && document is not null)
+                {
+                    var text = document.Text;
+                    var wordCount = string.IsNullOrWhiteSpace(text)
+                        ? 0
+                        : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+                    WordCountText = $"{wordCount} words";
+                }
+                else
+                {
+                    WordCountText = string.Empty;
+                }
             }
         }
         else
@@ -2944,6 +2975,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(CanShowFindInFile));
         OnPropertyChanged(nameof(IsFindPanelActive));
         OnPropertyChanged(nameof(CanShowSaveActions));
+        OnPropertyChanged(nameof(IsWordCountVisible));
         OnPropertyChanged(nameof(HasFileOpen));
         OnPropertyChanged(nameof(IsFolderOpen));
         OnPropertyChanged(nameof(IsEmptyStateVisible));
@@ -4946,6 +4978,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CloseFindPanel_OnClick(object? sender, RoutedEventArgs e) =>
         IsFindPanelVisible = false;
+
+    // ── Editor context menu (right-click) ─────────────────────────────────────
+
+    private void EditorContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        var hasSelection = EditorTextBox?.TextArea?.Selection is { IsEmpty: false };
+        if (sender is not ContextMenu menu) return;
+        foreach (var item in menu.Items.OfType<MenuItem>())
+        {
+            if (item.Name is "EditorCutMenuItem" or "EditorCopyMenuItem")
+                item.IsEnabled = hasSelection;
+        }
+    }
+
+    private void EditorCutMenuItem_OnClick(object? sender, RoutedEventArgs e) =>
+        EditorTextBox?.TextArea?.Selection?.ReplaceSelectionWithText(string.Empty);
+
+    private async void EditorCopyMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.TextArea?.Selection is not { } sel) return;
+        var text = sel.GetText();
+        if (string.IsNullOrEmpty(text)) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is not null)
+            await clipboard.SetTextAsync(text);
+    }
+
+    private async void EditorPasteMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.TextArea is not { } textArea) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+        var text = await clipboard.TryGetTextAsync();
+        if (!string.IsNullOrEmpty(text))
+            textArea.Selection.ReplaceSelectionWithText(text);
+    }
 
     private void FindInEditor(bool forward)
     {
