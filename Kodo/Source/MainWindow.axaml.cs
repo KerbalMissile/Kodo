@@ -16,6 +16,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
+using Microsoft.Win32;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -399,6 +401,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases/latest";
     private const string ReleasesApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases";
     private const string ReleasesPageUrl = "https://github.com/KerbalMissile/Kodo/releases";
+    private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
 
     private string? _currentFilePath;
     // Encoding detected (or chosen) for the currently open file. Defaults to UTF-8.
@@ -409,6 +412,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _autoSaveStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private readonly DispatcherTimer _discordReconnectTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
+    // Polls the Windows accent registry key so the blob and active accent stay
+    // live without requiring the Microsoft.Win32.SystemEvents NuGet package.
+    private readonly DispatcherTimer _windowsAccentPollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private string _lastSeenWindowsAccentHex = string.Empty;
     private readonly RainbowBracketColorizer _rainbowBracketColorizer = new();
     private EditorTab? _activeEditorTab;
     private int _nextUntitledTabNumber = 1;
@@ -436,6 +443,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _suppressDirtyTracking;
     private int _tabSize = 4;
     private int _editorFontSize = 14;
+    private string _accentColorMode = "kodo";   // "kodo" | "windows" | "custom"
+    private string _customAccentHex = "#8C00FF";
+    // The accent colour supplied by the active theme; restored when switching back to "kodo" mode.
+    private string _themeAccentHex = "#8C00FF";
     private string _currentThemeName = "Dark";
     private string _requestedThemeName = "Dark";
     private string _editorStatsText = "0 lines";
@@ -649,6 +660,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
         _hasCompletedTutorial = settings.HasCompletedTutorial;
+        _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom"
+            ? settings.AccentColorMode : "kodo";
+        _customAccentHex = string.IsNullOrWhiteSpace(settings.CustomAccentHex)
+            ? "#8C00FF" : settings.CustomAccentHex;
         _tabSize = NormalizeTabSize(settings.TabSize);
         _editorFontSize = settings.EditorFontSize is >= 8 and <= 32 ? settings.EditorFontSize : 14;
         _startupOpenTabPaths.AddRange(settings.OpenTabPaths
@@ -673,6 +688,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = RefreshLatestReleaseAsync();
         UpdateDiscordRichPresenceLifecycle();
         ApplyEditorSettings();
+        // Poll the Windows accent registry every 2 s so the blob preview and
+        // active accent stay live without the Microsoft.Win32.SystemEvents package.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            _lastSeenWindowsAccentHex = GetWindowsAccentColor() ?? string.Empty;
+            _windowsAccentPollTimer.Tick += WindowsAccentPollTimer_OnTick;
+            _windowsAccentPollTimer.Start();
+        }
         Opened += MainWindow_OnOpened;
         Closing += MainWindow_OnClosing;
         Closed += MainWindow_OnClosed;
@@ -2786,15 +2809,57 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             "Back at it again!",
             "Let's get to work!",
             "Hey there!",
-            $"Good {tod}!",
-            $"Good {tod}, ready to build?",
-            $"Good {tod}, let's get to it!",
-            $"It's a great {tod} to code!",
             $"Happy {DateTime.Now:dddd}!",
         };
 
-        if (tod == "morning") messages.Add("Hey there, early bird!");
-        if (tod == "night")   messages.Add("Hey there, night owl!");
+        // Only use time-of-day greetings that aren't dismissive.
+        // "Good night" reads as a farewell, and "great night to code" feels odd,
+        // so night gets neutral messages only.
+        if (tod != "night")
+        {
+            messages.Add($"Good {tod}!");
+            messages.Add($"Good {tod}, ready to build?");
+            messages.Add($"Good {tod}, let's get to it!");
+            messages.Add($"It's a great {tod} to code!");
+        }
+
+        // Each group targets 17 total entries.
+        // Morning:   9 neutral + 4 time-of-day + 4 specific = 17
+        // Afternoon: 9 neutral + 4 time-of-day + 4 specific = 17
+        // Evening:   9 neutral + 4 time-of-day + 4 specific = 17
+        // Night:     9 neutral + 0 time-of-day + 8 specific = 17
+        if (tod == "morning")
+        {
+            messages.Add("Hey there, early bird!");
+            messages.Add("Rise and shine, let's code!");
+            messages.Add("Coffee in hand, let's ship something!");
+            messages.Add("A fresh day, a fresh start.");
+        }
+        if (tod == "afternoon")
+        {
+            messages.Add("Afternoon grind, let's go!");
+            messages.Add("Hope the day's treating you well!");
+            messages.Add("Halfway through the day, keep it up!");
+            messages.Add("Afternoon slump? Not here.");
+        }
+        if (tod == "evening")
+        {
+            messages.Add("Fancy coding over a cup of tea?");
+            messages.Add("Winding down or just getting started?");
+            messages.Add("Evening sessions hit different.");
+            messages.Add("The day's winding down, but the code isn't.");
+        }
+        if (tod == "night")
+        {
+            messages.Add("Hey there, night owl!");
+            messages.Add("Burning the midnight oil?");
+            messages.Add("The best code gets written at night.");
+            messages.Add("Still at it? Respect.");
+            messages.Add("Late night, great code.");
+            messages.Add("The quieter the world, the louder the code.");
+            messages.Add("Dark outside, bright ideas inside.");
+            messages.Add("Another late one? Worth it.");
+        }
 
         return messages.ToArray();
     }
@@ -2864,7 +2929,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         : $"Word wrap is off, and indentation guides are spaced every {TabSize} columns.";
 
     public string TabRestoreStatusText => IsRestoreOpenTabsOnLaunchEnabled
-        ? "File-backed tabs reopen on launch, and Unsaved tabs ask for confirmation before closing."
+        ? "File-backed tabs reopen on launch, and unsaved tabs ask for confirmation before closing."
         : IsConfirmBeforeClosingUnsavedTabsEnabled
             ? "Unsaved tabs ask for confirmation before closing."
             : "Tabs close immediately, and launch starts with a fresh editor session.";
@@ -2907,6 +2972,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush MutedTextBrush        { get; private set; } = Brush.Parse("#A0A0A0");
     public IBrush SurfaceBorderBrush    { get; private set; } = Brush.Parse("#2B2B2B");
     public IBrush AccentBrush           { get; private set; } = Brush.Parse("#8C00FF");
+
+    // Always reflects the live Windows accent colour; used by the Windows blob
+    // preview even when another accent mode is active.
+    public IBrush WindowsAccentPreviewBrush { get; private set; } =
+        Brush.Parse("#0078D4");
+
+    public string AccentColorMode
+    {
+        get => _accentColorMode;
+        set
+        {
+            if (_accentColorMode == value) return;
+            _accentColorMode = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsAccentKodo));
+            OnPropertyChanged(nameof(IsAccentWindows));
+            OnPropertyChanged(nameof(IsAccentCustom));
+        }
+    }
+    public bool IsAccentKodo    => _accentColorMode == "kodo";
+    public bool IsAccentWindows => _accentColorMode == "windows";
+    public bool IsAccentCustom  => _accentColorMode == "custom";
+
+    public string CustomAccentHex
+    {
+        get => _customAccentHex;
+        set
+        {
+            if (_customAccentHex == value) return;
+            _customAccentHex = value;
+            OnPropertyChanged();
+        }
+    }
 
     event PropertyChangedEventHandler? INotifyPropertyChanged.PropertyChanged
     {
@@ -3216,6 +3314,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
             RestoreOpenTabsOnLaunchEnabled          = IsRestoreOpenTabsOnLaunchEnabled,
             HasCompletedTutorial                    = _hasCompletedTutorial,
+            AccentColorMode                         = _accentColorMode,
+            CustomAccentHex                         = _customAccentHex,
             OpenTabPaths = OpenTabs
                 .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
                 .Select(tab => tab.Path)
@@ -3274,6 +3374,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             MutedTextBrush        = Brush.Parse(extensionTheme.MutedText);
             SurfaceBorderBrush    = Brush.Parse(extensionTheme.SurfaceBorder);
             AccentBrush           = Brush.Parse(extensionTheme.Accent);
+            _themeAccentHex       = extensionTheme.Accent;
         }
         else
         {
@@ -3295,6 +3396,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 MutedTextBrush        = Brush.Parse("#5F6B7A");
                 SurfaceBorderBrush    = Brush.Parse("#D7DCE5");
                 AccentBrush           = Brush.Parse("#8C00FF");
+                _themeAccentHex       = "#8C00FF";
             }
             else
             {
@@ -3309,6 +3411,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 MutedTextBrush        = Brush.Parse("#A0A0A0");
                 SurfaceBorderBrush    = Brush.Parse("#2B2B2B");
                 AccentBrush           = Brush.Parse("#8C00FF");
+                _themeAccentHex       = "#8C00FF";
             }
         }
 
@@ -3322,11 +3425,160 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(PrimaryTextBrush));
         OnPropertyChanged(nameof(MutedTextBrush));
         OnPropertyChanged(nameof(SurfaceBorderBrush));
-        OnPropertyChanged(nameof(AccentBrush));
+        // Always run ApplyAccentOverride: it updates both AccentBrush (for all
+        // three modes) and WindowsAccentPreviewBrush (so the blob stays live
+        // even when "kodo" or "custom" mode is active).
+        ApplyAccentOverride();
         ApplyThemeToEditor();
         SaveSettings();
         RefreshState();
         RefreshExtensionTheme();
+    }
+
+    private void ApplyAccentOverride()
+    {
+        // Always keep the Windows preview brush current so the blob reflects
+        // the real system colour regardless of which mode is active.
+        var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
+        try { WindowsAccentPreviewBrush = Brush.Parse(windowsHex); }
+        catch { WindowsAccentPreviewBrush = Brush.Parse("#0078D4"); }
+        OnPropertyChanged(nameof(WindowsAccentPreviewBrush));
+
+        // In "kodo" mode, restore the theme's own accent colour.
+        if (_accentColorMode == "kodo")
+        {
+            try { AccentBrush = Brush.Parse(_themeAccentHex); }
+            catch { AccentBrush = Brush.Parse("#8C00FF"); }
+            OnPropertyChanged(nameof(AccentBrush));
+            ApplyThemeToEditor();
+            return;
+        }
+
+        var hex = _accentColorMode switch
+        {
+            "windows" => windowsHex,
+            "custom"  => _customAccentHex,
+            _         => "#8C00FF"
+        };
+        try { AccentBrush = Brush.Parse(hex); }
+        catch { AccentBrush = Brush.Parse("#8C00FF"); }
+        OnPropertyChanged(nameof(AccentBrush));
+        ApplyThemeToEditor();
+    }
+
+    private static string? GetWindowsAccentColor()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent");
+            if (key?.GetValue("AccentColorMenu") is int raw)
+            {
+                // AccentColorMenu is stored as AABBGGRR
+                var r = (raw)       & 0xFF;
+                var g = (raw >> 8)  & 0xFF;
+                var b = (raw >> 16) & 0xFF;
+                return $"#{r:X2}{g:X2}{b:X2}";
+            }
+        }
+        catch { /* Registry unavailable */ }
+        return null;
+    }
+
+    private async void AccentColorPickerButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        Window? dialog = null;
+        var confirmed = false;
+
+        var input = new TextBox
+        {
+            Text            = _customAccentHex,
+            PlaceholderText = "#RRGGBB",
+            MaxLength       = 9,
+            Foreground      = PrimaryTextBrush,
+            Background      = ButtonBrush,
+            BorderBrush     = SurfaceBorderBrush,
+            BorderThickness = new Thickness(1),
+            Padding         = new Thickness(10, 6),
+            FontSize        = 14,
+            CaretBrush      = PrimaryTextBrush,
+        };
+
+        input.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Key.Enter)  { confirmed = true; dialog!.Close(); }
+            if (ke.Key == Key.Escape) { dialog!.Close(); }
+        };
+
+        dialog = new Window
+        {
+            Width                 = 340,
+            Height                = 160,
+            CanResize             = false,
+            ShowInTaskbar         = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Title                 = "Custom Accent Colour",
+            Background            = CardBrush,
+            Content = new Border
+            {
+                Padding = new Thickness(20),
+                Child   = new StackPanel
+                {
+                    Spacing  = 14,
+                    Children =
+                    {
+                        new TextBlock { Text = "Enter a hex colour value:", FontSize = 15,
+                            FontWeight = FontWeight.SemiBold, Foreground = PrimaryTextBrush },
+                        input,
+                        new StackPanel
+                        {
+                            Orientation         = Orientation.Horizontal,
+                            Spacing             = 10,
+                            HorizontalAlignment = HorizontalAlignment.Right,
+                            Children =
+                            {
+                                CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
+                                    () => dialog!.Close()),
+                                CreateDialogButton("Apply", AccentBrush, AccentBrush, Brushes.White,
+                                    () => { confirmed = true; dialog!.Close(); })
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        dialog.Opened += (_, _) => { input.Focus(); input.SelectAll(); };
+        await dialog.ShowDialog(this);
+
+        if (!confirmed) return;
+        var hex = input.Text?.Trim() ?? string.Empty;
+        if (!hex.StartsWith('#')) hex = "#" + hex;
+        try
+        {
+            Brush.Parse(hex); // validate
+            _customAccentHex = hex;
+            CustomAccentHex  = hex;
+            AccentColorMode  = "custom";
+            ApplyAccentOverride();
+            SaveSettings();
+        }
+        catch { /* invalid hex — ignore */ }
+    }
+
+    private void AccentKodoButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        AccentColorMode = "kodo";
+        ApplyAccentOverride();
+        SaveSettings();
+    }
+
+    private void AccentWindowsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        AccentColorMode = "windows";
+        ApplyAccentOverride();
+        SaveSettings();
     }
 
     // ── File operations ──────────────────────────────────────────────────────
@@ -4068,6 +4320,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenReleasesPageButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(ReleasesPageUrl);
+
+    private void OpenDiscordButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrl(DiscordServerUrl);
 
     private void OpenLatestReleaseButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(LatestReleaseUrl);
@@ -5706,11 +5961,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _autoSaveStatusTimer.Stop();
         _discordReconnectTimer.Stop();
         _extensionsRefreshDebounceTimer.Stop();
+        _windowsAccentPollTimer.Stop();
         NetworkChange.NetworkAvailabilityChanged -= NetworkChange_OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged -= NetworkChange_OnNetworkAddressChanged;
         DisposeExtensionFolderWatchers();
         DisposeDiscordPresence();
         CurrentImagePreview = null;
+    }
+
+    // Runs on the UI thread every 2 s; re-applies the accent only when the
+    // registry value has actually changed, so there's no unnecessary work.
+    private void WindowsAccentPollTimer_OnTick(object? sender, EventArgs e)
+    {
+        var current = GetWindowsAccentColor() ?? string.Empty;
+        if (current == _lastSeenWindowsAccentHex) return;
+        _lastSeenWindowsAccentHex = current;
+        ApplyAccentOverride();
+        if (_accentColorMode == "windows")
+        {
+            ApplyThemeToEditor();
+            RefreshExtensionTheme();
+        }
     }
 
     private void NetworkChange_OnNetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) =>
@@ -6191,6 +6462,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // False on first launch (settings file didn't exist yet); set to true after the
         // tutorial is dismissed so it never shows again on subsequent launches.
         public bool HasCompletedTutorial { get; set; }
+        public string AccentColorMode { get; set; } = "kodo";
+        public string CustomAccentHex { get; set; } = "#8C00FF";
     }
 
     public sealed class RecentFileEntry

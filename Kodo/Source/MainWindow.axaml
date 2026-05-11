@@ -335,6 +335,22 @@
         <Style Selector="ToolTip TextBlock">
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
+
+        <!-- CheckBox: border and checked background use the live accent colour -->
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+        </Style>
+        <Style Selector="CheckBox /template/ Border#NormalRectangle">
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+        </Style>
+        <Style Selector="CheckBox:checked /template/ Border#NormalRectangle">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+        </Style>
+        <Style Selector="CheckBox:pointerover /template/ Border#NormalRectangle">
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="Opacity" Value="0.8" />
+        </Style>
     </Window.Styles>
 
     <!-- Root: activity bar | file explorer panel | editor/content area -->
@@ -757,11 +773,6 @@
                                     Orientation="Horizontal"
                                     Spacing="12"
                                     VerticalAlignment="Center">
-                            <TextBlock FontSize="12"
-                                       Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       IsVisible="{Binding !IsEmptyStateVisible}"
-                                       Text="{Binding CurrentAppVersionDisplay}" />
                             <Button Classes="chrome"
                                     Click="SaveButton_OnClick"
                                     IsVisible="{Binding CanShowSaveActions}"
@@ -1885,6 +1896,82 @@
                             <Border Height="1"
                                     Background="{Binding SurfaceBorderBrush}" />
 
+                            <!-- Accent Colour -->
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                <TextBlock FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           VerticalAlignment="Center"
+                                           Text="Accent Colour" />
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Classes="chrome"
+                                        Click="AccentKodoButton_OnClick"
+                                        Width="120"
+                                        ToolTip.Tip="Use Kodo's default purple accent">
+                                    <StackPanel Spacing="6">
+                                        <Border Height="28" CornerRadius="8" Background="#8C00FF" />
+                                        <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                            <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Kodo" />
+                                            <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                       VerticalAlignment="Center" Text="●"
+                                                       IsVisible="{Binding IsAccentKodo}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Classes="chrome"
+                                        Click="AccentWindowsButton_OnClick"
+                                        Width="120"
+                                        ToolTip.Tip="Use your Windows system accent colour">
+                                    <StackPanel Spacing="6">
+                                        <Border Height="28" CornerRadius="8" Background="{Binding AccentBrush}"
+                                                IsVisible="{Binding IsAccentWindows}" />
+                                        <Border Height="28" CornerRadius="8" Background="{Binding WindowsAccentPreviewBrush}"
+                                                IsVisible="{Binding !IsAccentWindows}" />
+                                        <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                            <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Windows" />
+                                            <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                       VerticalAlignment="Center" Text="●"
+                                                       IsVisible="{Binding IsAccentWindows}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Classes="chrome"
+                                        Click="AccentColorPickerButton_OnClick"
+                                        Width="120"
+                                        ToolTip.Tip="Choose a custom accent colour">
+                                    <StackPanel Spacing="6">
+                                        <Border Height="28" CornerRadius="8" Background="{Binding AccentBrush}"
+                                                IsVisible="{Binding IsAccentCustom}" />
+                                        <Border Height="28" CornerRadius="8"
+                                                IsVisible="{Binding !IsAccentCustom}">
+                                            <Border.Background>
+                                                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                                                    <GradientStop Color="#FF0000" Offset="0" />
+                                                    <GradientStop Color="#FFFF00" Offset="0.33" />
+                                                    <GradientStop Color="#00FF00" Offset="0.5" />
+                                                    <GradientStop Color="#0000FF" Offset="0.67" />
+                                                    <GradientStop Color="#FF00FF" Offset="1" />
+                                                </LinearGradientBrush>
+                                            </Border.Background>
+                                        </Border>
+                                        <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                            <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Custom" />
+                                            <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                       VerticalAlignment="Center" Text="●"
+                                                       IsVisible="{Binding IsAccentCustom}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+
+                            <Border Height="1"
+                                    Background="{Binding SurfaceBorderBrush}" />
+
                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                 <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
                                 <TextBlock FontSize="18"
@@ -2047,12 +2134,19 @@
                             </StackPanel>
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        TextWrapping="Wrap"
-                                       Text="Reopen the built-in tutorial any time if you want a quick tour of the app." />
+                                       Text="Find help and support here, including the built-in tutorial and a link to the Discord server." />
                             <Button Classes="chrome"
                                     Click="OpenTutorialButton_OnClick"
                                     HorizontalAlignment="Left"
                                     Content="Open Tutorial" />
-
+                            <Button Classes="chrome"
+                                    Click="OpenDiscordButton_OnClick"
+                                    HorizontalAlignment="Left">
+                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <TextBlock Text="Join the Discord Server"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                             <Border Height="1"
                                     Background="{Binding SurfaceBorderBrush}" />
 
