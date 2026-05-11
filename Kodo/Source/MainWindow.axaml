@@ -2126,19 +2126,17 @@
 
                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                 <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                <TextBlock FontSize="18"
-                                           FontWeight="SemiBold"
-                                           Foreground="{Binding PrimaryTextBrush}"
-                                           VerticalAlignment="Center"
-                                           Text="Help" />
+                                    <TextBlock FontSize="18"
+                                        FontWeight="SemiBold"
+                                        Foreground="{Binding PrimaryTextBrush}"
+                                        VerticalAlignment="Center"
+                                        Text="Help" />
                             </StackPanel>
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       TextWrapping="Wrap"
-                                       Text="Find help and support here, including the built-in tutorial and a link to the Discord server." />
+
                             <Button Classes="chrome"
-                                    Click="OpenTutorialButton_OnClick"
-                                    HorizontalAlignment="Left"
-                                    Content="Open Tutorial" />
+                                Click="OpenTutorialButton_OnClick"
+                                HorizontalAlignment="Left"
+                                Content="Open Tutorial" />
                             <Button Classes="chrome"
                                     Click="OpenDiscordButton_OnClick"
                                     HorizontalAlignment="Left">
