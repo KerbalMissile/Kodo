@@ -164,6 +164,17 @@
       "fileName": "TypeScript-Kodo-Extension-v1.0.1.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/TypeScript-Kodo-Extension-v1.0.1.kox",
       "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/typescript-icon.png"
+    },
+    {
+      "id": "Rust-kodo-extension",
+      "version": "v1.0.0",
+      "name": "Rust Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for Rust files.",
+      "fileName": "Rust-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Rust-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://www.vhv.rs/dpng/d/415-4150318_rust-programming-language-logo-hd-png-download.png"
     }
   ]
 }
