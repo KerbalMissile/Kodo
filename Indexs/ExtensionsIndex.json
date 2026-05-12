@@ -186,6 +186,28 @@
       "fileName": "Java-Kodo-Extension-v1.0.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Java-Kodo-Extension-v1.0.0.kox",
       "iconUrl": "https://images.seeklogo.com/logo-png/45/1/java-logo-png_seeklogo-459104.png"
+    },
+    {
+      "id": "powershell-kodo-extension",
+      "version": "v1.0.0",
+      "name": "PowerShell Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for PowerShell files.",
+      "fileName": "PowerShell-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/PowerShell-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://pbcdn1.podbean.com/imglogo/image-logo/1769310/powershell_300x300.png"
+    },
+    {
+      "id": "bash-kodo-extension",
+      "version": "v1.0.0",
+      "name": "Bash Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for Bash and shell script files.",
+      "fileName": "Bash-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Bash-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://bashlogo.com/img/symbol/png/full_colored_dark.png"
     }
   ]
 }
