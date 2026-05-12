@@ -11,7 +11,7 @@ To run Kodo locally, you'll need:
 1. [.NET](https://dotnet.microsoft.com/en-us/download) minimum version 8
 2. Run `dotnet new install Avalonia.Templates`
 3. Change your directory to Kodo's source folder: `cd path\to\Kodo\Kodo`
-4. Run `dotnet run` — it'll take a few seconds then open up
+4. Run `dotnet run` - it'll take a few seconds then open up
 
 That's it. No complicated build pipeline, no extra tools.
 
@@ -27,7 +27,7 @@ If something's broken, open an [Issue](https://github.com/KerbalMissile/Kodo/iss
 - What actually happened
 - Your OS and .NET version if relevant
 
-We're in Beta, so expect bugs — but that also means bug reports are especially valuable right now.
+We're in Beta, so expect bugs; but that also means bug reports are especially valuable right now.
 
 ### Submitting Changes
 
@@ -35,7 +35,7 @@ We're in Beta, so expect bugs — but that also means bug reports are especially
 2. Make your changes on a new branch
 3. Open a Pull Request with a clear description of what you changed and why
 
-Please keep PRs focused — one thing per PR makes it much easier to review. If you're planning something large, open an Issue first so we can discuss it before you put in the work.
+Please keep PRs focused, one thing per PR makes it much easier to review. If you're planning something large, open an Issue first so we can discuss it before you put in the work.
 
 ### Code Style
 
