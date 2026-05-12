@@ -175,6 +175,17 @@
       "fileName": "Rust-Kodo-Extension-v1.0.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Rust-Kodo-Extension-v1.0.0.kox",
       "iconUrl": "https://www.vhv.rs/dpng/d/415-4150318_rust-programming-language-logo-hd-png-download.png"
+    },
+    {
+      "id": "java-kodo-extension",
+      "version": "v1.0.0",
+      "name": "Java Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for Java files.",
+      "fileName": "Java-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Java-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://images.seeklogo.com/logo-png/45/1/java-logo-png_seeklogo-459104.png"
     }
   ]
 }
