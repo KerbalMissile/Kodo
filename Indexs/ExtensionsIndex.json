@@ -145,13 +145,13 @@
     },
     {
       "id": "markdown-kodo-extension",
-      "version": "v1.0.0",
+      "version": "v1.0.1",
       "name": "Markdown Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for Markdown and reStructuredText files.",
-      "fileName": "Markdown-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Markdown-Kodo-Extension-v1.0.0.kox",
+      "fileName": "Markdown-Kodo-Extension-v1.0.1.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Markdown-Kodo-Extension-v1.0.1.kox",
       "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/markdown-icon.png"
     },
     {
