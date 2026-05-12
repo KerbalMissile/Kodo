@@ -208,6 +208,17 @@
       "fileName": "Bash-Kodo-Extension-v1.0.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Bash-Kodo-Extension-v1.0.0.kox",
       "iconUrl": "https://bashlogo.com/img/symbol/png/full_colored_dark.png"
+    },
+    {
+      "id": "batch-kodo-extension",
+      "version": "v1.0.0",
+      "name": "Batch Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for Windows Batch script files.",
+      "fileName": "Batch-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Batch-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/en/thumb/7/7c/Batch_file_icon.png/120px-Batch_file_icon.png"
     }
   ]
 }
