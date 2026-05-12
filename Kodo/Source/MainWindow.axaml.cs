@@ -935,6 +935,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SyncMarketplaceInstallStates();
         OnPropertyChanged(nameof(ExtensionLoadErrors));
         OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
+        OnPropertyChanged(nameof(FilteredMarketplaceExtensions));
         await FetchMarketplaceIconsAsync();
         await FetchInstalledExtensionIconsAsync();
     }
@@ -2677,20 +2678,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public IEnumerable<LoadedExtension> FilteredInstalledExtensions =>
-        string.IsNullOrWhiteSpace(_extensionSearchText)
-            ? VisibleLoadedExtensions
-            : VisibleLoadedExtensions.Where(e =>
-                e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
-                e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
+    public IEnumerable<LoadedExtension> FilteredInstalledExtensions
+    {
+        get
+        {
+            var source = string.IsNullOrWhiteSpace(_extensionSearchText)
+                ? VisibleLoadedExtensions
+                : VisibleLoadedExtensions.Where(e =>
+                    e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
+            return source.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase);
+        }
+    }
 
-    public IEnumerable<MarketplaceExtension> FilteredMarketplaceExtensions =>
-        string.IsNullOrWhiteSpace(_extensionSearchText)
-            ? MarketplaceExtensions
-            : MarketplaceExtensions.Where(e =>
-                e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
-                e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
-                e.Author.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
+    public IEnumerable<MarketplaceExtension> FilteredMarketplaceExtensions
+    {
+        get
+        {
+            var source = string.IsNullOrWhiteSpace(_extensionSearchText)
+                ? MarketplaceExtensions
+                : (IEnumerable<MarketplaceExtension>)MarketplaceExtensions.Where(e =>
+                    e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    e.Author.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
+            return source.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase);
+        }
+    }
 
     public bool IsFindPanelVisible
     {
