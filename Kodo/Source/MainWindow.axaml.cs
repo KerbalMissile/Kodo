@@ -3491,21 +3491,180 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Window? dialog = null;
         var confirmed = false;
 
-        var input = new TextBox
+        var initialColor = Color.Parse("#8C00FF");
+        try { initialColor = Color.Parse(_customAccentHex); } catch { /* use fallback */ }
+
+        RgbToHsv(initialColor.R, initialColor.G, initialColor.B,
+            out var hue, out var sat, out var val);
+
+        // ── Hue strip ──────────────────────────────────────────────────────────
+        var hueCanvas = new Canvas { Width = 300, Height = 20 };
+        var hueGrad   = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint   = new RelativePoint(1, 0, RelativeUnit.Relative),
+        };
+        foreach (var (offset, h) in new (double, double)[]
+            { (0,0),(1/6d,60),(2/6d,120),(3/6d,180),(4/6d,240),(5/6d,300),(1,360) })
+        {
+            HsvToRgb(h, 1, 1, out var hr2, out var hg2, out var hb2);
+            hueGrad.GradientStops.Add(new GradientStop(Color.FromRgb(hr2, hg2, hb2), offset));
+        }
+        var hueRect = new Avalonia.Controls.Shapes.Rectangle
+            { Width = 300, Height = 20, Fill = hueGrad, RadiusX = 4, RadiusY = 4 };
+        hueCanvas.Children.Add(hueRect);
+
+        var hueCursor = new Avalonia.Controls.Shapes.Rectangle
+        {
+            Width = 4, Height = 24, Fill = Brushes.White, RadiusX = 2, RadiusY = 2,
+            Stroke = new SolidColorBrush(Colors.Black), StrokeThickness = 1,
+        };
+        Canvas.SetTop(hueCursor, -2);
+        Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
+        hueCanvas.Children.Add(hueCursor);
+
+        // ── SV square ──────────────────────────────────────────────────────────
+        const double svSize   = 300.0;
+        const double svHeight = 180.0;
+        var svCanvas = new Canvas { Width = svSize, Height = svHeight };
+
+        var svHueFill      = new Avalonia.Controls.Shapes.Rectangle { Width = svSize, Height = svHeight, RadiusX = 4, RadiusY = 4 };
+        var svWhiteOverlay = new Avalonia.Controls.Shapes.Rectangle { Width = svSize, Height = svHeight, RadiusX = 4, RadiusY = 4 };
+        var svBlackOverlay = new Avalonia.Controls.Shapes.Rectangle
+        {
+            Width = svSize, Height = svHeight, RadiusX = 4, RadiusY = 4,
+            Fill  = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint   = new RelativePoint(0, 1, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(0,   0, 0, 0), 0),
+                    new GradientStop(Color.FromArgb(255, 0, 0, 0), 1),
+                },
+            },
+        };
+
+        void RefreshSvSquare()
+        {
+            HsvToRgb(hue, 1, 1, out var hr3, out var hg3, out var hb3);
+            svHueFill.Fill = new SolidColorBrush(Color.FromRgb(hr3, hg3, hb3));
+            svWhiteOverlay.Fill = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint   = new RelativePoint(1, 0, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(255, 255, 255, 255), 0),
+                    new GradientStop(Color.FromArgb(0,   255, 255, 255), 1),
+                },
+            };
+        }
+        RefreshSvSquare();
+
+        svCanvas.Children.Add(svHueFill);
+        svCanvas.Children.Add(svWhiteOverlay);
+        svCanvas.Children.Add(svBlackOverlay);
+
+        var svCursor = new Avalonia.Controls.Shapes.Ellipse
+        {
+            Width = 12, Height = 12,
+            Stroke = Brushes.White, StrokeThickness = 2,
+            Fill   = new SolidColorBrush(Colors.Transparent),
+        };
+        Canvas.SetLeft(svCursor, sat * svSize   - 6);
+        Canvas.SetTop (svCursor, (1 - val) * svHeight - 6);
+        svCanvas.Children.Add(svCursor);
+
+        // ── Preview swatch + hex input ─────────────────────────────────────────
+        var previewBorder = new Border
+        {
+            Width = 36, Height = 36, CornerRadius = new CornerRadius(8),
+            BorderBrush = SurfaceBorderBrush, BorderThickness = new Thickness(1),
+        };
+
+        var hexInput = new TextBox
         {
             Text            = _customAccentHex,
             PlaceholderText = "#RRGGBB",
-            MaxLength       = 9,
+            MaxLength       = 7,
             Foreground      = PrimaryTextBrush,
             Background      = ButtonBrush,
             BorderBrush     = SurfaceBorderBrush,
             BorderThickness = new Thickness(1),
-            Padding         = new Thickness(10, 6),
-            FontSize        = 14,
+            Padding         = new Thickness(8, 6),
+            FontSize        = 13,
             CaretBrush      = PrimaryTextBrush,
+            Width           = 110,
         };
 
-        input.KeyDown += (_, ke) =>
+        // ── Sync helpers ───────────────────────────────────────────────────────
+        void UpdateAll()
+        {
+            HsvToRgb(hue, sat, val, out var r2, out var g2, out var b2);
+            var c = Color.FromRgb(r2, g2, b2);
+            previewBorder.Background = new SolidColorBrush(c);
+            hexInput.Text = $"#{r2:X2}{g2:X2}{b2:X2}";
+            Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
+            Canvas.SetLeft(svCursor,  sat * svSize   - 6);
+            Canvas.SetTop (svCursor,  (1 - val) * svHeight - 6);
+            RefreshSvSquare();
+        }
+        UpdateAll();
+
+        // ── Hue drag ──────────────────────────────────────────────────────────
+        hueCanvas.PointerPressed  += (_, pe) =>
+        {
+            pe.Pointer.Capture(hueCanvas);
+            hue = Math.Clamp(pe.GetPosition(hueCanvas).X / 300.0 * 360, 0, 360);
+            UpdateAll();
+        };
+        hueCanvas.PointerMoved    += (_, pe) =>
+        {
+            if (pe.Pointer.Captured != hueCanvas) return;
+            hue = Math.Clamp(pe.GetPosition(hueCanvas).X / 300.0 * 360, 0, 360);
+            UpdateAll();
+        };
+        hueCanvas.PointerReleased += (_, pe) => pe.Pointer.Capture(null);
+
+        // ── SV drag ───────────────────────────────────────────────────────────
+        svCanvas.PointerPressed  += (_, pe) =>
+        {
+            pe.Pointer.Capture(svCanvas);
+            var p = pe.GetPosition(svCanvas);
+            sat = Math.Clamp(p.X / svSize,        0, 1);
+            val = Math.Clamp(1 - p.Y / svHeight,  0, 1);
+            UpdateAll();
+        };
+        svCanvas.PointerMoved    += (_, pe) =>
+        {
+            if (pe.Pointer.Captured != svCanvas) return;
+            var p = pe.GetPosition(svCanvas);
+            sat = Math.Clamp(p.X / svSize,        0, 1);
+            val = Math.Clamp(1 - p.Y / svHeight,  0, 1);
+            UpdateAll();
+        };
+        svCanvas.PointerReleased += (_, pe) => pe.Pointer.Capture(null);
+
+        // ── Hex sync ──────────────────────────────────────────────────────────
+        hexInput.TextChanged += (_, _) =>
+        {
+            try
+            {
+                var t = hexInput.Text?.Trim() ?? "";
+                if (!t.StartsWith('#')) t = "#" + t;
+                var c = Color.Parse(t);
+                RgbToHsv(c.R, c.G, c.B, out hue, out sat, out val);
+                previewBorder.Background = new SolidColorBrush(c);
+                Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
+                Canvas.SetLeft(svCursor,  sat * svSize   - 6);
+                Canvas.SetTop (svCursor,  (1 - val) * svHeight - 6);
+                RefreshSvSquare();
+            }
+            catch { /* wait for valid hex */ }
+        };
+
+        hexInput.KeyDown += (_, ke) =>
         {
             if (ke.Key == Key.Enter)  { confirmed = true; dialog!.Close(); }
             if (ke.Key == Key.Escape) { dialog!.Close(); }
@@ -3514,7 +3673,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         dialog = new Window
         {
             Width                 = 340,
-            Height                = 160,
+            SizeToContent         = SizeToContent.Height,
             CanResize             = false,
             ShowInTaskbar         = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -3528,9 +3687,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     Spacing  = 14,
                     Children =
                     {
-                        new TextBlock { Text = "Enter a hex colour value:", FontSize = 15,
+                        new TextBlock { Text = "Choose an accent colour", FontSize = 15,
                             FontWeight = FontWeight.SemiBold, Foreground = PrimaryTextBrush },
-                        input,
+                        svCanvas,
+                        hueCanvas,
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal,
+                            Spacing     = 10,
+                            Children    = { previewBorder, hexInput },
+                        },
                         new StackPanel
                         {
                             Orientation         = Orientation.Horizontal,
@@ -3541,7 +3707,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                                 CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
                                     () => dialog!.Close()),
                                 CreateDialogButton("Apply", AccentBrush, AccentBrush, Brushes.White,
-                                    () => { confirmed = true; dialog!.Close(); })
+                                    () => { confirmed = true; dialog!.Close(); }),
                             }
                         }
                     }
@@ -3549,15 +3715,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         };
 
-        dialog.Opened += (_, _) => { input.Focus(); input.SelectAll(); };
+        dialog.Opened += (_, _) => { hexInput.Focus(); hexInput.SelectAll(); };
         await dialog.ShowDialog(this);
 
         if (!confirmed) return;
-        var hex = input.Text?.Trim() ?? string.Empty;
+        var hex = hexInput.Text?.Trim() ?? string.Empty;
         if (!hex.StartsWith('#')) hex = "#" + hex;
         try
         {
-            Brush.Parse(hex); // validate
+            Brush.Parse(hex);
             _customAccentHex = hex;
             CustomAccentHex  = hex;
             AccentColorMode  = "custom";
@@ -3565,6 +3731,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SaveSettings();
         }
         catch { /* invalid hex — ignore */ }
+    }
+
+    // Converts RGB (0–255) to HSV (H: 0–360, S/V: 0–1).
+    private static void RgbToHsv(byte r, byte g, byte b,
+        out double h, out double s, out double v)
+    {
+        var rf = r / 255.0; var gf = g / 255.0; var bf = b / 255.0;
+        var max = Math.Max(rf, Math.Max(gf, bf));
+        var min = Math.Min(rf, Math.Min(gf, bf));
+        var delta = max - min;
+        v = max;
+        s = max == 0 ? 0 : delta / max;
+        if (delta == 0) { h = 0; return; }
+        if      (max == rf) h = 60 * (((gf - bf) / delta) % 6);
+        else if (max == gf) h = 60 * (((bf - rf) / delta) + 2);
+        else                h = 60 * (((rf - gf) / delta) + 4);
+        if (h < 0) h += 360;
+    }
+
+    // Converts HSV (H: 0–360, S/V: 0–1) to RGB (0–255).
+    private static void HsvToRgb(double h, double s, double v,
+        out byte r, out byte g, out byte b)
+    {
+        if (s == 0) { r = g = b = (byte)(v * 255); return; }
+        var i = (int)(h / 60) % 6;
+        var f = h / 60 - Math.Floor(h / 60);
+        var p = v * (1 - s); var q = v * (1 - f * s); var t = v * (1 - (1 - f) * s);
+        var (rf, gf, bf) = i switch
+        {
+            0 => (v, t, p), 1 => (q, v, p), 2 => (p, v, t),
+            3 => (p, q, v), 4 => (t, p, v), _ => (v, p, q),
+        };
+        r = (byte)(rf * 255); g = (byte)(gf * 255); b = (byte)(bf * 255);
     }
 
     private void AccentKodoButton_OnClick(object? sender, RoutedEventArgs e)
