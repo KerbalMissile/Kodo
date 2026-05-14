@@ -7329,12 +7329,19 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         _rules.Add(new SyntaxBrushRule(
             new Regex(@"(?<![\p{L}\p{Nd}_])(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)(?![\p{L}\p{Nd}_])", RegexOptions.Compiled),
             numberBrush));
-        _rules.Add(new SyntaxBrushRule(
-            new Regex(@"(?<=\.|->|::)[\p{L}_][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled),
-            propertyBrush));
-        _rules.Add(new SyntaxBrushRule(
-            new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\.)", RegexOptions.Compiled),
-            namespaceBrush));
+        // Property and namespace rules fire on dot-separated identifiers (e.g. foo.Bar).
+        // In XML-family languages dots appear in file paths and version strings between
+        // element tags, so these rules would wrongly colour path segments as namespace/
+        // property tokens. Skip them entirely for XML — no chained member access exists.
+        if (extension.CommentBlockStart != "<!--")
+        {
+            _rules.Add(new SyntaxBrushRule(
+                new Regex(@"(?<=\.|->|::)[\p{L}_][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled),
+                propertyBrush));
+            _rules.Add(new SyntaxBrushRule(
+                new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\.)", RegexOptions.Compiled),
+                namespaceBrush));
+        }
         _rules.Add(new SyntaxBrushRule(
             new Regex(@"(?<![\p{L}\p{Nd}_])[@#][\p{L}_][\p{L}\p{Nd}_-]*", RegexOptions.Compiled),
             preprocessorBrush));
@@ -7347,8 +7354,10 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         _rules.Add(new SyntaxBrushRule(
             new Regex(@"=>|->|::|\+\+|--|\+=|-=|\*=|/=|%=|&&|\|\||<<|>>|<=|>=|==|!=|=|\+|-|\*|/|%|!|\?|:|<|>|&|\||\^|~", RegexOptions.Compiled),
             operatorBrush));
+        // For XML-family languages the dot appears in file paths and version strings
+        // between element tags, so exclude it from punctuation to avoid grey fragments.
         _rules.Add(new SyntaxBrushRule(
-            new Regex(@"[;,.]", RegexOptions.Compiled),
+            new Regex(extension.CommentBlockStart == "<!--" ? @"[;,]" : @"[;,.]", RegexOptions.Compiled),
             _punctuationBrush));
         _rules.Add(new SyntaxBrushRule(
             new Regex(@"(?<=\b(?:using|import|include|require|use|from)\b\s+(?:[\p{L}_][\p{L}\p{Nd}_./\\]*\s*[./\\]\s*)?)[\p{L}_][\p{L}\p{Nd}_]*(?=\s*(?:;|$))", RegexOptions.Compiled),
@@ -7964,17 +7973,24 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             Color = numberColor
         });
 
-        codeRuleSet.Rules.Add(new HighlightingRule
+        // Property and namespace rules fire on dot-separated identifiers (e.g. foo.Bar).
+        // In XML-family languages dots appear in file paths and version strings between
+        // element tags, so these rules would wrongly colour path segments as namespace/
+        // property tokens. Skip them entirely for XML — no chained member access exists.
+        if (ext.CommentBlockStart != "<!--")
         {
-            Regex = new Regex(@"(?<=\.|->|::)[\p{L}_][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled),
-            Color = propertyColor
-        });
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"(?<=\.|->|::)[\p{L}_][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled),
+                Color = propertyColor
+            });
 
-        codeRuleSet.Rules.Add(new HighlightingRule
-        {
-            Regex = new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\.)", RegexOptions.Compiled),
-            Color = namespaceColor
-        });
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\.)", RegexOptions.Compiled),
+                Color = namespaceColor
+            });
+        }
 
         codeRuleSet.Rules.Add(new HighlightingRule
         {
@@ -8000,9 +8016,11 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             Color = operatorColor
         });
 
+        // For XML-family languages the dot appears in file paths and version strings
+        // between element tags, so exclude it from punctuation to avoid grey fragments.
         codeRuleSet.Rules.Add(new HighlightingRule
         {
-            Regex = new Regex(@"[{}\[\]();,.]", RegexOptions.Compiled),
+            Regex = new Regex(ext.CommentBlockStart == "<!--" ? @"[{}\[\]();,]" : @"[{}\[\]();,.]", RegexOptions.Compiled),
             Color = punctuationColor
         });
 
