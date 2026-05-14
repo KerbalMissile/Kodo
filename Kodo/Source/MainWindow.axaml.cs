@@ -7323,7 +7323,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         {
             _rules.Add(new SyntaxBrushRule(
                 new Regex(@"(?<=>)\s*v?\d[\d._-]*[A-Za-z0-9]*\s*(?=<)", RegexOptions.Compiled),
-                stringBrush));
+                numberBrush));
         }
 
         _rules.Add(new SyntaxBrushRule(
@@ -7954,7 +7954,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             codeRuleSet.Rules.Add(new HighlightingRule
             {
                 Regex = new Regex(@"(?<=>)\s*v?\d[\d._-]*[A-Za-z0-9]*\s*(?=<)", RegexOptions.Compiled),
-                Color = stringColor
+                Color = numberColor
             });
         }
 
