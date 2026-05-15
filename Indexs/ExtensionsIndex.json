@@ -8,7 +8,7 @@
       "author": "Kodo Team",
       "description": "Syntax highlighting for C# files, including .csproj and most other .NET based languages.",
       "fileName": "C#-Kodo-Extension-v1.2.5.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.2.4.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.2.5.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/C_Sharp_Logo_2023.svg/240px-C_Sharp_Logo_2023.svg.png"
     },
     {
@@ -30,7 +30,7 @@
       "author": "Kodo Team",
       "description": "Syntax highlighting for C and C++ files.",
       "fileName": "C++-Kodo-Extension-v1.0.3.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%2B%2B-Kodo-Extension-v1.0.2.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%2B%2B-Kodo-Extension-v1.0.3.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/ISO_C%2B%2B_Logo.svg/213px-ISO_C%2B%2B_Logo.svg.png"
     },
     {
@@ -150,8 +150,8 @@
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for Markdown and reStructuredText files.",
-      "fileName": "Markdown-Kodo-Extension-v1.0.1.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Markdown-Kodo-Extension-v1.0.1.kox",
+      "fileName": "Markdown-Kodo-Extension-v1.0.3.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Markdown-Kodo-Extension-v1.0.3.kox",
       "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/markdown-icon.png"
     },
     {
