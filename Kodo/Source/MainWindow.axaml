@@ -1534,13 +1534,52 @@
                                    Margin="0,0,0,8"
                                    Text="{Binding ExtensionsStatusText}" />
 
-                        <TextBox Text="{Binding ExtensionSearchText, Mode=TwoWay}"
-                                 PlaceholderText="Search extensions..."
-                                 Background="{Binding ButtonBrush}"
-                                 Foreground="{Binding PrimaryTextBrush}"
-                                 BorderBrush="{Binding SurfaceBorderBrush}"
-                                 Padding="10,8"
-                                 Margin="0,0,0,4" />
+                        <Grid ColumnDefinitions="*,Auto,Auto"
+                              ColumnSpacing="10"
+                              Margin="0,0,0,4">
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding ExtensionSearchText, Mode=TwoWay}"
+                                     PlaceholderText="Search extensions..."
+                                     Background="{Binding ButtonBrush}"
+                                     Foreground="{Binding PrimaryTextBrush}"
+                                     BorderBrush="{Binding SurfaceBorderBrush}"
+                                     Padding="10,8" />
+                            <Border Grid.Column="1"
+                                    MinWidth="96"
+                                    MaxWidth="220"
+                                    Background="{Binding ButtonBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="10"
+                                    Height="36"
+                                    Padding="6,0"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Left">
+                                <ComboBox ItemsSource="{Binding ExtensionSortOptions}"
+                                          SelectedItem="{Binding SelectedExtensionSort, Mode=TwoWay}"
+                                          MinWidth="0"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Center"
+                                          HorizontalContentAlignment="Left"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          FontSize="13"
+                                          Foreground="{Binding PrimaryTextBrush}">
+                                    <ComboBox.Styles>
+                                        <Style Selector="ComboBoxItem">
+                                            <Setter Property="Background" Value="{Binding #RootWindow.ButtonBrush}" />
+                                            <Setter Property="Foreground" Value="{Binding #RootWindow.PrimaryTextBrush}" />
+                                        </Style>
+                                    </ComboBox.Styles>
+                                </ComboBox>
+                            </Border>
+                            <Button Grid.Column="2"
+                                    Classes="chrome"
+                                    Click="UpdateAllMarketplaceExtensionsButton_OnClick"
+                                    IsVisible="{Binding IsMarketplaceTabSelected}"
+                                    IsEnabled="{Binding CanUpdateAllExtensions}"
+                                    Content="{Binding UpdateAllExtensionsButtonText}" />
+                        </Grid>
 
                         <StackPanel IsVisible="{Binding IsInstalledTabSelected}">
                             <ItemsControl ItemsSource="{Binding FilteredInstalledExtensions}">

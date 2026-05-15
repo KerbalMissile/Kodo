@@ -143,6 +143,9 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string[] Extensions { get; init; } = [];
     public string[] Keywords { get; set; } = [];
     public string[] Types { get; set; } = [];
+    public string[] Functions { get; set; } = [];
+    public string[] Properties { get; set; } = [];
+    public string[] Namespaces { get; set; } = [];
     public string CommentLine { get; set; } = "//";
     public string CommentBlockStart { get; set; } = "/*";
     public string CommentBlockEnd { get; set; } = "*/";
@@ -161,6 +164,7 @@ public record class LoadedExtension : INotifyPropertyChanged
     public IBrush MutedTextBrush { get; set; } = Brush.Parse("#A0A0A0");
     public string SourcePath { get; set; } = string.Empty;
     public bool IsDirectorySource { get; set; }
+    public DateTime? InstalledOnUtc { get; set; }
     public ExtensionThemeDefinition? ThemeDefinition { get; set; }
     public string ThemeCardThemeId => ThemeDefinition?.ThemeId ?? string.Empty;
     public string ThemeCardDisplayName => ThemeDefinition?.DisplayName ?? Name;
@@ -221,6 +225,9 @@ public sealed class LanguageSyntaxProfile
     public string[] Extensions { get; init; } = [];
     public string[] Keywords { get; init; } = [];
     public string[] Types { get; init; } = [];
+    public string[] Functions { get; init; } = [];
+    public string[] Properties { get; init; } = [];
+    public string[] Namespaces { get; init; } = [];
     public string? CommentLine { get; init; }
     public string? CommentBlockStart { get; init; }
     public string? CommentBlockEnd { get; init; }
@@ -264,6 +271,14 @@ public class ReleaseLinkItem
     public string Url { get; init; } = string.Empty;
 }
 
+public static class ExtensionSortModes
+{
+    public const string Alphabetical = "A-Z";
+    public const string ReverseAlphabetical = "Z-A";
+    public const string RecentlyInstalled = "Recently Installed";
+    public const string UpdatesAvailable = "Updates Available";
+}
+
 public enum ExplorerClipboardMode
 {
     Copy,
@@ -276,6 +291,7 @@ public class MarketplaceExtension : INotifyPropertyChanged
     private string _installButtonText = "Install";
     private bool _isUpdateAvailable;
     private string _installedVersion = string.Empty;
+    private DateTime? _installedOnUtc;
 
     public string Id { get; init; } = string.Empty;
     public string Version { get; init; } = string.Empty;
@@ -339,6 +355,17 @@ public class MarketplaceExtension : INotifyPropertyChanged
         }
     }
 
+    public DateTime? InstalledOnUtc
+    {
+        get => _installedOnUtc;
+        private set
+        {
+            if (_installedOnUtc == value) return;
+            _installedOnUtc = value;
+            OnPropertyChanged();
+        }
+    }
+
     public bool IsInstallEnabled => !IsInstalling && (!IsInstalled || IsUpdateAvailable) && !string.IsNullOrWhiteSpace(DownloadUrl);
 
     public string InstallButtonText
@@ -356,6 +383,7 @@ public class MarketplaceExtension : INotifyPropertyChanged
     {
         var isInstalled = installedExtension is not null;
         InstalledVersion = installedExtension?.Version ?? string.Empty;
+        InstalledOnUtc = installedExtension?.InstalledOnUtc;
         IsUpdateAvailable = isUpdateAvailable;
 
         if (IsInstalled != isInstalled)
@@ -427,6 +455,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isDiscordRichPresenceEnabled;
     private bool _hasUntitledDocument;
     private bool _isRefreshingExtensions;
+    private bool _isUpdatingAllExtensions;
     private bool _isRefreshingLatestRelease;
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
@@ -480,6 +509,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _startupActiveTabPath;
     private string? _startupFilePath;
     private string _extensionSearchText = string.Empty;
+    private string _selectedInstalledExtensionSort = ExtensionSortModes.Alphabetical;
+    private string _selectedMarketplaceExtensionSort = ExtensionSortModes.Alphabetical;
     private bool _isFindPanelVisible;
     private bool _isFileCorrupted;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
@@ -890,7 +921,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         OnPropertyChanged(nameof(ExtensionLoadErrors));
         OnPropertyChanged(nameof(VisibleLoadedExtensions));
-        OnPropertyChanged(nameof(FilteredInstalledExtensions));
+        NotifyExtensionFiltersChanged();
         OnPropertyChanged(nameof(IsNoExtensionsVisible));
         OnPropertyChanged(nameof(ThemeExtensions));
         OnPropertyChanged(nameof(HasThemeExtensions));
@@ -937,7 +968,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SyncMarketplaceInstallStates();
         OnPropertyChanged(nameof(ExtensionLoadErrors));
         OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
-        OnPropertyChanged(nameof(FilteredMarketplaceExtensions));
+        NotifyExtensionFiltersChanged();
         await FetchMarketplaceIconsAsync();
         await FetchInstalledExtensionIconsAsync();
     }
@@ -1111,18 +1142,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
     }
 
-    private static MarketplaceExtension ParseMarketplaceExtension(JsonElement item) => new()
+    private static MarketplaceExtension ParseMarketplaceExtension(JsonElement item)
     {
-        Id = item.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty,
-        Version = item.TryGetProperty("version", out var version) ? version.GetString() ?? string.Empty : string.Empty,
-        Name = item.TryGetProperty("name", out var name) ? name.GetString() ?? string.Empty : string.Empty,
-        Type = item.TryGetProperty("type", out var type) ? type.GetString() ?? string.Empty : string.Empty,
-        Author = item.TryGetProperty("author", out var author) ? author.GetString() ?? string.Empty : string.Empty,
-        Description = item.TryGetProperty("description", out var description) ? description.GetString() ?? string.Empty : string.Empty,
-        DownloadUrl = item.TryGetProperty("downloadUrl", out var downloadUrl) ? downloadUrl.GetString() ?? string.Empty : string.Empty,
-        FileName = item.TryGetProperty("fileName", out var fileName) ? fileName.GetString() ?? string.Empty : string.Empty,
-        IconUrl = item.TryGetProperty("iconUrl", out var iconUrl) ? iconUrl.GetString() ?? string.Empty : string.Empty
-    };
+        var id = item.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty;
+        var declaredVersion = item.TryGetProperty("version", out var versionElement) ? versionElement.GetString() ?? string.Empty : string.Empty;
+        var name = item.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty;
+        var type = item.TryGetProperty("type", out var typeElement) ? typeElement.GetString() ?? string.Empty : string.Empty;
+        var author = item.TryGetProperty("author", out var authorElement) ? authorElement.GetString() ?? string.Empty : string.Empty;
+        var description = item.TryGetProperty("description", out var descriptionElement) ? descriptionElement.GetString() ?? string.Empty : string.Empty;
+        var rawDownloadUrl = item.TryGetProperty("downloadUrl", out var downloadUrlElement) ? downloadUrlElement.GetString() ?? string.Empty : string.Empty;
+        var declaredFileName = item.TryGetProperty("fileName", out var fileNameElement) ? fileNameElement.GetString() ?? string.Empty : string.Empty;
+        var iconUrl = item.TryGetProperty("iconUrl", out var iconUrlElement) ? iconUrlElement.GetString() ?? string.Empty : string.Empty;
+        var urlFileName = TryGetFileNameFromUrl(rawDownloadUrl);
+        var bestKnownVersion = GetHighestKnownExtensionVersion(declaredVersion, declaredFileName, urlFileName);
+        var canonicalFileName = GetCanonicalMarketplaceFileName(declaredFileName, urlFileName, bestKnownVersion);
+        var canonicalDownloadUrl = NormalizeMarketplaceDownloadUrl(rawDownloadUrl, canonicalFileName);
+
+        return new MarketplaceExtension
+        {
+            Id = id,
+            Version = bestKnownVersion,
+            Name = name,
+            Type = type,
+            Author = author,
+            Description = description,
+            DownloadUrl = canonicalDownloadUrl,
+            FileName = canonicalFileName,
+            IconUrl = iconUrl
+        };
+    }
 
     private void SyncMarketplaceInstallStates()
     {
@@ -1146,6 +1194,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(AvailableExtensionUpdatesCount));
         OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
         OnPropertyChanged(nameof(ExtensionUpdatesBannerText));
+        NotifyExtensionActionStateChanged();
+        NotifyExtensionFiltersChanged();
+    }
+
+    private void NotifyExtensionFiltersChanged()
+    {
+        OnPropertyChanged(nameof(FilteredInstalledExtensions));
+        OnPropertyChanged(nameof(FilteredMarketplaceExtensions));
+    }
+
+    private void NotifyExtensionActionStateChanged()
+    {
+        OnPropertyChanged(nameof(CanUpdateAllExtensions));
+        OnPropertyChanged(nameof(UpdateAllExtensionsButtonText));
     }
 
     private MarketplaceExtension? GetMarketplaceExtensionForInstalled(LoadedExtension extension) =>
@@ -1248,6 +1310,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         RefreshMarketplaceConnectivityState();
         marketplaceExtension.IsInstalling = true;
+        NotifyExtensionActionStateChanged();
         var action = marketplaceExtension.IsUpdateAvailable ? "Updating" : "Installing";
         marketplaceExtension.InstallButtonText = $"{action}...";
         ExtensionsStatusText = $"{action} {marketplaceExtension.Name}...";
@@ -1259,6 +1322,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var installedExtension = GetPreferredLoadedExtension(marketplaceExtension.Id);
             var outputPath = ResolveExtensionInstallPath(marketplaceExtension, installedExtension);
             var bytes = await MarketplaceHttpClient.GetByteArrayAsync(marketplaceExtension.DownloadUrl);
+            ValidateDownloadedExtensionPackage(marketplaceExtension, bytes);
             DeleteInstalledExtensionSources(marketplaceExtension.Id, outputPath);
             await File.WriteAllBytesAsync(outputPath, bytes);
             NormalizeKoxManifestVersion(outputPath);
@@ -1278,7 +1342,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally
         {
             marketplaceExtension.IsInstalling = false;
+            NotifyExtensionActionStateChanged();
             SyncMarketplaceInstallStates();
+        }
+    }
+
+    private static void ValidateDownloadedExtensionPackage(MarketplaceExtension marketplaceExtension, byte[] packageBytes)
+    {
+        using var ms = new MemoryStream(packageBytes, writable: false);
+        using var archive = new ZipArchive(ms, ZipArchiveMode.Read, leaveOpen: false);
+        var manifestEntry = archive.GetEntry("manifest.json")
+            ?? throw new InvalidDataException($"Downloaded package for {marketplaceExtension.Name} is missing manifest.json.");
+
+        using var manifestStream = manifestEntry.Open();
+        using var manifestDoc = JsonDocument.Parse(manifestStream);
+        var manifest = manifestDoc.RootElement;
+        var manifestId = manifest.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty;
+        var manifestVersion = manifest.TryGetProperty("version", out var versionElement) ? versionElement.GetString() ?? string.Empty : string.Empty;
+
+        if (!string.Equals(manifestId, marketplaceExtension.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                $"Downloaded package id '{manifestId}' does not match expected id '{marketplaceExtension.Id}'.");
+        }
+
+        if (CompareExtensionVersions(manifestVersion, marketplaceExtension.Version) < 0)
+        {
+            throw new InvalidDataException(
+                $"Downloaded package version '{manifestVersion}' is older than the marketplace version '{marketplaceExtension.Version}'.");
         }
     }
 
@@ -1424,6 +1515,81 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private static string GetHighestKnownExtensionVersion(params string[] candidates)
+    {
+        var bestVersion = string.Empty;
+        foreach (var candidate in candidates)
+        {
+            var normalizedCandidate = ExtractVersionFromName(candidate);
+            if (string.IsNullOrWhiteSpace(normalizedCandidate))
+                normalizedCandidate = candidate;
+
+            if (CompareExtensionVersions(normalizedCandidate, bestVersion) > 0)
+                bestVersion = normalizedCandidate;
+        }
+
+        return string.IsNullOrWhiteSpace(bestVersion) ? string.Empty : bestVersion;
+    }
+
+    private static string GetCanonicalMarketplaceFileName(string declaredFileName, string urlFileName, string bestKnownVersion)
+    {
+        var baseFileName = !string.IsNullOrWhiteSpace(declaredFileName)
+            ? declaredFileName
+            : !string.IsNullOrWhiteSpace(urlFileName) && !string.Equals(urlFileName, "extension.kox", StringComparison.OrdinalIgnoreCase)
+                ? urlFileName
+                : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(baseFileName))
+            return string.Empty;
+
+        if (string.IsNullOrWhiteSpace(bestKnownVersion))
+            return baseFileName;
+
+        var fileVersion = ExtractVersionFromName(baseFileName);
+        if (string.IsNullOrWhiteSpace(fileVersion))
+            return baseFileName;
+
+        return string.Equals(fileVersion, bestKnownVersion, StringComparison.OrdinalIgnoreCase)
+            ? baseFileName
+            : ReplaceVersionInValue(baseFileName, fileVersion, bestKnownVersion);
+    }
+
+    private static string NormalizeMarketplaceDownloadUrl(string rawDownloadUrl, string canonicalFileName)
+    {
+        if (string.IsNullOrWhiteSpace(rawDownloadUrl) || string.IsNullOrWhiteSpace(canonicalFileName))
+            return rawDownloadUrl;
+
+        if (!Uri.TryCreate(rawDownloadUrl, UriKind.Absolute, out var uri))
+            return rawDownloadUrl;
+
+        var absolutePath = uri.AbsolutePath;
+        var lastSlashIndex = absolutePath.LastIndexOf('/');
+        if (lastSlashIndex < 0)
+            return rawDownloadUrl;
+
+        var pathPrefix = absolutePath[..(lastSlashIndex + 1)];
+        var normalizedPath = pathPrefix + Uri.EscapeDataString(canonicalFileName);
+        var builder = new UriBuilder(uri) { Path = normalizedPath };
+        return builder.Uri.ToString();
+    }
+
+    private static string ReplaceVersionInValue(string value, string oldVersion, string newVersion)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            string.IsNullOrWhiteSpace(oldVersion) ||
+            string.IsNullOrWhiteSpace(newVersion))
+        {
+            return value;
+        }
+
+        return Regex.Replace(
+            value,
+            Regex.Escape(oldVersion),
+            newVersion,
+            RegexOptions.IgnoreCase,
+            TimeSpan.FromMilliseconds(250));
+    }
+
     private static bool ExtensionSourceMatchesId(string path, string extensionId, bool isDirectory)
     {
         try
@@ -1513,6 +1679,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : manifestVersion;
     }
 
+    private static DateTime? GetExtensionSourceActivityUtc(string path, bool isDirectory)
+    {
+        try
+        {
+            var createdUtc = isDirectory ? Directory.GetCreationTimeUtc(path) : File.GetCreationTimeUtc(path);
+            var modifiedUtc = isDirectory ? Directory.GetLastWriteTimeUtc(path) : File.GetLastWriteTimeUtc(path);
+            var activityUtc = createdUtc > modifiedUtc ? createdUtc : modifiedUtc;
+            return activityUtc == DateTime.MinValue ? null : activityUtc;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static string ExtractVersionFromName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -1569,6 +1750,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         baseExt = baseExt with { Version = GetBestKnownExtensionVersion(baseExt.Version, folderPath) };
         baseExt.SourcePath = folderPath;
         baseExt.IsDirectorySource = true;
+        baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(folderPath, isDirectory: true);
 
         var languagePath = Path.Combine(folderPath, "language.json");
         if (File.Exists(languagePath))
@@ -1638,6 +1820,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Extensions        = src.Extensions,
         Keywords          = src.Keywords,
         Types             = src.Types,
+        Functions         = src.Functions,
+        Properties        = src.Properties,
+        Namespaces        = src.Namespaces,
         CommentLine       = src.CommentLine,
         CommentBlockStart = src.CommentBlockStart,
         CommentBlockEnd   = src.CommentBlockEnd,
@@ -1647,6 +1832,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ColorTokens       = new Dictionary<string, string>(src.ColorTokens),
         SourcePath        = src.SourcePath,
         IsDirectorySource = src.IsDirectorySource,
+        InstalledOnUtc    = src.InstalledOnUtc,
         IconImage         = src.IconImage,
     };
 
@@ -1684,6 +1870,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         baseExt = baseExt with { Version = GetBestKnownExtensionVersion(baseExt.Version, koxPath) };
         baseExt.SourcePath = koxPath;
         baseExt.IsDirectorySource = false;
+        baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(koxPath, isDirectory: false);
 
         var languageEntry = archive.GetEntry("language.json");
         if (languageEntry is not null)
@@ -1777,6 +1964,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Extensions = ReadStringArray(lang, "extensions"),
             Keywords = ReadStringArray(lang, "keywords"),
             Types = ReadStringArray(lang, "types"),
+            Functions = ReadStringArray(lang, "functions"),
+            Properties = ReadStringArray(lang, "properties"),
+            Namespaces = ReadStringArray(lang, "namespaces"),
             CommentLine = lang.TryGetProperty("commentLine", out var cl) ? cl.GetString() ?? string.Empty : null,
             CommentBlockStart = lang.TryGetProperty("commentBlockStart", out var cbs) ? cbs.GetString() ?? string.Empty : null,
             CommentBlockEnd = lang.TryGetProperty("commentBlockEnd", out var cbe) ? cbe.GetString() ?? string.Empty : null,
@@ -1795,6 +1985,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         ext.Keywords = ext.Keywords.Union(profile.Keywords).ToArray();
         ext.Types = ext.Types.Union(profile.Types).ToArray();
+        ext.Functions = ext.Functions.Union(profile.Functions).ToArray();
+        ext.Properties = ext.Properties.Union(profile.Properties).ToArray();
+        ext.Namespaces = ext.Namespaces.Union(profile.Namespaces).ToArray();
 
         if (profile.CommentLine is not null)
             ext.CommentLine = profile.CommentLine;
@@ -2088,9 +2281,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(_currentFilePath))
         {
             CurrentLanguageExtension = null;
-            EditorTextBox.SyntaxHighlighting = null;
-            ConfigureRainbowBrackets(null);
-            ConfigureInterpolatedStrings(null);
+            ClearEditorSyntaxState();
             _indentGuideRenderer.IsEnabled = false;
             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
             return;
@@ -2106,9 +2297,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (langExt is null)
         {
-            EditorTextBox.SyntaxHighlighting = null;
-            ConfigureRainbowBrackets(null);
-            ConfigureInterpolatedStrings(null);
+            ClearEditorSyntaxState();
         }
         else
             ApplySyntaxHighlighting(langExt);
@@ -2123,13 +2312,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             SetFileCorrupted(false);
             CurrentLanguageExtension = null;
-            EditorTextBox.SyntaxHighlighting = null;
-            ConfigureRainbowBrackets(null);
-            ConfigureInterpolatedStrings(null);
+            ClearEditorSyntaxState();
             return;
         }
 
         RefreshCurrentFileSyntaxHighlighting();
+    }
+
+    private void ClearEditorSyntaxState()
+    {
+        if (EditorTextBox is null)
+            return;
+
+        EditorTextBox.SyntaxHighlighting = null;
+        ConfigureRainbowBrackets(null);
+        ConfigureInterpolatedStrings(null);
     }
 
     // Sets the corrupted/unsupported state and fires all dependent property notifications.
@@ -2317,6 +2514,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isRefreshingExtensions = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(RefreshExtensionsButtonText));
+            OnPropertyChanged(nameof(CanUpdateAllExtensions));
         }
     }
 
@@ -2330,6 +2528,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isMarketplaceTabSelected = shouldSelectMarketplace;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsMarketplaceTabSelected));
+            OnPropertyChanged(nameof(SelectedExtensionSort));
         }
     }
 
@@ -2342,6 +2541,41 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isMarketplaceTabSelected = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsInstalledTabSelected));
+            OnPropertyChanged(nameof(SelectedExtensionSort));
+        }
+    }
+
+    public IReadOnlyList<string> ExtensionSortOptions { get; } =
+    [
+        ExtensionSortModes.Alphabetical,
+        ExtensionSortModes.ReverseAlphabetical,
+        ExtensionSortModes.RecentlyInstalled,
+        ExtensionSortModes.UpdatesAvailable
+    ];
+
+    public string SelectedExtensionSort
+    {
+        get => IsMarketplaceTabSelected ? _selectedMarketplaceExtensionSort : _selectedInstalledExtensionSort;
+        set
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? ExtensionSortModes.Alphabetical : value;
+            if (IsMarketplaceTabSelected)
+            {
+                if (string.Equals(_selectedMarketplaceExtensionSort, normalized, StringComparison.Ordinal))
+                    return;
+
+                _selectedMarketplaceExtensionSort = normalized;
+            }
+            else
+            {
+                if (string.Equals(_selectedInstalledExtensionSort, normalized, StringComparison.Ordinal))
+                    return;
+
+                _selectedInstalledExtensionSort = normalized;
+            }
+
+            OnPropertyChanged();
+            NotifyExtensionFiltersChanged();
         }
     }
 
@@ -2442,6 +2676,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsExtensionUpdateBannerVisible => AvailableExtensionUpdatesCount > 0 && !_extensionUpdateBannerDismissed;
     public string ExtensionUpdatesBannerText =>
         $"{AvailableExtensionUpdatesCount} extension{(AvailableExtensionUpdatesCount == 1 ? string.Empty : "s")} {(AvailableExtensionUpdatesCount == 1 ? "has" : "have")} updates available";
+    public bool CanUpdateAllExtensions =>
+        !IsUpdatingAllExtensions &&
+        !IsRefreshingExtensions &&
+        !MarketplaceExtensions.Any(e => e.IsInstalling) &&
+        MarketplaceExtensions.Any(e => e.IsUpdateAvailable && !e.IsInstalling);
+    public string UpdateAllExtensionsButtonText =>
+        IsUpdatingAllExtensions
+            ? "Updating..."
+            : AvailableExtensionUpdatesCount > 0
+                ? $"Update All ({AvailableExtensionUpdatesCount})"
+                : "Update All";
 
     public string LatestReleaseDisplayName =>
         !string.IsNullOrWhiteSpace(LatestRelease?.Name)
@@ -2742,8 +2987,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_extensionSearchText == value) return;
             _extensionSearchText = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(FilteredInstalledExtensions));
-            OnPropertyChanged(nameof(FilteredMarketplaceExtensions));
+            NotifyExtensionFiltersChanged();
+        }
+    }
+
+    public bool IsUpdatingAllExtensions
+    {
+        get => _isUpdatingAllExtensions;
+        private set
+        {
+            if (_isUpdatingAllExtensions == value) return;
+            _isUpdatingAllExtensions = value;
+            OnPropertyChanged();
+            NotifyExtensionActionStateChanged();
         }
     }
 
@@ -2756,7 +3012,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 : VisibleLoadedExtensions.Where(e =>
                     e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
                     e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
-            return source.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase);
+            return SortInstalledExtensions(source);
         }
     }
 
@@ -2770,8 +3026,44 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
                     e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
                     e.Author.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
-            return source.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase);
+            return SortMarketplaceExtensions(source);
         }
+    }
+
+    private IEnumerable<LoadedExtension> SortInstalledExtensions(IEnumerable<LoadedExtension> source) =>
+        SelectedExtensionSort switch
+        {
+            ExtensionSortModes.ReverseAlphabetical => source.OrderByDescending(e => e.Name, StringComparer.OrdinalIgnoreCase),
+            ExtensionSortModes.RecentlyInstalled => source
+                .OrderByDescending(e => e.InstalledOnUtc ?? DateTime.MinValue)
+                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase),
+            ExtensionSortModes.UpdatesAvailable => source
+                .OrderByDescending(e => e.IsUpdateAvailable)
+                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase),
+            _ => source.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+        };
+
+    private IEnumerable<MarketplaceExtension> SortMarketplaceExtensions(IEnumerable<MarketplaceExtension> source) =>
+        SelectedExtensionSort switch
+        {
+            ExtensionSortModes.ReverseAlphabetical => source.OrderByDescending(e => e.Name, StringComparer.OrdinalIgnoreCase),
+            ExtensionSortModes.RecentlyInstalled => source
+                .OrderByDescending(e => e.InstalledOnUtc.HasValue)
+                .ThenByDescending(e => e.InstalledOnUtc ?? DateTime.MinValue)
+                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase),
+            ExtensionSortModes.UpdatesAvailable => source
+                .OrderBy(GetMarketplaceUpdatePriority)
+                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase),
+            _ => source.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+        };
+
+    private static int GetMarketplaceUpdatePriority(MarketplaceExtension extension)
+    {
+        if (extension.IsUpdateAvailable)
+            return 0;
+        if (!extension.IsInstalled)
+            return 1;
+        return 2;
     }
 
     public bool IsFindPanelVisible
@@ -4354,29 +4646,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void AddRecentFile(string? path)
+    private void AddRecentFile(string? path) =>
+        AddRecentPath(path, isFolder: false);
+
+    private void AddRecentFolder(string? path) =>
+        AddRecentPath(path, isFolder: true);
+
+    private void AddRecentPath(string? path, bool isFolder)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
 
         var existing = RecentFiles.FirstOrDefault(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
         if (existing is not null) RecentFiles.Remove(existing);
 
-        RecentFiles.Insert(0, new RecentFileItem(path, isFolder: false, DateTime.Now));
-        while (RecentFiles.Count > MaxRecentFiles)
-            RecentFiles.RemoveAt(RecentFiles.Count - 1);
-
-        SaveSettings();
-        OnPropertyChanged(nameof(HasRecentFiles));
-    }
-
-    private void AddRecentFolder(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return;
-
-        var existing = RecentFiles.FirstOrDefault(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
-        if (existing is not null) RecentFiles.Remove(existing);
-
-        RecentFiles.Insert(0, new RecentFileItem(path, isFolder: true, DateTime.Now));
+        RecentFiles.Insert(0, new RecentFileItem(path, isFolder, DateTime.Now));
         while (RecentFiles.Count > MaxRecentFiles)
             RecentFiles.RemoveAt(RecentFiles.Count - 1);
 
@@ -4525,9 +4808,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        NavigateTo(Page.Extensions);
-        RefreshMarketplaceConnectivityState();
-        _ = RefreshExtensionsDataAsync();
+        OpenExtensionsPage(showMarketplaceTab: false, forceRefresh: false);
     }
 
     private async void RefreshExtensionsButton_OnClick(object? sender, RoutedEventArgs e) =>
@@ -4547,10 +4828,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // opens the Extensions page AND switches to the Marketplace tab
     private void OpenMarketplaceButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        NavigateTo(Page.Extensions);
-        IsMarketplaceTabSelected = true;
-        RefreshMarketplaceConnectivityState();
-        _ = RefreshExtensionsDataAsync(force: true);
+        OpenExtensionsPage(showMarketplaceTab: true, forceRefresh: true);
     }
 
     private void OpenTutorialButton_OnClick(object? sender, RoutedEventArgs e)
@@ -4594,9 +4872,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _extensionUpdateBannerDismissed = true;
         OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
+        OpenExtensionsPage(showMarketplaceTab: true, forceRefresh: false);
+    }
+
+    private void OpenExtensionsPage(bool showMarketplaceTab, bool forceRefresh)
+    {
         NavigateTo(Page.Extensions);
-        IsMarketplaceTabSelected = true;
+        IsMarketplaceTabSelected = showMarketplaceTab;
         RefreshMarketplaceConnectivityState();
+        _ = RefreshExtensionsDataAsync(force: forceRefresh);
     }
 
     private void OpenReleasesPageButton_OnClick(object? sender, RoutedEventArgs e) =>
@@ -5594,6 +5878,60 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (sender is Button { Tag: MarketplaceExtension marketplaceExtension })
             await InstallMarketplaceExtensionAsync(marketplaceExtension);
+    }
+
+    private async void UpdateAllMarketplaceExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsUpdatingAllExtensions)
+            return;
+
+        var pendingUpdateIds = MarketplaceExtensions
+            .Where(extension => extension.IsUpdateAvailable && extension.IsInstallEnabled)
+            .Select(extension => extension.Id)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (pendingUpdateIds.Count == 0)
+        {
+            ExtensionsStatusText = "All marketplace extensions are already up to date.";
+            return;
+        }
+
+        IsUpdatingAllExtensions = true;
+        var successfulUpdates = 0;
+        var failedUpdates = 0;
+
+        try
+        {
+            for (var index = 0; index < pendingUpdateIds.Count; index++)
+            {
+                var extensionId = pendingUpdateIds[index];
+                var marketplaceExtension = MarketplaceExtensions.FirstOrDefault(entry =>
+                    entry.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+
+                if (marketplaceExtension is null || !marketplaceExtension.IsUpdateAvailable)
+                    continue;
+
+                ExtensionsStatusText = $"Updating {index + 1} of {pendingUpdateIds.Count}: {marketplaceExtension.Name}...";
+                await InstallMarketplaceExtensionAsync(marketplaceExtension);
+
+                var refreshedExtension = MarketplaceExtensions.FirstOrDefault(entry =>
+                    entry.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+
+                if (refreshedExtension is not null && refreshedExtension.IsInstalled && !refreshedExtension.IsUpdateAvailable)
+                    successfulUpdates++;
+                else
+                    failedUpdates++;
+            }
+
+            ExtensionsStatusText = failedUpdates == 0
+                ? $"Updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}."
+                : $"Updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}. {failedUpdates} still need attention.";
+        }
+        finally
+        {
+            IsUpdatingAllExtensions = false;
+        }
     }
 
     private async void UpdateInstalledExtensionButton_OnClick(object? sender, RoutedEventArgs e)
@@ -7303,6 +7641,15 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         if (extension.Types.Length > 0)
             _rules.Add(new SyntaxBrushRule(BuildTokenRegex(extension.Types), typeBrush));
 
+        if (extension.Namespaces.Length > 0)
+            _rules.Add(new SyntaxBrushRule(BuildTokenRegex(extension.Namespaces), namespaceBrush));
+
+        if (extension.Properties.Length > 0)
+            _rules.Add(new SyntaxBrushRule(BuildTokenRegex(extension.Properties), propertyBrush));
+
+        if (extension.Functions.Length > 0)
+            _rules.Add(new SyntaxBrushRule(BuildTokenRegex(extension.Functions), functionBrush));
+
         if (extension.StringDelimiters.Contains("\"") ||
             extension.StringDelimiters.Contains("'") ||
             extension.MultiLineStringDelimiters.Contains("\"\"\"") ||
@@ -7363,7 +7710,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
             new Regex(@"(?<=\b(?:using|import|include|require|use|from)\b\s+(?:[\p{L}_][\p{L}\p{Nd}_./\\]*\s*[./\\]\s*)?)[\p{L}_][\p{L}\p{Nd}_]*(?=\s*(?:;|$))", RegexOptions.Compiled),
             namespaceBrush));
         _rules.Add(new SyntaxBrushRule(
-            BuildVariableRegex(extension.Keywords.Concat(extension.Types)),
+            BuildVariableRegex(extension.Keywords.Concat(extension.Types).Concat(extension.Functions).Concat(extension.Properties).Concat(extension.Namespaces)),
             variableBrush));
     }
 
@@ -7954,6 +8301,33 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
+        if (ext.Namespaces.Length > 0)
+        {
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = BuildTokenRegex(ext.Namespaces),
+                Color = namespaceColor
+            });
+        }
+
+        if (ext.Properties.Length > 0)
+        {
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = BuildTokenRegex(ext.Properties),
+                Color = propertyColor
+            });
+        }
+
+        if (ext.Functions.Length > 0)
+        {
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = BuildTokenRegex(ext.Functions),
+                Color = functionColor
+            });
+        }
+
         // XML/MSBuild version string rule — only active for XML-family languages
         // (identified by <!-- block comment syntax). Must be inserted before the number
         // rule so the full version token (e.g. v1.0.0-DEV, net10.0) is claimed as a
@@ -8043,7 +8417,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         // and were not already claimed by keyword/type/number rules above.
         codeRuleSet.Rules.Add(new HighlightingRule
         {
-            Regex = BuildVariableRegex(ext.Keywords.Concat(ext.Types)),
+            Regex = BuildVariableRegex(ext.Keywords.Concat(ext.Types).Concat(ext.Functions).Concat(ext.Properties).Concat(ext.Namespaces)),
             Color = variableColor
         });
 
