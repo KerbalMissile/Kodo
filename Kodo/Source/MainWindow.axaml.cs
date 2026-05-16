@@ -171,7 +171,7 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string ThemeCardPreviewBackground => ThemeDefinition?.PreviewBackground ?? "#000000";
     public string ThemeCardPreviewBorder => ThemeDefinition?.PreviewBorder ?? "#4A4A4A";
     public string ThemeCardAccent => ThemeDefinition?.Accent ?? "#8C00FF";
-    // True for the 2nd, 3rd, etc. entries split out of a multi-theme array —
+    // True for the 2nd, 3rd, etc. entries split out of a multi-theme array -
     // they appear in ThemeExtensions but are hidden from the Installed list.
     public bool IsThemeSubEntry { get; init; }
     // Optional icon loaded from icon.png inside the .kox / folder
@@ -484,7 +484,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _lastDiscordPresenceDetails = string.Empty;
     private string _lastDiscordPresenceState = string.Empty;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
-    // True when settings.json did not exist on this launch — used to show the tutorial once.
+    // True when settings.json did not exist on this launch - used to show the tutorial once.
     private bool _isFirstLaunch;
     private bool _hasCompletedTutorial;
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
@@ -511,6 +511,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _extensionSearchText = string.Empty;
     private string _selectedInstalledExtensionSort = ExtensionSortModes.Alphabetical;
     private string _selectedMarketplaceExtensionSort = ExtensionSortModes.Alphabetical;
+    // Personalization - set in Settings, persisted in settings.json.
+    // _userCountry:        ISO 3166-1 alpha-2 country code (e.g. "CA", "US", "GB").
+    //                      Empty → auto-detected from the OS regional settings.
+    // _userHemisphere:     0 = auto-detect from country, 1 = northern, 2 = southern.
+    // _userTimezoneOffset: UTC offset string (e.g. "-5", "+1"). Empty → auto-detect.
+    private string _userCountry = string.Empty;
+    private int    _userHemisphere = 0;
+    private string _userTimezoneOffset = string.Empty;
     private bool _isFindPanelVisible;
     private bool _isFileCorrupted;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
@@ -581,7 +589,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         { '`', '`' },
     };
 
-    // Closing characters — when typed over an existing auto-inserted closer, skip past it
+    // Closing characters - when typed over an existing auto-inserted closer, skip past it
     private static readonly HashSet<char> ClosingChars = new() { ')', ']', '}', '>', '"', '\'', '`' };
 
     private static HttpClient CreateHttpClient()
@@ -699,6 +707,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? "#8C00FF" : settings.CustomAccentHex;
         _tabSize = NormalizeTabSize(settings.TabSize);
         _editorFontSize = settings.EditorFontSize is >= 8 and <= 32 ? settings.EditorFontSize : 14;
+        _userCountry = string.IsNullOrWhiteSpace(settings.UserCountry)
+            ? DetectCountryCode()
+            : settings.UserCountry.ToUpperInvariant();
+        _userHemisphere     = settings.UserHemisphere is >= 0 and <= 2 ? settings.UserHemisphere : 0;
+        _userTimezoneOffset = settings.UserTimezoneOffset ?? string.Empty;
         _startupOpenTabPaths.AddRange(settings.OpenTabPaths
             .Where(path => File.Exists(path))
             .Distinct(StringComparer.OrdinalIgnoreCase));
@@ -709,18 +722,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _discordReconnectTimer.Tick += DiscordReconnectTimer_OnTick;
         _editorStateRefreshTimer.Tick += EditorStateRefreshTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
-        DataContext = this;
-        IsHomePageVisible = true;
-        ApplyTheme(_requestedThemeName);
+
+        // ── Pre-DataContext theme bootstrap ────────────────────────────────────
+        // Extensions must be loaded before ApplyTheme so custom themes are available.
+        // Both calls happen before DataContext = this so that when bindings first
+        // evaluate, all brush properties already carry the correct values.
+        // This eliminates the one-frame flash / re-paint that was visible on startup
+        // when using the Light theme or any high-contrast extension theme.
         EnsureExtensionsFolder();
         SetupExtensionFolderWatchers();
-        NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
-        NetworkChange.NetworkAddressChanged += NetworkChange_OnNetworkAddressChanged;
-        RefreshMarketplaceConnectivityState();
+        LoadExtensions();
+        ApplyThemeBrushes(_requestedThemeName);
+
+        DataContext = this;
+        IsHomePageVisible = true;
+
+        // Kick off the full async refresh (marketplace fetch, icon loading, etc.)
+        // now that the UI is live. The synchronous LoadExtensions() above already
+        // populated the theme; the async path below will update everything else
+        // (marketplace data, update badges) without touching the brush values again
+        // unless the user has changed settings while offline.
         _ = RefreshExtensionsDataAsync();
         _ = RefreshLatestReleaseAsync();
         UpdateDiscordRichPresenceLifecycle();
         ApplyEditorSettings();
+        NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
+        NetworkChange.NetworkAddressChanged += NetworkChange_OnNetworkAddressChanged;
+        RefreshMarketplaceConnectivityState();
         // Poll the Windows accent registry every 2 s so the blob preview and
         // active accent stay live without the Microsoft.Win32.SystemEvents package.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -998,10 +1026,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                             pair.ext.IconImage = new Bitmap(ms);
                             pair.ext.NotifyIconChanged();
                         }
-                        catch { /* Bad image data — keep existing icon or abbreviation. */ }
+                        catch { /* Bad image data - keep existing icon or abbreviation. */ }
                     });
                 }
-                catch { /* Network failure — keep existing icon or abbreviation. */ }
+                catch { /* Network failure - keep existing icon or abbreviation. */ }
             });
 
         await Task.WhenAll(tasks);
@@ -1026,10 +1054,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                             using var ms = new MemoryStream(bytes);
                             entry.IconImage = new Bitmap(ms);
                         }
-                        catch { /* Silently ignore bad image data — fallback to abbreviation. */ }
+                        catch { /* Silently ignore bad image data - fallback to abbreviation. */ }
                     });
                 }
-                catch { /* Network failure — fallback to local icon or abbreviation. */ }
+                catch { /* Network failure - fallback to local icon or abbreviation. */ }
             });
 
         await Task.WhenAll(tasks);
@@ -1337,7 +1365,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 marketplaceExtension.IsUpdateAvailable);
             RefreshMarketplaceConnectivityState($"Extension install - {marketplaceExtension.Name}", ex);
             ExtensionsStatusText = $"Failed to install {marketplaceExtension.Name}: {ex.Message}";
-            await ShowWarningDialogAsync($"Extension install — {marketplaceExtension.Name}", ex);
+            await ShowWarningDialogAsync($"Extension install - {marketplaceExtension.Name}", ex);
         }
         finally
         {
@@ -1408,7 +1436,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             ExtensionsStatusText = $"Failed to uninstall {extension.Name}: {ex.Message}";
-            await ShowWarningDialogAsync($"Extension uninstall — {extension.Name}", ex);
+            await ShowWarningDialogAsync($"Extension uninstall - {extension.Name}", ex);
         }
     }
 
@@ -1776,7 +1804,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var themePath = Path.Combine(folderPath, "theme.json");
         if (!File.Exists(themePath))
         {
-            // No theme file — yield the extension as-is (language extension, etc.)
+            // No theme file - yield the extension as-is (language extension, etc.)
             yield return baseExt;
             yield break;
         }
@@ -1847,7 +1875,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ms.Position = 0;
             var bmp = new Bitmap(ms);
             if (bmp.PixelSize.Width != bmp.PixelSize.Height) return null;
-            // Scale down to 48x48 — Avalonia Bitmap doesn't resize on load,
+            // Scale down to 48x48 - Avalonia Bitmap doesn't resize on load,
             // but we can let the Image control handle it via Width/Height binding.
             // Just return the bitmap as-is; sizing is done in AXAML.
             return bmp;
@@ -1902,7 +1930,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             yield break;
         }
 
-        // ZipArchiveEntry streams are forward-only — read to memory first so we can
+        // ZipArchiveEntry streams are forward-only - read to memory first so we can
         // enumerate the JSON array without the stream closing under us.
         using var themeStream = themeEntry.Open();
         using var ms = new MemoryStream();
@@ -2077,7 +2105,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (extension is null)
         {
-            // No extension matched — try to detect the language from file content.
+            // No extension matched - try to detect the language from file content.
             // We read only the first non-empty line so this stays cheap even for large files.
             extension = TryDetectLanguageFromContent(filePath);
             if (extension is null)
@@ -2649,7 +2677,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return dash >= 0 ? t[..dash] : t;
     }
 
-    // Core version check — dismissal has no effect here.
+    // Core version check - dismissal has no effect here.
     // -DEV builds always return false (updates suppressed entirely).
     // Priority: stable > beta > dev. A stable latest beats a beta current
     // of the same numeric version; a beta latest beats a dev current, etc.
@@ -2665,12 +2693,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (latest != current) return latest > current;
 
-            // Same numeric version — compare by suffix priority
+            // Same numeric version - compare by suffix priority
             return VersionPriority(LatestReleaseTag) > VersionPriority(CurrentAppVersion);
         }
     }
 
-    // Banner visibility — collapses when dismissed, reappears if the app restarts.
+    // Banner visibility - collapses when dismissed, reappears if the app restarts.
     public bool IsAppUpdateAvailable => IsNewerVersionAvailable && !_updateBannerDismissed;
     public int AvailableExtensionUpdatesCount => MarketplaceExtensions.Count(e => e.IsUpdateAvailable);
     public bool IsExtensionUpdateBannerVisible => AvailableExtensionUpdatesCount > 0 && !_extensionUpdateBannerDismissed;
@@ -2748,7 +2776,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return text.Trim();
     }
 
-    // Pre-compiled regex patterns used by ConvertMarkdownToDisplayText — compiled
+    // Pre-compiled regex patterns used by ConvertMarkdownToDisplayText - compiled
     // once at class load time so repeated calls don't recompile on every access.
     private static readonly Regex MdCodeFenceRegex         = new(@"```(?:[\w#+.-]+)?\n?",         RegexOptions.Compiled);
     private static readonly Regex MdInlineCodeRegex        = new(@"`([^`]+)`",                    RegexOptions.Compiled);
@@ -3158,37 +3186,323 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string ThemeStatusText => $"Current theme: {CurrentThemeName}";
 
-    private static string TimeOfDay()
+    // ── Personalization settings ─────────────────────────────────────────────
+
+    /// <summary>
+    /// ISO 3166-1 alpha-2 country code entered (or auto-detected) for the user.
+    /// Used to pick region-appropriate holiday / long-weekend messages.
+    /// </summary>
+    public string UserCountry
     {
-        int hour = DateTime.Now.Hour;
-        if (hour < 6)  return "night";
-        if (hour < 12) return "morning";
-        if (hour < 17) return "afternoon";
-        if (hour < 22) return "evening";
-        return "night";
+        get => _userCountry;
+        set
+        {
+            if (_userCountry == value) return;
+            _userCountry = value.ToUpperInvariant();
+            _welcomeMessagesCache = null;
+            OnPropertyChanged();
+            SaveSettings();
+        }
     }
 
-    private static readonly string[] _welcomeMessages = BuildWelcomeMessages();
-
-    private static string[] BuildWelcomeMessages()
+    /// <summary>
+    /// Hemisphere override: 0 = auto-detect from country, 1 = northern, 2 = southern.
+    /// Affects which season is inferred for welcome-message flavour text.
+    /// </summary>
+    public int UserHemisphereIndex
     {
-        var tod = TimeOfDay();
-        var messages = new List<string>
+        get => _userHemisphere;
+        set
         {
-            "Welcome back!",
-            "Great to see you!",
-            "Ready to code?",
-            "Let's build something!",
-            "What are we building today?",
-            "Back at it again!",
-            "Let's get to work!",
-            "Hey there!",
-            $"Happy {DateTime.Now:dddd}!",
-        };
+            if (_userHemisphere == value) return;
+            _userHemisphere = value;
+            _welcomeMessagesCache = null;
+            OnPropertyChanged();
+            SaveSettings();
+        }
+    }
 
-        // Only use time-of-day greetings that aren't dismissive.
-        // "Good night" reads as a farewell, and "great night to code" feels odd,
-        // so night gets neutral messages only.
+    /// <summary>
+    /// UTC offset string entered by the user (e.g. "-5", "+1").
+    /// When non-empty, overrides the system clock for time-of-day greetings.
+    /// </summary>
+    public string UserTimezoneOffset
+    {
+        get => _userTimezoneOffset;
+        set
+        {
+            if (_userTimezoneOffset == value) return;
+            _userTimezoneOffset = value;
+            _welcomeMessagesCache = null;
+            OnPropertyChanged();
+            SaveSettings();
+        }
+    }
+
+    // ── Welcome message ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Tries to infer the user's country from the OS regional settings.
+    /// Returns an uppercase ISO 3166-1 alpha-2 code (e.g. "CA", "US") or an
+    /// empty string when no reliable mapping is available.
+    /// </summary>
+    private static string DetectCountryCode()
+    {
+        try
+        {
+            var region = System.Globalization.RegionInfo.CurrentRegion;
+            return region.TwoLetterISORegionName.ToUpperInvariant();
+        }
+        catch { return string.Empty; }
+    }
+
+    // ── Holiday / calendar helpers ────────────────────────────────────────────
+
+    private record HolidayEntry(string Name, string? Greeting);
+
+    /// <summary>
+    /// Returns a <see cref="HolidayEntry"/> when <paramref name="date"/> is a
+    /// public holiday (or its eve) that is relevant for <paramref name="country"/>.
+    /// Returns <c>null</c> when no match is found.
+    /// </summary>
+    private static HolidayEntry? GetHolidayEntry(DateTime date, string country)
+    {
+        var m = date.Month;
+        var d = date.Day;
+        var dow = date.DayOfWeek;
+
+        // ── Universal / very widely observed ──────────────────────────────────
+        if (m == 1  && d == 1)  return new("New Year's Day", "Happy New Year!");
+        if (m == 12 && d == 31) return new("New Year's Eve", "Happy New Year's Eve!");
+        if (m == 12 && d == 25) return new("Christmas Day", "Merry Christmas!");
+        if (m == 12 && d == 24) return new("Christmas Eve", "Happy Christmas Eve!");
+        if (m == 12 && d == 26 && country is "CA" or "GB" or "AU" or "NZ" or "ZA")
+            return new("Boxing Day", "Happy Boxing Day!");
+        if (m == 10 && d == 31) return new("Halloween", "Happy Halloween!");
+        if (m == 2  && d == 14) return new("Valentine's Day", "Happy Valentine's Day!");
+        if (m == 4  && d == 1)  return new("April Fools' Day", "Happy April Fools'! (Or is it?)");
+
+        // ── Compute Easter Sunday (Anonymous Gregorian algorithm) ─────────────
+        var easter = ComputeEaster(date.Year);
+        if (m == easter.Month && d == easter.Day)
+            return new("Easter Sunday", "Happy Easter!");
+        if (date == easter.AddDays(-2))
+            return new("Good Friday", "Good Friday - enjoy the long weekend!");
+        if (date == easter.AddDays(1) && country is "CA" or "GB" or "AU" or "NZ")
+            return new("Easter Monday", "Happy Easter Monday!");
+
+        // ── Canada ────────────────────────────────────────────────────────────
+        if (country == "CA")
+        {
+            if (m == 7  && d == 1)  return new("Canada Day", "Happy Canada Day!");
+            if (m == 11 && d == 11) return new("Remembrance Day", "Lest we forget. Happy coding.");
+            // Victoria Day: last Monday before May 25
+            if (m == 5 && dow == DayOfWeek.Monday && d >= 18 && d <= 24)
+                return new("Victoria Day", "Happy Victoria Day! Long weekend!");
+            // Labour Day: first Monday of September
+            if (m == 9 && dow == DayOfWeek.Monday && d <= 7)
+                return new("Labour Day", "Happy Labour Day! Enjoy the long weekend.");
+            // Thanksgiving: second Monday of October
+            if (m == 10 && dow == DayOfWeek.Monday && d >= 8 && d <= 14)
+                return new("Thanksgiving", "Happy Thanksgiving!");
+            // Family Day: third Monday of February (most provinces)
+            if (m == 2 && dow == DayOfWeek.Monday && d >= 15 && d <= 21)
+                return new("Family Day", "Happy Family Day! Enjoy the long weekend.");
+        }
+
+        // ── United States ─────────────────────────────────────────────────────
+        if (country == "US")
+        {
+            if (m == 7  && d == 4)  return new("Independence Day", "Happy Fourth of July!");
+            if (m == 11 && d == 11) return new("Veterans Day", "Thank you to all veterans. Happy coding.");
+            // Thanksgiving: fourth Thursday of November
+            if (m == 11 && dow == DayOfWeek.Thursday && d >= 22 && d <= 28)
+                return new("Thanksgiving", "Happy Thanksgiving! (and happy coding after dinner)");
+            // Memorial Day: last Monday of May
+            if (m == 5 && dow == DayOfWeek.Monday && d >= 25)
+                return new("Memorial Day", "Happy Memorial Day! Enjoy the long weekend.");
+            // Labor Day: first Monday of September
+            if (m == 9 && dow == DayOfWeek.Monday && d <= 7)
+                return new("Labor Day", "Happy Labor Day! Enjoy the long weekend.");
+            // MLK Day: third Monday of January
+            if (m == 1 && dow == DayOfWeek.Monday && d >= 15 && d <= 21)
+                return new("MLK Day", "Happy Martin Luther King Jr. Day!");
+            // Presidents' Day: third Monday of February
+            if (m == 2 && dow == DayOfWeek.Monday && d >= 15 && d <= 21)
+                return new("Presidents' Day", "Happy Presidents' Day! Long weekend!");
+        }
+
+        // ── United Kingdom ────────────────────────────────────────────────────
+        if (country == "GB")
+        {
+            if (m == 8 && dow == DayOfWeek.Monday && d >= 25)
+                return new("August Bank Holiday", "Happy Bank Holiday! Long weekend");
+            if (m == 5 && dow == DayOfWeek.Monday && d >= 1 && d <= 7)
+                return new("Early May Bank Holiday", "Happy May Bank Holiday! Long weekend!");
+            if (m == 5 && dow == DayOfWeek.Monday && d >= 25)
+                return new("Spring Bank Holiday", "Happy Spring Bank Holiday! Long weekend!");
+            if (m == 11 && d == 5)
+                return new("Bonfire Night", "Remember, remember the 5th of November!");
+        }
+
+        // ── Australia ─────────────────────────────────────────────────────────
+        if (country == "AU")
+        {
+            if (m == 1  && d == 26) return new("Australia Day", "Happy Australia Day!");
+            if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget. Happy ANZAC Day.");
+            if (m == 6  && dow == DayOfWeek.Monday && d >= 8 && d <= 14)
+                return new("King's Birthday (AU)", "Happy King's Birthday long weekend!");
+        }
+
+        // ── New Zealand ───────────────────────────────────────────────────────
+        if (country == "NZ")
+        {
+            if (m == 2  && d == 6)  return new("Waitangi Day", "Happy Waitangi Day!");
+            if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget. Happy ANZAC Day.");
+        }
+
+        // ── Germany ───────────────────────────────────────────────────────────
+        if (country == "DE")
+        {
+            if (m == 10 && d == 3) return new("German Unity Day", "Happy German Unity Day!");
+            if (m == 5  && d == 1) return new("Labour Day", "Happy Labour Day!");
+        }
+
+        // ── France ────────────────────────────────────────────────────────────
+        if (country == "FR")
+        {
+            if (m == 7  && d == 14) return new("Bastille Day", "Bonne fête nationale!");
+            if (m == 5  && d == 1)  return new("Fête du Travail", "Bonne Fête du Travail!");
+        }
+
+        // ── Japan ─────────────────────────────────────────────────────────────
+        if (country == "JP")
+        {
+            if (m == 1  && d == 1) return new("Shōgatsu", "あけましておめでとうございます！Happy New Year!");
+            if (m == 11 && d == 3) return new("Culture Day", "Happy Culture Day!");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Computes Easter Sunday for a given year using the Anonymous Gregorian algorithm.
+    /// </summary>
+    private static DateTime ComputeEaster(int year)
+    {
+        int a = year % 19, b = year / 100, c = year % 100;
+        int d2 = b / 4, e = b % 4, f = (b + 8) / 25;
+        int g = (b - f + 1) / 3, h = (19 * a + b - d2 - g + 15) % 30;
+        int i = c / 4, k = c % 4;
+        int l = (32 + 2 * e + 2 * i - h - k) % 7;
+        int m2 = (a + 11 * h + 22 * l) / 451;
+        int month = (h + l - 7 * m2 + 114) / 31;
+        int day = ((h + l - 7 * m2 + 114) % 31) + 1;
+        return new DateTime(year, month, day);
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="date"/> falls on a Saturday or Sunday
+    /// or is sandwiched into a long weekend (i.e. Friday before a Monday holiday
+    /// or Tuesday after a Monday holiday, etc.).
+    /// </summary>
+    private static bool IsWeekend(DateTime date) =>
+        date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+
+    /// <summary>
+    /// Returns true when <paramref name="date"/> is a Friday before a long weekend
+    /// (i.e. the following Monday is a public holiday for the given country).
+    /// </summary>
+    private static bool IsLongWeekendEve(DateTime date, string country)
+    {
+        if (date.DayOfWeek != DayOfWeek.Friday) return false;
+        return GetHolidayEntry(date.AddDays(3), country) is not null;
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="date"/> is the Tuesday after a long weekend
+    /// (i.e. the preceding Monday was a public holiday).
+    /// </summary>
+    private static bool IsPostLongWeekend(DateTime date, string country)
+    {
+        if (date.DayOfWeek != DayOfWeek.Tuesday) return false;
+        return GetHolidayEntry(date.AddDays(-1), country) is not null;
+    }
+
+    // ── Welcome message construction ──────────────────────────────────────────
+
+    private string[] BuildWelcomeMessages()
+    {
+        // Resolve effective local time, honouring the user's timezone override when set.
+        DateTime now;
+        if (!string.IsNullOrWhiteSpace(_userTimezoneOffset) &&
+            double.TryParse(_userTimezoneOffset.Replace("+", ""), out var offsetHours))
+        {
+            var offset = TimeSpan.FromHours(offsetHours);
+            now = DateTime.UtcNow + offset;
+        }
+        else
+        {
+            now = DateTime.Now;
+        }
+
+        var tod     = TimeOfDay(now.Hour);
+        var country = _userCountry;
+        var dow     = now.DayOfWeek;
+        var dayName = now.ToString("dddd");   // e.g. "Monday"
+
+        var messages = new List<string>();
+
+        // ── 1. Holiday / special day ──────────────────────────────────────────
+        var holiday = GetHolidayEntry(now, country);
+        if (holiday?.Greeting is not null)
+            messages.Add(holiday.Greeting);
+
+        // ── 2. Long weekend hints ─────────────────────────────────────────────
+        if (IsLongWeekendEve(now, country))
+        {
+            messages.Add("Long weekend starts tomorrow - one more push!");
+            messages.Add("Almost there! Long weekend is just around the corner.");
+            messages.Add($"Happy {dayName}! The long weekend is almost here.");
+        }
+
+        if (IsPostLongWeekend(now, country))
+        {
+            messages.Add("Back from the long weekend - fresh start!");
+            messages.Add("Post-long-weekend - let's ease in.");
+            messages.Add("Hope the long weekend recharged you. Ready to build?");
+        }
+
+        // ── 3. Day-of-week personality ────────────────────────────────────────
+        messages.Add(dow switch
+        {
+            DayOfWeek.Monday    => "Monday? Let's make it count.",
+            DayOfWeek.Tuesday   => "Tuesday momentum - keep it going!",
+            DayOfWeek.Wednesday => "Midweek check-in - still crushing it?",
+            DayOfWeek.Thursday  => "Almost Friday - don't stop now!",
+            DayOfWeek.Friday    => "Happy Friday! Let's finish strong.",
+            DayOfWeek.Saturday  => "Coding on a Saturday - respect.",
+            DayOfWeek.Sunday    => "Sunday coding session - the quiet grind.",
+            _                   => $"Happy {dayName}!"
+        });
+
+        if (dow == DayOfWeek.Friday)
+        {
+            messages.Add("TGIF - let's ship something before the weekend!");
+            messages.Add("Friday energy. Let's make the most of it.");
+        }
+        if (dow is DayOfWeek.Saturday or DayOfWeek.Sunday)
+        {
+            messages.Add("Weekend warrior mode: activated.");
+            messages.Add("No meetings on weekends. Just code.");
+        }
+        if (dow == DayOfWeek.Monday)
+        {
+            messages.Add("New week, new bugs to squash.");
+            messages.Add("Monday's for the brave. Welcome back.");
+        }
+
+        // ── 4. Time-of-day flavour ─────────────────────────────────────────────
         if (tod != "night")
         {
             messages.Add($"Good {tod}!");
@@ -3197,17 +3511,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             messages.Add($"It's a great {tod} to code!");
         }
 
-        // Each group targets 17 total entries.
-        // Morning:   9 neutral + 4 time-of-day + 4 specific = 17
-        // Afternoon: 9 neutral + 4 time-of-day + 4 specific = 17
-        // Evening:   9 neutral + 4 time-of-day + 4 specific = 17
-        // Night:     9 neutral + 0 time-of-day + 8 specific = 17
         if (tod == "morning")
         {
             messages.Add("Hey there, early bird!");
             messages.Add("Rise and shine, let's code!");
             messages.Add("Coffee in hand, let's ship something!");
             messages.Add("A fresh day, a fresh start.");
+            messages.Add("Morning focus is unmatched.");
         }
         if (tod == "afternoon")
         {
@@ -3215,6 +3525,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             messages.Add("Hope the day's treating you well!");
             messages.Add("Halfway through the day, keep it up!");
             messages.Add("Afternoon slump? Not here.");
+            messages.Add("Post-lunch focus: loading...");
         }
         if (tod == "evening")
         {
@@ -3235,11 +3546,61 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             messages.Add("Another late one? Worth it.");
         }
 
+        // ── 5. Season-aware messages ──────────────────────────────────────────
+        // Hemisphere: 0 = auto-detect from country, 1 = northern, 2 = southern.
+        var isSouthern = _userHemisphere == 2
+            || (_userHemisphere == 0 && country is "AU" or "NZ" or "ZA" or "AR" or "BR" or "CL");
+        var month = now.Month;
+        var season = isSouthern
+            ? month switch { 12 or 1 or 2 => "summer", 3 or 4 or 5 => "autumn",
+                             6 or 7 or 8 => "winter", _ => "spring" }
+            : month switch { 12 or 1 or 2 => "winter", 3 or 4 or 5 => "spring",
+                             6 or 7 or 8 => "summer", _ => "autumn" };
+
+        messages.Add(season switch
+        {
+            "winter" => "Warm up your fingers - it's time to code.",
+            "spring" => "Spring energy - let's build something fresh.",
+            "summer" => "Summer vibes, hot code.",
+            "autumn" => "Cozy season, perfect for shipping features.",
+            _        => "Great day to write some code."
+        });
+
+        // ── 6. Neutral standby messages ───────────────────────────────────────
+        messages.Add("Welcome back!");
+        messages.Add("Great to see you!");
+        messages.Add("Ready to code?");
+        messages.Add("Let's build something!");
+        messages.Add("What are we building today?");
+        messages.Add("Back at it again!");
+        messages.Add("Let's get to work!");
+        messages.Add("Hey there!");
+        messages.Add($"Happy {dayName}!");
+
         return messages.ToArray();
     }
 
-    public static string WelcomeMessage { get; } =
-        _welcomeMessages[Random.Shared.Next(_welcomeMessages.Length)];
+    private static string TimeOfDay(int hour)
+    {
+        if (hour < 6)  return "night";
+        if (hour < 12) return "morning";
+        if (hour < 17) return "afternoon";
+        if (hour < 22) return "evening";
+        return "night";
+    }
+
+    // Lazily constructed per-instance so it can incorporate the personalization settings
+    // which are read from settings before DataContext is set.
+    private string[]? _welcomeMessagesCache;
+
+    public string WelcomeMessage
+    {
+        get
+        {
+            _welcomeMessagesCache ??= BuildWelcomeMessages();
+            return _welcomeMessagesCache[Random.Shared.Next(_welcomeMessagesCache.Length)];
+        }
+    }
 
     public bool IsDarkThemeActive  => string.Equals(CurrentThemeName, "Dark",  StringComparison.OrdinalIgnoreCase);
     public bool IsLightThemeActive => string.Equals(CurrentThemeName, "Light", StringComparison.OrdinalIgnoreCase);
@@ -3418,7 +3779,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var col        = caret?.Column ?? 1;
                 EditorStatsText = $"Ln {ln}, Col {col}  |  {lines} lines  |  {characters} characters";
 
-                // Word count — only shown for plain-text files
+                // Word count - only shown for plain-text files
                 if (IsPlainTextFile(_currentFilePath) && document is not null)
                 {
                     var text = document.Text;
@@ -3690,6 +4051,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             HasCompletedTutorial                    = _hasCompletedTutorial,
             AccentColorMode                         = _accentColorMode,
             CustomAccentHex                         = _customAccentHex,
+            UserCountry                             = _userCountry,
+            UserHemisphere                          = _userHemisphere,
+            UserTimezoneOffset                      = _userTimezoneOffset,
             OpenTabPaths = OpenTabs
                 .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
                 .Select(tab => tab.Path)
@@ -3722,6 +4086,94 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // ── Theme application ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sets all theme brush fields and <see cref="Application.RequestedThemeVariant"/>
+    /// without firing <see cref="INotifyPropertyChanged"/>, saving settings, or
+    /// triggering a state refresh.  Call this <em>before</em> <c>DataContext = this</c>
+    /// so that bindings read the correct colours on their very first evaluation and
+    /// the window never renders with the wrong (default) palette.
+    /// </summary>
+    private void ApplyThemeBrushes(string themeName)
+    {
+        _requestedThemeName = themeName;
+        var extensionTheme = ThemeExtensions
+            .Select(e => e.ThemeDefinition!)
+            .FirstOrDefault(t => string.Equals(t.ThemeId, themeName, StringComparison.OrdinalIgnoreCase));
+
+        if (extensionTheme is not null)
+        {
+            CurrentThemeName = extensionTheme.ThemeId;
+            Application.Current!.RequestedThemeVariant = string.Equals(extensionTheme.BaseTheme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? ThemeVariant.Light
+                : ThemeVariant.Dark;
+
+            WindowBackgroundBrush = Brush.Parse(extensionTheme.WindowBackground);
+            TopBarBrush           = Brush.Parse(extensionTheme.TopBar);
+            SidebarBrush          = Brush.Parse(extensionTheme.Sidebar);
+            ButtonBrush           = Brush.Parse(extensionTheme.Button);
+            ButtonHoverBrush      = Brush.Parse(extensionTheme.ButtonHover);
+            EditorBackgroundBrush = Brush.Parse(extensionTheme.EditorBackground);
+            CardBrush             = Brush.Parse(extensionTheme.Card);
+            PrimaryTextBrush      = Brush.Parse(extensionTheme.PrimaryText);
+            MutedTextBrush        = Brush.Parse(extensionTheme.MutedText);
+            SurfaceBorderBrush    = Brush.Parse(extensionTheme.SurfaceBorder);
+            AccentBrush           = Brush.Parse(extensionTheme.Accent);
+            _themeAccentHex       = extensionTheme.Accent;
+        }
+        else
+        {
+            CurrentThemeName = themeName == "Light" ? "Light" : "Dark";
+            Application.Current!.RequestedThemeVariant = CurrentThemeName == "Light"
+                ? ThemeVariant.Light
+                : ThemeVariant.Dark;
+
+            if (CurrentThemeName == "Light")
+            {
+                WindowBackgroundBrush = Brush.Parse("#F3F3F3");
+                TopBarBrush           = Brush.Parse("#FFFFFF");
+                SidebarBrush          = Brush.Parse("#EFF2F7");
+                ButtonBrush           = Brush.Parse("#E3E8F1");
+                ButtonHoverBrush      = Brush.Parse("#D5DDE9");
+                EditorBackgroundBrush = Brush.Parse("#FFFFFF");
+                CardBrush             = Brush.Parse("#F7F9FC");
+                PrimaryTextBrush      = Brush.Parse("#202124");
+                MutedTextBrush        = Brush.Parse("#5F6B7A");
+                SurfaceBorderBrush    = Brush.Parse("#D7DCE5");
+                AccentBrush           = Brush.Parse("#8C00FF");
+                _themeAccentHex       = "#8C00FF";
+            }
+            else
+            {
+                WindowBackgroundBrush = Brush.Parse("#1E1E1E");
+                TopBarBrush           = Brush.Parse("#181818");
+                SidebarBrush          = Brush.Parse("#181818");
+                ButtonBrush           = Brush.Parse("#252526");
+                ButtonHoverBrush      = Brush.Parse("#313437");
+                EditorBackgroundBrush = Brush.Parse("#1E1E1E");
+                CardBrush             = Brush.Parse("#252526");
+                PrimaryTextBrush      = Brush.Parse("#F4F4F4");
+                MutedTextBrush        = Brush.Parse("#A0A0A0");
+                SurfaceBorderBrush    = Brush.Parse("#2B2B2B");
+                AccentBrush           = Brush.Parse("#8C00FF");
+                _themeAccentHex       = "#8C00FF";
+            }
+        }
+
+        // Apply the accent override (kodo / windows / custom) silently.
+        // We can't call the full ApplyAccentOverride() here because it calls
+        // ApplyThemeToEditor(), which touches the AvaloniaEdit TextEditor before
+        // it has been fully laid out, but we CAN silently resolve the accent hex
+        // so AccentBrush is correct when bindings first read it.
+        var resolvedAccent = _accentColorMode switch
+        {
+            "windows" => GetWindowsAccentColor() ?? _themeAccentHex,
+            "custom"  => _customAccentHex,
+            _         => _themeAccentHex,  // "kodo" - use the theme's own accent
+        };
+        try { AccentBrush = Brush.Parse(resolvedAccent); }
+        catch { AccentBrush = Brush.Parse("#8C00FF"); }
+    }
 
     private void ApplyTheme(string themeName)
     {
@@ -4104,7 +4556,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ApplyAccentOverride();
             SaveSettings();
         }
-        catch { /* invalid hex — ignore */ }
+        catch { /* invalid hex - ignore */ }
     }
 
     // Converts RGB (0–255) to HSV (H: 0–360, S/V: 0–1).
@@ -4555,7 +5007,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task PopulateFileTreeAsync(string folderPath)
     {
         var items = await CreateFileTreeItemsAsync(folderPath, depth: 0);
-        // Swap the entire collection in one shot — avoids one CollectionChanged
+        // Swap the entire collection in one shot - avoids one CollectionChanged
         // notification (and ItemsControl re-render) per item.
         FileTreeItems.Clear();
         foreach (var item in items)
@@ -4730,7 +5182,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // ── Event handlers ───────────────────────────────────────────────────────
 
-    // Switches the visible page in one pass — sets all backing fields before firing
+    // Switches the visible page in one pass - sets all backing fields before firing
     // any notifications, so the UI only re-renders once instead of once per property set.
     private enum Page { Home, Editor, Settings, Extensions, Tutorial, WhatsNew }
 
@@ -4817,14 +5269,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsMarketplaceTabSelected = false;
 
-    // Used by the tab strip inside the Extensions page — only switches the tab
+    // Used by the tab strip inside the Extensions page - only switches the tab
     private void MarketplaceTabButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsMarketplaceTabSelected = true;
         RefreshMarketplaceConnectivityState();
     }
 
-    // Used by the "Visit Marketplace" button on the home screen —
+    // Used by the "Visit Marketplace" button on the home screen -
     // opens the Extensions page AND switches to the Marketplace tab
     private void OpenMarketplaceButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -5034,6 +5486,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? item.FullPath
             : Path.GetDirectoryName(item.FullPath) ?? _currentFolderPath ?? item.FullPath;
 
+    private string GetExplorerRootDirectory()
+    {
+        if (string.IsNullOrWhiteSpace(_currentFolderPath))
+            throw new InvalidOperationException("No folder is currently open in the explorer.");
+
+        return _currentFolderPath;
+    }
+
     private static string CreateUniqueSiblingPath(string path, bool isDirectory)
     {
         var directory = Path.GetDirectoryName(path) ?? string.Empty;
@@ -5178,7 +5638,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task RefreshExplorerTreeAsync()
     {
         if (!string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath))
+        {
+            // Snapshot which directories are expanded before wiping the tree,
+            // then restore them afterward so the user's expansion state is preserved.
+            var expandedPaths = FileTreeItems
+                .Where(i => i.IsDirectory && i.IsExpanded)
+                .Select(i => i.FullPath)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             await PopulateFileTreeAsync(_currentFolderPath);
+
+            if (expandedPaths.Count > 0)
+                await RestoreExpandedPathsAsync(expandedPaths);
+        }
+    }
+
+    // Re-expands directories that were open before a tree refresh.
+    // Works top-down: a parent must be expanded before its children are visible.
+    private async Task RestoreExpandedPathsAsync(HashSet<string> expandedPaths)
+    {
+        // Keep expanding until no more progress can be made (handles nested directories).
+        bool anyExpanded;
+        do
+        {
+            anyExpanded = false;
+            // Take a snapshot - ToggleDirectoryExpansionAsync mutates FileTreeItems
+            var candidates = FileTreeItems
+                .Where(i => i.IsDirectory && !i.IsExpanded && expandedPaths.Contains(i.FullPath))
+                .ToList();
+
+            foreach (var item in candidates)
+            {
+                await ToggleDirectoryExpansionAsync(item);
+                anyExpanded = true;
+            }
+        }
+        while (anyExpanded);
     }
 
     private async Task<bool> CloseTabsForPathAsync(string path, bool isDirectory)
@@ -5397,7 +5892,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isFileTreeExpanded = !_isFileTreeExpanded;
         if (!_isFileTreeExpanded)
         {
-            // Collapse: repopulate from scratch — fastest correct collapse
+            // Collapse: repopulate from scratch - fastest correct collapse
             if (!string.IsNullOrWhiteSpace(_currentFolderPath))
                 await PopulateFileTreeAsync(_currentFolderPath);
         }
@@ -5429,6 +5924,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void ExplorerHeaderNewFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var directory = GetExplorerRootDirectory();
+            var newFilePath = CreateUniqueChildPath(directory, "new-file", ".txt");
+            await File.WriteAllTextAsync(newFilePath, string.Empty);
+            await RefreshExplorerTreeAsync();
+            await OpenFileFromPathAsync(newFilePath);
+        }
+        catch (Exception ex)
+        {
+            ExtensionsStatusText = $"New file failed: {ex.Message}";
+            await ShowWarningDialogAsync("New file in explorer", ex);
+        }
+    }
+
     private async void NewFolderInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
@@ -5436,6 +5948,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var directory = GetExplorerTargetDirectory(item);
+            var newFolderPath = CreateUniqueChildPath(directory, "New Folder");
+            Directory.CreateDirectory(newFolderPath);
+            await RefreshExplorerTreeAsync();
+        }
+        catch (Exception ex)
+        {
+            ExtensionsStatusText = $"New folder failed: {ex.Message}";
+            await ShowWarningDialogAsync("New folder in explorer", ex);
+        }
+    }
+
+    private async void ExplorerHeaderNewFolderButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var directory = GetExplorerRootDirectory();
             var newFolderPath = CreateUniqueChildPath(directory, "New Folder");
             Directory.CreateDirectory(newFolderPath);
             await RefreshExplorerTreeAsync();
@@ -5663,7 +6191,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (read >= 4 && bom[0] == 0x00 && bom[1] == 0x00 && bom[2] == 0xFE && bom[3] == 0xFF)
                 return System.Text.Encoding.UTF32;
 
-            // No BOM — default to UTF-8 without BOM
+            // No BOM - default to UTF-8 without BOM
             return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         }
         catch
@@ -5681,7 +6209,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!HasFileOpen) return;
 
         // CodePagesEncodingProvider is required for non-Unicode encodings (e.g. 1252) on
-        // .NET Core / .NET 5+. Registering it more than once is safe — it's a no-op.
+        // .NET Core / .NET 5+. Registering it more than once is safe - it's a no-op.
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
         // Build the list defensively: skip any encoding the current runtime can't supply.
@@ -5955,7 +6483,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await UninstallExtensionAsync(extension);
     }
 
-    // TextEditor fires EventHandler (not RoutedEventHandler) — signature must match exactly
+    // TextEditor fires EventHandler (not RoutedEventHandler) - signature must match exactly
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
         _rainbowBracketColorizer.InvalidateCache();
@@ -6557,19 +7085,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             switch (action)
             {
                 case UnsavedTabAction.Cancel:
-                    return; // User aborted — leave the window open.
+                    return; // User aborted - leave the window open.
 
                 case UnsavedTabAction.Save:
                     ActivateTab(tab, focusEditor: false);
                     if (!await SaveAsync(allowPromptForPath: true, forcePromptForPath: false))
-                        return; // Save was cancelled — leave the window open.
+                        return; // Save was cancelled - leave the window open.
                     break;
 
-                // UnsavedTabAction.Discard — just continue to the next tab.
+                // UnsavedTabAction.Discard - just continue to the next tab.
             }
         }
 
-        // All dirty tabs resolved — close for real.
+        // All dirty tabs resolved - close for real.
         _isConfirmedClose = true;
         Close();
     }
@@ -6701,7 +7229,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
         var hasShift   = (e.KeyModifiers & KeyModifiers.Shift)   == KeyModifiers.Shift;
 
-        // Escape — dismiss Settings / Extensions / Tutorial / WhatsNew and return to editor
+        // Escape - dismiss Settings / Extensions / Tutorial / WhatsNew and return to editor
         if (e.Key == Key.Escape && !hasControl)
         {
             if (IsTutorialPageVisible)
@@ -6730,14 +7258,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             case Key.E:
                 if (hasShift)
                 {
-                    // Ctrl+Shift+E — back to editor (original behaviour)
+                    // Ctrl+Shift+E - back to editor (original behaviour)
                     NavigateTo(Page.Editor);
                     FocusEditor();
                     e.Handled = true;
                 }
                 else
                 {
-                    // Ctrl+E — open Extensions
+                    // Ctrl+E - open Extensions
                     NavigateTo(Page.Extensions);
                     RefreshMarketplaceConnectivityState();
                     _ = RefreshExtensionsDataAsync();
@@ -6746,13 +7274,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 break;
 
             case Key.OemComma:
-                // Ctrl+, — open Settings
+                // Ctrl+, - open Settings
                 NavigateTo(Page.Settings);
                 e.Handled = true;
                 break;
 
             case Key.H:
-                // Ctrl+H — go to Home
+                // Ctrl+H - go to Home
                 NavigateTo(Page.Home);
                 e.Handled = true;
                 break;
@@ -6760,13 +7288,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             case Key.S:
                 if (hasShift)
                 {
-                    // Ctrl+Shift+S — Save As (always prompt for path)
+                    // Ctrl+Shift+S - Save As (always prompt for path)
                     e.Handled = true;
                     await SaveAsAsync();
                 }
                 else
                 {
-                    // Ctrl+S — Save
+                    // Ctrl+S - Save
                     e.Handled = true;
                     await SaveAsync();
                 }
@@ -6778,7 +7306,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 break;
 
             case Key.K:
-                // Ctrl+K — toggle folder open/close
+                // Ctrl+K - toggle folder open/close
                 e.Handled = true;
                 if (IsFolderOpen)
                     CloseFolder();
@@ -6787,20 +7315,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 break;
 
             case Key.B:
-                // Ctrl+B — toggle file explorer sidebar
+                // Ctrl+B - toggle file explorer sidebar
                 IsFileExplorerVisible = !IsFileExplorerVisible;
                 e.Handled = true;
                 break;
 
             case Key.W:
-                // Ctrl+W — close current tab
+                // Ctrl+W - close current tab
                 if (ActiveEditorTab is not null)
                     await RequestCloseTabAsync(ActiveEditorTab);
                 e.Handled = true;
                 break;
 
             case Key.F:
-                // Ctrl+F — toggle find panel
+                // Ctrl+F - toggle find panel
                 if (CanShowFindInFile)
                     IsFindPanelVisible = !IsFindPanelVisible;
                 else
@@ -6809,7 +7337,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 break;
 
             case Key.X when hasShift:
-                // Ctrl+Shift+X — open Extensions (secondary binding)
+                // Ctrl+Shift+X - open Extensions (secondary binding)
                 NavigateTo(Page.Extensions);
                 RefreshMarketplaceConnectivityState();
                 _ = RefreshExtensionsDataAsync();
@@ -6962,7 +7490,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var subtitleText = new TextBlock
             {
-                Text = "Kodo ran into a problem with this operation. No data was lost — you can try again.",
+                Text = "Kodo ran into a problem with this operation. No data was lost - you can try again.",
                 FontSize = 13,
                 Foreground = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
@@ -7043,7 +7571,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Window? dialog = null;
             dialog = new Window
             {
-                Title = "Kodo — Error",
+                Title = "Kodo - Error",
                 Width = 520,
                 SizeToContent = SizeToContent.Height,
                 MinWidth = 380,
@@ -7083,6 +7611,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public bool HasCompletedTutorial { get; set; }
         public string AccentColorMode { get; set; } = "kodo";
         public string CustomAccentHex { get; set; } = "#8C00FF";
+        // Personalization - optional; empty/0 means "use OS defaults".
+        public string? UserCountry        { get; set; }
+        public int     UserHemisphere     { get; set; }
+        public string? UserTimezoneOffset { get; set; }
     }
 
     public sealed class RecentFileEntry
@@ -7660,7 +8192,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
                 stringBrush));
         }
 
-        // XML/MSBuild version string rule — only active for XML-family languages
+        // XML/MSBuild version string rule - only active for XML-family languages
         // (identified by <!-- block comment syntax). Matches the full content of an
         // element body when it looks like a version string (e.g. 1.0.0, v1.2.3-DEV,
         // net10.0, 12.0.1) so dots, dashes, and letter suffixes are not fragmented
@@ -7679,7 +8211,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         // Property and namespace rules fire on dot-separated identifiers (e.g. foo.Bar).
         // In XML-family languages dots appear in file paths and version strings between
         // element tags, so these rules would wrongly colour path segments as namespace/
-        // property tokens. Skip them entirely for XML — no chained member access exists.
+        // property tokens. Skip them entirely for XML - no chained member access exists.
         if (extension.CommentBlockStart != "<!--")
         {
             _rules.Add(new SyntaxBrushRule(
@@ -8272,14 +8804,14 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             ext.MultiLineStringDelimiters.Contains("'''");
 
         // ── Inner rulesets ────────────────────────────────────────────────────────────
-        // codeRuleSet  — holds keyword/type/number rules; used as the inner ruleset of
+        // codeRuleSet  - holds keyword/type/number rules; used as the inner ruleset of
         //                spans that should still syntax-colour their contents.
         //                (Currently unused as inner ruleset, but kept for clarity.)
-        // emptyRuleSet — no rules; used as the inner ruleset of comment and string spans
+        // emptyRuleSet - no rules; used as the inner ruleset of comment and string spans
         //                so that keyword/number rules cannot fire inside them.
         //                AvaloniaEdit applies SpanColor to the entire span body, so the
         //                correct span colour is provided by the outer SpanColor property.
-        //                The inner ruleset only needs to be empty — no DefaultColor needed.
+        //                The inner ruleset only needs to be empty - no DefaultColor needed.
         var codeRuleSet  = new HighlightingRuleSet();
         var emptyRuleSet = new HighlightingRuleSet();
 
@@ -8328,7 +8860,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        // XML/MSBuild version string rule — only active for XML-family languages
+        // XML/MSBuild version string rule - only active for XML-family languages
         // (identified by <!-- block comment syntax). Must be inserted before the number
         // rule so the full version token (e.g. v1.0.0-DEV, net10.0) is claimed as a
         // single unit rather than being fragmented across number/operator/variable rules.
@@ -8350,7 +8882,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         // Property and namespace rules fire on dot-separated identifiers (e.g. foo.Bar).
         // In XML-family languages dots appear in file paths and version strings between
         // element tags, so these rules would wrongly colour path segments as namespace/
-        // property tokens. Skip them entirely for XML — no chained member access exists.
+        // property tokens. Skip them entirely for XML - no chained member access exists.
         if (ext.CommentBlockStart != "<!--")
         {
             codeRuleSet.Rules.Add(new HighlightingRule
@@ -8401,8 +8933,8 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         // Last segment of an import/using directive for any language.
         // Covers: "using System;", "import os", "import numpy as np",
         //         "#include <vector>", "require 'json'", "use std::io", etc.
-        // The final identifier before ; or end-of-line — after a chain of
-        // dotted/slashed segments — is coloured as a namespace.
+        // The final identifier before ; or end-of-line - after a chain of
+        // dotted/slashed segments - is coloured as a namespace.
         // This fires for C#, Python, Java, Rust, Ruby, Go, JS/TS, C/C++, and more.
         codeRuleSet.Rules.Add(new HighlightingRule
         {
@@ -8412,7 +8944,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             Color = namespaceColor
         });
 
-        // User-defined variables — bare identifiers that are not preceded by a dot
+        // User-defined variables - bare identifiers that are not preceded by a dot
         // (property), not followed by '(' (function call) or '.' (namespace segment),
         // and were not already claimed by keyword/type/number rules above.
         codeRuleSet.Rules.Add(new HighlightingRule
@@ -8436,13 +8968,13 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         }
 
         // ── Main ruleset ──────────────────────────────────────────────────────────────
-        // Spans are checked in order — first match wins. SpanColor is applied by
+        // Spans are checked in order - first match wins. SpanColor is applied by
         // AvaloniaEdit to the entire span (start delimiter + body + end delimiter),
         // modulated by SpanColorIncludesStart / SpanColorIncludesEnd for the delimiters.
         // The inner emptyRuleSet ensures no keyword/number rules fire inside the span.
         var mainRuleSet = new HighlightingRuleSet();
 
-        // Block comment /* … */ — added first so it takes priority over // on the same line.
+        // Block comment /* … */ - added first so it takes priority over // on the same line.
         if (!string.IsNullOrEmpty(ext.CommentBlockStart) && !string.IsNullOrEmpty(ext.CommentBlockEnd))
         {
             mainRuleSet.Spans.Add(new HighlightingSpan
@@ -8585,7 +9117,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
     public HighlightingColor GetNamedColor(string name) => new();
     // Named ruleset lookups are only used when span definitions reference an inner
     // ruleset by name. This definition uses only anonymous inline rulesets, so no
-    // name will ever be looked up — return an empty set for all names.
+    // name will ever be looked up - return an empty set for all names.
     public HighlightingRuleSet GetNamedRuleSet(string name) => new HighlightingRuleSet();
 }
 

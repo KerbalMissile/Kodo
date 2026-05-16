@@ -445,7 +445,7 @@
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="12,8">
-                    <Grid ColumnDefinitions="*,Auto,Auto">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <Border Width="3" Height="16" CornerRadius="2" Background="{Binding AccentBrush}" />
                             <TextBlock FontSize="11"
@@ -460,11 +460,43 @@
                                 Width="28"
                                 Height="28"
                                 IsVisible="{Binding IsFolderOpen}"
+                                Click="ExplorerHeaderNewFileButton_OnClick"
+                                ToolTip.Tip="New File in Folder">
+                            <Viewbox Width="16" Height="16"
+                                     HorizontalAlignment="Center"
+                                     VerticalAlignment="Center">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="{Binding $parent[Button].Foreground}"
+                                          Data="M6.75 3A2.25 2.25 0 0 0 4.5 5.25v13.5A2.25 2.25 0 0 0 6.75 21h10.5A2.25 2.25 0 0 0 19.5 18.75V8.56a2.25 2.25 0 0 0-.659-1.591l-3.81-3.81A2.25 2.25 0 0 0 13.44 2.5H6.75Zm6 11.25a.75.75 0 0 0-1.5 0v1.5h-1.5a.75.75 0 0 0 0 1.5h1.5v1.5a.75.75 0 0 0 1.5 0v-1.5h1.5a.75.75 0 0 0 0-1.5h-1.5v-1.5Z" />
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
+                        <Button Grid.Column="2"
+                                Classes="activity"
+                                Width="28"
+                                Height="28"
+                                IsVisible="{Binding IsFolderOpen}"
+                                Click="ExplorerHeaderNewFolderButton_OnClick"
+                                ToolTip.Tip="New Folder in Folder">
+                            <Viewbox Width="16" Height="16"
+                                     HorizontalAlignment="Center"
+                                     VerticalAlignment="Center">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="{Binding $parent[Button].Foreground}"
+                                          Data="M3.75 5.25A2.25 2.25 0 0 1 6 3h3.879c.597 0 1.17.237 1.591.659l1.061 1.06c.14.141.331.22.53.22H18a2.25 2.25 0 0 1 2.25 2.25v.75A.75.75 0 0 1 19.5 8.75h-15A2.25 2.25 0 0 0 2.25 11v7.5A2.25 2.25 0 0 0 4.5 20.75H18A2.25 2.25 0 0 0 20.25 18.5V11A2.25 2.25 0 0 0 18 8.75h-5.189a2.25 2.25 0 0 1-1.591-.659l-1.06-1.06A.75.75 0 0 0 9.629 6H6A.75.75 0 0 0 5.25 6.75V8A.75.75 0 0 1 4.5 8.75H3.75A.75.75 0 0 1 3 8V5.25ZM11.25 12a.75.75 0 0 1 1.5 0v1.5h1.5a.75.75 0 0 1 0 1.5h-1.5v1.5a.75.75 0 0 1-1.5 0v-1.5h-1.5a.75.75 0 0 1 0-1.5h1.5V12Z" />
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
+                        <Button Grid.Column="3"
+                                Classes="activity"
+                                Width="28"
+                                Height="28"
+                                IsVisible="{Binding IsFolderOpen}"
                                 Click="CollapseAllTreeButton_OnClick"
                                 ToolTip.Tip="Collapse / Expand All">
                             <TextBlock FontSize="11" Text="&#x25B4;&#x25BE;" Foreground="{Binding MutedTextBrush}" />
                         </Button>
-                        <Button Grid.Column="2"
+                        <Button Grid.Column="4"
                                 Classes="activity"
                                 Width="28"
                                 Height="28"
@@ -1792,6 +1824,8 @@
                                     HorizontalAlignment="Stretch"
                                     Background="{Binding AccentBrush}"
                                     Opacity="0.85" />
+
+
                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                 <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
                                 <TextBlock FontSize="18"
@@ -2159,6 +2193,71 @@
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        TextWrapping="Wrap"
                                        Text="{Binding DiscordRichPresenceStatusText}" />
+
+                            <Border Height="1"
+                                    Background="{Binding SurfaceBorderBrush}" />
+
+                            <!-- Personalization -->
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                <TextBlock FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           VerticalAlignment="Center"
+                                           Text="Personalization" />
+                            </StackPanel>
+
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                    <TextBlock Width="120"
+                                               VerticalAlignment="Center"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Country" />
+                                    <TextBox Width="220"
+                                             Text="{Binding UserCountry, Mode=TwoWay}"
+                                             PlaceholderText="e.g. CA, US, GB (auto-detected)"
+                                             CornerRadius="8"
+                                             Padding="10,6"
+                                             Background="{Binding ButtonBrush}"
+                                             Foreground="{Binding PrimaryTextBrush}"
+                                             BorderBrush="{Binding SurfaceBorderBrush}"
+                                             BorderThickness="1" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                    <TextBlock Width="120"
+                                               VerticalAlignment="Center"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Hemisphere" />
+                                    <ComboBox Width="220"
+                                              SelectedIndex="{Binding UserHemisphereIndex, Mode=TwoWay}"
+                                              Background="{Binding ButtonBrush}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              BorderBrush="{Binding SurfaceBorderBrush}"
+                                              CornerRadius="8">
+                                        <ComboBoxItem Content="Auto-detect from country" />
+                                        <ComboBoxItem Content="Northern hemisphere" />
+                                        <ComboBoxItem Content="Southern hemisphere" />
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                    <TextBlock Width="120"
+                                               VerticalAlignment="Center"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Time zone offset" />
+                                    <TextBox Width="220"
+                                             Text="{Binding UserTimezoneOffset, Mode=TwoWay}"
+                                             PlaceholderText="e.g. -5, +1 (auto-detected)"
+                                             CornerRadius="8"
+                                             Padding="10,6"
+                                             Background="{Binding ButtonBrush}"
+                                             Foreground="{Binding PrimaryTextBrush}"
+                                             BorderBrush="{Binding SurfaceBorderBrush}"
+                                             BorderThickness="1" />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="These settings personalise the welcome message on the Home screen. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible." />
 
                             <Border Height="1"
                                     Background="{Binding SurfaceBorderBrush}" />
