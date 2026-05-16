@@ -172,7 +172,7 @@
         </Style>
 
         <!-- Status-bar clickable items: same hover/press colours as the sidebar but
-             no fixed size — the button shrinks to wrap its text content. -->
+             no fixed size - the button shrinks to wrap its text content. -->
         <Style Selector="Button.statusitem">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
@@ -717,7 +717,7 @@
                             <TextBlock FontSize="13"
                                        Foreground="White"
                                        VerticalAlignment="Center"
-                                       Text="A new version of Kodo is available —" />
+                                       Text="A new version of Kodo is available -" />
                             <TextBlock FontSize="13"
                                        FontWeight="SemiBold"
                                        Foreground="White"
@@ -1013,7 +1013,7 @@
                         Background="{Binding EditorBackgroundBrush}"
                         IsVisible="{Binding IsEmptyStateVisible}">
                     <Grid RowDefinitions="4,*">
-                        <!-- Top accent bar — pinned, never scrolls -->
+                        <!-- Top accent bar - pinned, never scrolls -->
                         <Border Grid.Row="0"
                                 Background="{Binding AccentBrush}"
                                 Opacity="0.85"
@@ -1214,7 +1214,7 @@
                         BorderThickness="0,1,0,0"
                         Padding="16,10">
                     <Grid ColumnDefinitions="*,Auto">
-                        <!-- File path — takes all remaining space, left-aligned -->
+                        <!-- File path - takes all remaining space, left-aligned -->
                         <TextBlock Grid.Column="0"
                                    Foreground="{Binding MutedTextBrush}"
                                    VerticalAlignment="Center"
@@ -1285,7 +1285,7 @@
                                        IsVisible="{Binding CanShowFindInFile}"
                                        Text="|" />
 
-                            <!-- Find button — far right -->
+                            <!-- Find button - far right -->
                             <Button Background="Transparent"
                                     BorderThickness="0"
                                     Foreground="{Binding MutedTextBrush}"
@@ -1357,6 +1357,7 @@
                   Background="{Binding EditorBackgroundBrush}"
                   RowDefinitions="Auto,*">
                 <Border Grid.Row="0"
+                        IsVisible="{Binding IsTutorialHeaderVisible}"
                         Background="{Binding TopBarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,0,0,1"
@@ -1378,7 +1379,74 @@
                     </Grid>
                 </Border>
 
+                <!-- ═══ Welcome splash - full-bleed centered, no scroll ═══ -->
+                <Grid Grid.Row="1"
+                      IsVisible="{Binding IsTutorialWelcomeStep}">
+                    <StackPanel Spacing="0"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                        <!-- Logo mark -->
+                        <Border Width="72" Height="72"
+                                CornerRadius="20"
+                                ClipToBounds="True"
+                                HorizontalAlignment="Center"
+                                Margin="0,0,0,28">
+                            <Image Source="/Assets/kodo-logo.png"
+                                   Stretch="UniformToFill" />
+                        </Border>
+
+                        <!-- Headline -->
+                        <TextBlock FontSize="48"
+                                   FontWeight="Bold"
+                                   Foreground="{Binding PrimaryTextBrush}"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   Text="Welcome to Kodo!" />
+
+                        <!-- Accent rule -->
+                        <Border Height="3"
+                                Width="64"
+                                CornerRadius="2"
+                                Background="{Binding AccentBrush}"
+                                HorizontalAlignment="Center"
+                                Margin="0,16,0,20" />
+
+                        <!-- Subheading -->
+                        <TextBlock FontSize="16"
+                                   Foreground="{Binding MutedTextBrush}"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="420"
+                                   LineHeight="26"
+                                   Text="A fast, focused code editor built to stay out of your way. This short tutorial walks you through the essentials - it only takes a minute." />
+
+                        <!-- Progress dots -->
+                        <TextBlock FontSize="13"
+                                   Foreground="{Binding MutedTextBrush}"
+                                   HorizontalAlignment="Center"
+                                   Text="{Binding TutorialProgressDotsText}"
+                                   Margin="0,32,0,0" />
+
+                        <!-- Nav buttons -->
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Center"
+                                    Spacing="10"
+                                    Margin="0,16,0,0">
+                            <Button Classes="chrome"
+                                    Click="SkipTutorialButton_OnClick"
+                                    Content="Skip Tutorial" />
+                            <Button Classes="marketaction"
+                                    Click="NextTutorialStepButton_OnClick"
+                                    Content="Get started" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <!-- ═══ Normal step content - scrollable, hidden on step 0 ═══ -->
                 <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding IsNotTutorialWelcomeStep}"
                               Padding="24"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
@@ -1389,7 +1457,10 @@
                                 CornerRadius="20"
                                 Padding="28"
                                 Margin="0,0,20,0">
-                            <StackPanel Spacing="18">
+                            <Panel>
+                                <!-- Normal step content - hidden on setup step -->
+                                <StackPanel IsVisible="{Binding IsNotTutorialSetupStep}"
+                                            Spacing="18">
                                 <StackPanel Spacing="6">
                                     <TextBlock FontSize="12"
                                                FontWeight="SemiBold"
@@ -1457,10 +1528,341 @@
                                             Content="{Binding TutorialPrimaryButtonText}" />
                                 </StackPanel>
                             </StackPanel>
+
+                                <!-- Setup step - full-width, two-column layout inside the main card -->
+                                <StackPanel IsVisible="{Binding IsTutorialSetupStep}" Spacing="28">
+
+                                    <!-- Header -->
+                                    <StackPanel Spacing="6">
+                                        <TextBlock FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding AccentBrush}"
+                                                   Text="{Binding TutorialStepLabel}" />
+                                        <TextBlock FontSize="32"
+                                                   FontWeight="Bold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="{Binding TutorialTitle}" />
+                                        <TextBlock FontSize="14"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   LineHeight="22"
+                                                   Text="{Binding TutorialBody}" />
+                                    </StackPanel>
+
+                                    <!-- Two-column body: appearance | personalization -->
+                                    <Grid ColumnDefinitions="*,1,*" ColumnSpacing="0">
+
+                                        <!-- Left: Theme + Accent -->
+                                        <StackPanel Grid.Column="0" Spacing="24" Margin="0,0,32,0">
+
+                                            <!-- Theme -->
+                                            <StackPanel Spacing="12">
+                                                <TextBlock FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding AccentBrush}"
+                                                           Text="THEME" />
+                                                <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="10">
+                                                    <Button Classes="chrome"
+                                                            Click="ThemeButton_OnClick"
+                                                            Tag="Dark"
+                                                            Width="170"
+                                                            ToolTip.Tip="Apply Dark theme">
+                                                        <StackPanel Spacing="8">
+                                                            <Panel>
+                                                                <Border Height="72"
+                                                                        CornerRadius="10"
+                                                                        Background="#1E1E1E"
+                                                                        BorderBrush="#2B2B2B"
+                                                                        BorderThickness="1" />
+                                                                <Border Height="72"
+                                                                        CornerRadius="10"
+                                                                        BorderThickness="2"
+                                                                        BorderBrush="{Binding AccentBrush}"
+                                                                        IsVisible="{Binding IsDarkThemeActive}" />
+                                                            </Panel>
+                                                            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Dark" />
+                                                                <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                                           VerticalAlignment="Center" Text="●"
+                                                                           IsVisible="{Binding IsDarkThemeActive}" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Classes="chrome"
+                                                            Click="ThemeButton_OnClick"
+                                                            Tag="Light"
+                                                            Width="170"
+                                                            ToolTip.Tip="Apply Light theme">
+                                                        <StackPanel Spacing="8">
+                                                            <Panel>
+                                                                <Border Height="72"
+                                                                        CornerRadius="10"
+                                                                        Background="#FFFFFF"
+                                                                        BorderBrush="#D7DCE5"
+                                                                        BorderThickness="1" />
+                                                                <Border Height="72"
+                                                                        CornerRadius="10"
+                                                                        BorderThickness="2"
+                                                                        BorderBrush="{Binding AccentBrush}"
+                                                                        IsVisible="{Binding IsLightThemeActive}" />
+                                                            </Panel>
+                                                            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Light" />
+                                                                <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                                           VerticalAlignment="Center" Text="●"
+                                                                           IsVisible="{Binding IsLightThemeActive}" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <!-- Extension themes -->
+                                                    <ItemsControl ItemsSource="{Binding ThemeExtensions}"
+                                                                  IsVisible="{Binding HasThemeExtensions}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate>
+                                                                <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="10" />
+                                                            </ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="kodo:LoadedExtension">
+                                                                <Button Classes="chrome"
+                                                                        Click="ThemeButton_OnClick"
+                                                                        Tag="{Binding ThemeCardThemeId}"
+                                                                        Width="170">
+                                                                    <ToolTip.Tip>
+                                                                        <StackPanel Spacing="2">
+                                                                            <TextBlock Text="{Binding ThemeCardDisplayName}"
+                                                                                       FontWeight="SemiBold"
+                                                                                       FontSize="12" />
+                                                                            <TextBlock Text="{Binding SourcePath}"
+                                                                                       FontSize="11"
+                                                                                       Opacity="0.7" />
+                                                                        </StackPanel>
+                                                                    </ToolTip.Tip>
+                                                                    <StackPanel Spacing="8">
+                                                                        <Panel>
+                                                                            <Border Height="72"
+                                                                                    CornerRadius="10"
+                                                                                    Background="{Binding ThemeCardPreviewBackground}"
+                                                                                    BorderBrush="{Binding ThemeCardPreviewBorder}"
+                                                                                    BorderThickness="1">
+                                                                                <Border Width="32"
+                                                                                        Height="8"
+                                                                                        Margin="10"
+                                                                                        HorizontalAlignment="Left"
+                                                                                        VerticalAlignment="Top"
+                                                                                        CornerRadius="999"
+                                                                                        Background="{Binding ThemeCardAccent}" />
+                                                                            </Border>
+                                                                            <Border Height="72"
+                                                                                    CornerRadius="10"
+                                                                                    BorderThickness="2"
+                                                                                    BorderBrush="{Binding #RootWindow.AccentBrush}"
+                                                                                    IsVisible="{Binding IsActiveTheme}" />
+                                                                        </Panel>
+                                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                                                                            <TextBlock Grid.Column="0"
+                                                                                       HorizontalAlignment="Center"
+                                                                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                                       Text="{Binding ThemeCardDisplayName}"
+                                                                                       TextWrapping="Wrap"
+                                                                                       TextAlignment="Center" />
+                                                                            <TextBlock Grid.Column="1"
+                                                                                       FontSize="11"
+                                                                                       Foreground="{Binding #RootWindow.AccentBrush}"
+                                                                                       VerticalAlignment="Center"
+                                                                                       Text="●"
+                                                                                       IsVisible="{Binding IsActiveTheme}" />
+                                                                        </Grid>
+                                                                    </StackPanel>
+                                                                </Button>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </WrapPanel>
+                                            </StackPanel>
+
+                                            <!-- Accent Colour -->
+                                            <StackPanel Spacing="12">
+                                                <TextBlock FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding AccentBrush}"
+                                                           Text="ACCENT COLOUR" />
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Button Classes="chrome"
+                                                            Click="AccentKodoButton_OnClick"
+                                                            Width="120"
+                                                            ToolTip.Tip="Use Kodo's default purple accent">
+                                                        <StackPanel Spacing="6">
+                                                            <Border Height="28" CornerRadius="8" Background="#8C00FF" />
+                                                            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Kodo" />
+                                                                <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                                           VerticalAlignment="Center" Text="●"
+                                                                           IsVisible="{Binding IsAccentKodo}" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Classes="chrome"
+                                                            Click="AccentWindowsButton_OnClick"
+                                                            Width="120"
+                                                            ToolTip.Tip="Use your Windows system accent colour">
+                                                        <StackPanel Spacing="6">
+                                                            <Border Height="28" CornerRadius="8"
+                                                                    Background="{Binding AccentBrush}"
+                                                                    IsVisible="{Binding IsAccentWindows}" />
+                                                            <Border Height="28" CornerRadius="8"
+                                                                    Background="{Binding WindowsAccentPreviewBrush}"
+                                                                    IsVisible="{Binding !IsAccentWindows}" />
+                                                            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Windows" />
+                                                                <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                                           VerticalAlignment="Center" Text="●"
+                                                                           IsVisible="{Binding IsAccentWindows}" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Classes="chrome"
+                                                            Click="AccentColorPickerButton_OnClick"
+                                                            Width="120"
+                                                            ToolTip.Tip="Choose a custom accent colour">
+                                                        <StackPanel Spacing="6">
+                                                            <Border Height="28" CornerRadius="8"
+                                                                    Background="{Binding AccentBrush}"
+                                                                    IsVisible="{Binding IsAccentCustom}" />
+                                                            <Border Height="28" CornerRadius="8"
+                                                                    IsVisible="{Binding !IsAccentCustom}">
+                                                                <Border.Background>
+                                                                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                                                                        <GradientStop Color="#FF0000" Offset="0" />
+                                                                        <GradientStop Color="#FFFF00" Offset="0.33" />
+                                                                        <GradientStop Color="#00FF00" Offset="0.5" />
+                                                                        <GradientStop Color="#0000FF" Offset="0.67" />
+                                                                        <GradientStop Color="#FF00FF" Offset="1" />
+                                                                    </LinearGradientBrush>
+                                                                </Border.Background>
+                                                            </Border>
+                                                            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Custom" />
+                                                                <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                                           VerticalAlignment="Center" Text="●"
+                                                                           IsVisible="{Binding IsAccentCustom}" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Button>
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                        </StackPanel>
+
+                                        <!-- Divider -->
+                                        <Border Grid.Column="1"
+                                                Width="1"
+                                                Background="{Binding SurfaceBorderBrush}"
+                                                VerticalAlignment="Stretch"
+                                                Margin="0,4" />
+
+                                        <!-- Right: Personalization -->
+                                        <StackPanel Grid.Column="2" Spacing="16" Margin="32,0,0,0">
+                                            <TextBlock FontSize="12"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{Binding AccentBrush}"
+                                                       Text="PERSONALIZATION" />
+
+                                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                                                  ColumnSpacing="16" RowSpacing="14">
+                                                <TextBlock Grid.Row="0" Grid.Column="0"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           Text="Name" />
+                                                <TextBox Grid.Row="0" Grid.Column="1"
+                                                         Text="{Binding UserName, Mode=TwoWay}"
+                                                         PlaceholderText="e.g. Alex"
+                                                         CornerRadius="8"
+                                                         Padding="10,8"
+                                                         Background="{Binding ButtonBrush}"
+                                                         Foreground="{Binding PrimaryTextBrush}"
+                                                         BorderBrush="{Binding SurfaceBorderBrush}"
+                                                         BorderThickness="1" />
+
+                                                <TextBlock Grid.Row="1" Grid.Column="0"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           Text="Country" />
+                                                <TextBox Grid.Row="1" Grid.Column="1"
+                                                         Text="{Binding UserCountry, Mode=TwoWay}"
+                                                         PlaceholderText="e.g. CA, US, GB"
+                                                         CornerRadius="8"
+                                                         Padding="10,8"
+                                                         Background="{Binding ButtonBrush}"
+                                                         Foreground="{Binding PrimaryTextBrush}"
+                                                         BorderBrush="{Binding SurfaceBorderBrush}"
+                                                         BorderThickness="1" />
+
+                                                <TextBlock Grid.Row="2" Grid.Column="0"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           Text="Hemisphere" />
+                                                <ComboBox Grid.Row="2" Grid.Column="1"
+                                                          SelectedIndex="{Binding UserHemisphereIndex, Mode=TwoWay}"
+                                                          Background="{Binding ButtonBrush}"
+                                                          Foreground="{Binding PrimaryTextBrush}"
+                                                          BorderBrush="{Binding SurfaceBorderBrush}"
+                                                          HorizontalAlignment="Stretch"
+                                                          CornerRadius="8">
+                                                    <ComboBoxItem Content="Auto-detect" />
+                                                    <ComboBoxItem Content="Northern" />
+                                                    <ComboBoxItem Content="Southern" />
+                                                </ComboBox>
+
+                                                <TextBlock Grid.Row="3" Grid.Column="0"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           Text="Time zone" />
+                                                <TextBox Grid.Row="3" Grid.Column="1"
+                                                         Text="{Binding UserTimezoneOffset, Mode=TwoWay}"
+                                                         PlaceholderText="e.g. -5, +1"
+                                                         CornerRadius="8"
+                                                         Padding="10,8"
+                                                         Background="{Binding ButtonBrush}"
+                                                         Foreground="{Binding PrimaryTextBrush}"
+                                                         BorderBrush="{Binding SurfaceBorderBrush}"
+                                                         BorderThickness="1" />
+                                            </Grid>
+
+                                            <TextBlock FontSize="12"
+                                                       Foreground="{Binding MutedTextBrush}"
+                                                       TextWrapping="Wrap"
+                                                       Text="All fields are optional. Changes take effect immediately." />
+                                        </StackPanel>
+
+                                    </Grid>
+
+                                    <!-- Nav buttons -->
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Right"
+                                                Spacing="10">
+                                        <Button Classes="chrome"
+                                                Click="PreviousTutorialStepButton_OnClick"
+                                                IsVisible="{Binding CanGoToPreviousTutorialStep}"
+                                                Content="Back" />
+                                        <Button Classes="chrome"
+                                                Click="SkipTutorialButton_OnClick"
+                                                Content="Skip Tutorial" />
+                                        <Button Classes="marketaction"
+                                                Click="NextTutorialStepButton_OnClick"
+                                                Content="{Binding TutorialPrimaryButtonText}" />
+                                    </StackPanel>
+
+                                </StackPanel>
+
+                            </Panel>
                         </Border>
 
                         <StackPanel Grid.Column="1" Spacing="16">
-                            <Border Background="{Binding CardBrush}"
+
+                            <!-- Standard spotlight card - hidden on the setup step -->
+                            <Border IsVisible="{Binding IsNotTutorialSetupStep}"
+                                    Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="20"
@@ -1486,6 +1888,9 @@
                                                Text="{Binding TutorialHighlightThree}" />
                                 </StackPanel>
                             </Border>
+
+                            <!-- Setup card - moved to main panel above -->
+
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>
@@ -2212,6 +2617,21 @@
                                     <TextBlock Width="120"
                                                VerticalAlignment="Center"
                                                Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Name" />
+                                    <TextBox Width="220"
+                                             Text="{Binding UserName, Mode=TwoWay}"
+                                             PlaceholderText="e.g. Alex (optional)"
+                                             CornerRadius="8"
+                                             Padding="10,6"
+                                             Background="{Binding ButtonBrush}"
+                                             Foreground="{Binding PrimaryTextBrush}"
+                                             BorderBrush="{Binding SurfaceBorderBrush}"
+                                             BorderThickness="1" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                    <TextBlock Width="120"
+                                               VerticalAlignment="Center"
+                                               Foreground="{Binding PrimaryTextBrush}"
                                                Text="Country" />
                                     <TextBox Width="220"
                                              Text="{Binding UserCountry, Mode=TwoWay}"
@@ -2257,7 +2677,7 @@
                             </StackPanel>
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        TextWrapping="Wrap"
-                                       Text="These settings personalise the welcome message on the Home screen. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible." />
+                                       Text="These settings personalise the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible." />
 
                             <Border Height="1"
                                     Background="{Binding SurfaceBorderBrush}" />
@@ -2332,7 +2752,7 @@
                                         <TextBlock FontSize="13"
                                                    Foreground="White"
                                                    VerticalAlignment="Center"
-                                                   Text="Update available —" />
+                                                   Text="Update available -" />
                                         <TextBlock FontSize="13"
                                                    FontWeight="SemiBold"
                                                    Foreground="White"

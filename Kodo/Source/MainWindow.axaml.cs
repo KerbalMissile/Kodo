@@ -460,6 +460,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
     private bool _isTutorialPageVisible;
+    private bool _tutorialOpenedFromSettings;
     private bool _isWhatsNewPageVisible;
     private bool _isWhatsNewExpanded;
     private bool _isHomePageVisible;
@@ -471,6 +472,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isRestoreOpenTabsOnLaunchEnabled;
     private bool _isMarketplaceTabSelected;
     private bool _suppressDirtyTracking;
+    // True during the constructor + OnOpened startup sequence so that incidental
+    // SaveSettings() calls (tab restore, CollectionChanged, ApplyTheme) cannot
+    // overwrite the just-loaded settings before the window is fully initialised.
+    private bool _suppressSettingsSave;
     private int _tabSize = 4;
     private int _editorFontSize = 14;
     private string _accentColorMode = "kodo";   // "kodo" | "windows" | "custom"
@@ -519,6 +524,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _userCountry = string.Empty;
     private int    _userHemisphere = 0;
     private string _userTimezoneOffset = string.Empty;
+    private string _userName = string.Empty;
     private bool _isFindPanelVisible;
     private bool _isFileCorrupted;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
@@ -533,6 +539,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly HttpClient MarketplaceHttpClient = CreateHttpClient();
     private static readonly TutorialStep[] TutorialSteps =
     [
+        new(
+            "",
+            "Welcome to Kodo!",
+            "A fast, focused code editor built to stay out of your way. This short tutorial will walk you through the essentials - it only takes a minute.",
+            "",
+            "",
+            "",
+            "",
+            ""
+        ),
         new(
             "Welcome",
             "Meet your workspace",
@@ -572,6 +588,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             "Switch between built-in and extension themes.",
             "Set editor font size and tab behavior.",
             "Control autosave and launch preferences."
+        ),
+        new(
+            "Set up",
+            "Make Kodo yours",
+            "Pick a theme and accent colour, then tell Kodo a little about yourself so the welcome message on Home feels personal. You can change any of these later in Settings.",
+            "Ctrl+,  ·  Settings",
+            "Why personalise?",
+            "Your name makes greetings feel like they're written for you.",
+            "Country and hemisphere keep seasonal messages accurate.",
+            "Theme and accent colour apply instantly across the whole app."
         )
     ];
 
@@ -712,6 +738,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : settings.UserCountry.ToUpperInvariant();
         _userHemisphere     = settings.UserHemisphere is >= 0 and <= 2 ? settings.UserHemisphere : 0;
         _userTimezoneOffset = settings.UserTimezoneOffset ?? string.Empty;
+        _userName           = settings.UserName ?? string.Empty;
         _startupOpenTabPaths.AddRange(settings.OpenTabPaths
             .Where(path => File.Exists(path))
             .Distinct(StringComparer.OrdinalIgnoreCase));
@@ -946,6 +973,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         SyncObservableCollection(LoadedExtensions, loadedExtensions, ext => ext.Id);
         SyncObservableCollection(ExtensionLoadErrors, extensionLoadErrors, error => error);
+
+        // Re-stamp IsActiveTheme on every theme extension now that the collection
+        // may contain brand-new LoadedExtension instances (SyncObservableCollection
+        // adds new objects with IsActiveTheme = false). The CurrentThemeName setter
+        // only ran once during ApplyThemeBrushes, before these objects existed.
+        foreach (var ext in ThemeExtensions)
+            ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, _currentThemeName, StringComparison.OrdinalIgnoreCase);
 
         OnPropertyChanged(nameof(ExtensionLoadErrors));
         OnPropertyChanged(nameof(VisibleLoadedExtensions));
@@ -2091,6 +2125,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ext.MutedTextBrush     = MutedTextBrush;
             ext.NotifyAllBrushesChanged();
         }
+
+        // Keep the active-theme dot in sync whenever brushes are refreshed.
+        // This covers the case where a new LoadedExtension instance was added
+        // after CurrentThemeName was last set (e.g. post-startup extension load).
+        foreach (var ext in ThemeExtensions)
+            ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, _currentThemeName, StringComparison.OrdinalIgnoreCase);
     }
 
     private LoadedExtension? GetLanguageExtension(string filePath)
@@ -2854,7 +2894,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public string TutorialStepLabel => $"Step {TutorialStepIndex + 1} of {TutorialSteps.Length}";
+    // The welcome step (index 0) is not counted in "Step X of Y" - only the content steps are.
+    public string TutorialStepLabel => $"Step {TutorialStepIndex} of {TutorialSteps.Length - 1}";
 
     public string TutorialProgressDotsText =>
         string.Join(" ", Enumerable.Range(0, TutorialSteps.Length).Select(index => index <= TutorialStepIndex ? "●" : "○"));
@@ -2876,6 +2917,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string TutorialHighlightThree => CurrentTutorialStep.HighlightThree;
 
     public bool CanGoToPreviousTutorialStep => TutorialStepIndex > 0;
+
+    // True only on the final "Set up Kodo" step so the AXAML can show
+    // interactive personalisation controls instead of the spotlight text panel.
+    public bool IsTutorialSetupStep => TutorialStepIndex == TutorialSteps.Length - 1;
+    public bool IsNotTutorialSetupStep => !IsTutorialSetupStep;
+
+    // True only on the very first "Welcome to Kodo!" splash step.
+    public bool IsTutorialWelcomeStep => TutorialStepIndex == 0;
+    public bool IsNotTutorialWelcomeStep => !IsTutorialWelcomeStep;
+
+    // Show the "Tutorial" page header only when opened deliberately from Settings,
+    // not on first-launch where the welcome splash is the first thing seen.
+    public bool IsTutorialHeaderVisible => _tutorialOpenedFromSettings;
 
     public string TutorialPrimaryButtonText => TutorialStepIndex >= TutorialSteps.Length - 1 ? "Finish tutorial" : "Next";
 
@@ -3239,6 +3293,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Optional display name used to personalise greetings (e.g. "Good morning, Alex!").
+    /// Empty means greetings won't include a name.
+    /// </summary>
+    public string UserName
+    {
+        get => _userName;
+        set
+        {
+            var trimmed = value?.Trim() ?? string.Empty;
+            if (_userName == trimmed) return;
+            _userName = trimmed;
+            _welcomeMessagesCache = null;
+            OnPropertyChanged();
+            SaveSettings();
+        }
+    }
+
     // ── Welcome message ──────────────────────────────────────────────────────
 
     /// <summary>
@@ -3270,6 +3342,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var m = date.Month;
         var d = date.Day;
         var dow = date.DayOfWeek;
+        var y = date.Year;
 
         // ── Universal / very widely observed ──────────────────────────────────
         if (m == 1  && d == 1)  return new("New Year's Day", "Happy New Year!");
@@ -3278,18 +3351,73 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (m == 12 && d == 24) return new("Christmas Eve", "Happy Christmas Eve!");
         if (m == 12 && d == 26 && country is "CA" or "GB" or "AU" or "NZ" or "ZA")
             return new("Boxing Day", "Happy Boxing Day!");
+        if (m == 12 && d == 26) return new("Kwanzaa", "Happy Kwanzaa!");
         if (m == 10 && d == 31) return new("Halloween", "Happy Halloween!");
         if (m == 2  && d == 14) return new("Valentine's Day", "Happy Valentine's Day!");
         if (m == 4  && d == 1)  return new("April Fools' Day", "Happy April Fools'! (Or is it?)");
+        if (m == 3  && d == 8)  return new("International Women's Day", "Happy International Women's Day!");
+        if (m == 4  && d == 22) return new("Earth Day", "Happy Earth Day!");
+        if (m == 5  && d == 5)  return new("Cinco de Mayo", "¡Feliz Cinco de Mayo!");
+        if (m == 6  && d == 5)  return new("World Environment Day", "Happy World Environment Day!");
+        if (m == 9  && d == 21) return new("International Day of Peace", "Happy International Day of Peace.");
+        if (m == 12 && d == 10) return new("International Human Rights Day", "Happy Human Rights Day.");
 
-        // ── Compute Easter Sunday (Anonymous Gregorian algorithm) ─────────────
-        var easter = ComputeEaster(date.Year);
+        // ── Mother's Day: second Sunday of May ────────────────────────────────
+        if (m == 5 && dow == DayOfWeek.Sunday && d >= 8 && d <= 14)
+            return new("Mother's Day", "Happy Mother's Day!");
+
+        // ── Father's Day: third Sunday of June ────────────────────────────────
+        if (m == 6 && dow == DayOfWeek.Sunday && d >= 15 && d <= 21)
+            return new("Father's Day", "Happy Father's Day!");
+
+        // ── Easter (Anonymous Gregorian algorithm) ────────────────────────────
+        var easter = ComputeEaster(y);
         if (m == easter.Month && d == easter.Day)
             return new("Easter Sunday", "Happy Easter!");
         if (date == easter.AddDays(-2))
             return new("Good Friday", "Good Friday - enjoy the long weekend!");
         if (date == easter.AddDays(1) && country is "CA" or "GB" or "AU" or "NZ")
             return new("Easter Monday", "Happy Easter Monday!");
+
+        // ── Lunar New Year (Chinese/Vietnamese/Korean) ────────────────────────
+        if (LunarNewYear(y) is { } lny && m == lny.Month && d == lny.Day)
+            return new("Lunar New Year", "Happy Lunar New Year!");
+
+        // ── Holi (full moon of Phalguna) ──────────────────────────────────────
+        if (HoliDate(y) is { } holi && m == holi.Month && d == holi.Day)
+            return new("Holi", "Happy Holi!");
+
+        // ── Vesak / Buddha Day (full moon of Vaisakha) ───────────────────────
+        if (VesakDate(y) is { } vesak && m == vesak.Month && d == vesak.Day)
+            return new("Vesak", "Happy Vesak!");
+
+        // ── Eid al-Fitr (1 Shawwal) ───────────────────────────────────────────
+        if (EidAlFitr(y) is { } eidFitr && m == eidFitr.Month && d == eidFitr.Day)
+            return new("Eid al-Fitr", "Eid Mubarak!");
+
+        // ── Eid al-Adha (10 Dhu al-Hijjah) ───────────────────────────────────
+        if (EidAlAdha(y) is { } eidAdha && m == eidAdha.Month && d == eidAdha.Day)
+            return new("Eid al-Adha", "Eid Mubarak!");
+
+        // ── Rosh Hashanah (1 Tishrei) ─────────────────────────────────────────
+        if (RoshHashanah(y) is { } rosh && m == rosh.Month && d == rosh.Day)
+            return new("Rosh Hashanah", "Shana Tova! Happy New Year!");
+
+        // ── Yom Kippur (10 Tishrei) ───────────────────────────────────────────
+        if (YomKippur(y) is { } yk && m == yk.Month && d == yk.Day)
+            return new("Yom Kippur", "G'mar Chatima Tova. Easy fast.");
+
+        // ── Navratri / Sharad Navratri (day after new moon of Ashwin) ────────
+        if (NavratriDate(y) is { } nav && m == nav.Month && d == nav.Day)
+            return new("Navratri", "Happy Navratri!");
+
+        // ── Diwali (new moon of Kartika) ──────────────────────────────────────
+        if (DiwaliDate(y) is { } diwali && m == diwali.Month && d == diwali.Day)
+            return new("Diwali", "Happy Diwali!");
+
+        // ── Hanukkah (25 Kislev) ──────────────────────────────────────────────
+        if (HanukkahDate(y) is { } hanukkah && m == hanukkah.Month && d == hanukkah.Day)
+            return new("Hanukkah", "Happy Hanukkah!");
 
         // ── Canada ────────────────────────────────────────────────────────────
         if (country == "CA")
@@ -3401,6 +3529,295 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return new DateTime(year, month, day);
     }
 
+    // ── Astronomical calendar helpers ─────────────────────────────────────────
+    // These compute floating-date holidays algorithmically so they remain correct
+    // through 2100 without needing lookup tables.
+
+    /// <summary>
+    /// Julian Day Number of the kth new moon since J2000 (Meeus ch.49).
+    /// Pass k+0.5 for the corresponding full moon.
+    /// </summary>
+    private static double MoonPhaseJdn(double k)
+    {
+        double T   = k / 1236.85;
+        double jde = 2451550.09766
+                   + 29.530588861 * k
+                   + 0.00015437   * T * T
+                   - 0.000000150  * T * T * T
+                   + 0.00000000073 * T * T * T * T;
+        double M  = Rad(2.5534   + 29.10535670  * k - 0.0000014 * T * T);
+        double Mp = Rad(201.5643 + 385.81693528 * k + 0.0107582 * T * T);
+        double F  = Rad(160.7108 + 390.67050284 * k - 0.0016118 * T * T);
+        double Om = Rad(124.7746 -  1.56375588  * k + 0.0020672 * T * T);
+        double E  = 1 - 0.002516 * T - 0.0000074 * T * T;
+        return jde
+            + (-0.40720 * Math.Sin(Mp))
+            + ( 0.17241 * E * Math.Sin(M))
+            + ( 0.01608 * Math.Sin(2 * Mp))
+            + ( 0.01039 * Math.Sin(2 * F))
+            + ( 0.00739 * E * Math.Sin(Mp - M))
+            + (-0.00514 * E * Math.Sin(Mp + M))
+            + ( 0.00208 * E * E * Math.Sin(2 * M))
+            + (-0.00111 * Math.Sin(Mp - 2 * F))
+            + (-0.00057 * Math.Sin(Mp + 2 * F))
+            + ( 0.00056 * E * Math.Sin(2 * Mp + M))
+            + (-0.00042 * Math.Sin(3 * Mp))
+            + ( 0.00042 * E * Math.Sin(M + 2 * F))
+            + ( 0.00038 * E * Math.Sin(M - 2 * F))
+            + (-0.00024 * E * Math.Sin(2 * Mp - M))
+            + (-0.00017 * Math.Sin(Om))
+            + (-0.00007 * Math.Sin(Mp + 2 * M))
+            + ( 0.00004 * Math.Sin(2 * Mp - 2 * F))
+            + ( 0.00004 * Math.Sin(3 * M))
+            + ( 0.00003 * Math.Sin(Mp + M - 2 * F))
+            + ( 0.00003 * Math.Sin(2 * Mp + 2 * F))
+            + (-0.00003 * Math.Sin(Mp + M + 2 * F))
+            + ( 0.00003 * Math.Sin(Mp - M + 2 * F))
+            + (-0.00002 * Math.Sin(Mp - M - 2 * F))
+            + (-0.00002 * Math.Sin(3 * Mp + M))
+            + ( 0.00002 * Math.Sin(4 * Mp));
+    }
+
+    private static double Rad(double deg) => deg * Math.PI / 180.0;
+
+    /// <summary>Converts a Julian Day Number to a Gregorian DateTime (UTC noon).</summary>
+    private static DateTime JdnToDateTime(double jdn)
+    {
+        int j = (int)(jdn + 0.5);
+        int a = j + 32044;
+        int b = (4 * a + 3) / 146097;
+        int c = a - 146097 * b / 4;
+        int d = (4 * c + 3) / 1461;
+        int e = c - 1461 * d / 4;
+        int mo = (5 * e + 2) / 153;
+        int day   = e - (153 * mo + 2) / 5 + 1;
+        int month = mo + 3 - 12 * (mo / 10);
+        int year  = 100 * b + d - 4800 + mo / 10;
+        return new DateTime(year, month, day);
+    }
+
+    /// <summary>
+    /// Finds the new moon (or full moon when fullMoon=true) that falls in the
+    /// given Gregorian year and month. Returns null if none falls in that month.
+    /// </summary>
+    private static DateTime? MoonInMonth(int year, int month, bool fullMoon = false)
+    {
+        double kApprox = (year - 2000) * 12.3685 + month - 1;
+        for (int offset = -2; offset <= 3; offset++)
+        {
+            double k   = Math.Floor(kApprox) + offset + (fullMoon ? 0.5 : 0.0);
+            double jdn = MoonPhaseJdn(k);
+            var    dt  = JdnToDateTime(jdn);
+            if (dt.Year == year && dt.Month == month)
+                return dt;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Lunar New Year: the new moon that falls between Jan 20 and Feb 20
+    /// (in China Standard Time, UTC+8). This is the first new moon after the
+    /// Sun enters Aquarius (~Jan 20), which is the standard Chinese calendar rule.
+    /// </summary>
+    private static DateTime? LunarNewYear(int year)
+    {
+        double kApprox = (year - 2000) * 12.3685;
+        for (int offset = -2; offset <= 3; offset++)
+        {
+            double k      = Math.Floor(kApprox) + offset;
+            double jdn    = MoonPhaseJdn(k) + 8.0 / 24.0; // shift to UTC+8
+            var    dt     = JdnToDateTime(jdn);
+            if (dt.Year == year && ((dt.Month == 1 && dt.Day >= 20) || (dt.Month == 2 && dt.Day <= 20)))
+                return dt;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Holi: the full moon of the Hindu month Phalguna, which falls in March
+    /// (or occasionally very late February).
+    /// </summary>
+    private static DateTime? HoliDate(int year)
+    {
+        var march = MoonInMonth(year, 3, fullMoon: true);
+        if (march != null) return march;
+        var feb = MoonInMonth(year, 2, fullMoon: true);
+        return feb?.Day >= 20 ? feb : null;
+    }
+
+    /// <summary>
+    /// Vesak (Buddha Day): the full moon of the month of Vaisakha, observed
+    /// on the full moon in May by Theravada countries.
+    /// </summary>
+    private static DateTime? VesakDate(int year) =>
+        MoonInMonth(year, 5, fullMoon: true);
+
+    /// <summary>
+    /// Converts an Islamic (Hijri) civil date to a Gregorian DateTime,
+    /// using the standard tabular (Kuwaiti algorithmic) calendar.
+    /// Accurate to ±1 day vs actual moon-sighting dates.
+    /// </summary>
+    private static DateTime IslamicToGregorian(int iy, int im, int id)
+    {
+        int jdn = id
+                + (int)Math.Ceiling(29.5 * (im - 1))
+                + (iy - 1) * 354
+                + (3 + 11 * iy) / 30
+                + 1948438;
+        return JdnToDateTime(jdn);
+    }
+
+    private static int ApproxHijriYear(int gregorianYear) =>
+        (int)((gregorianYear - 622) * 1.030685);
+
+    /// <summary>Eid al-Fitr: 1 Shawwal (Islamic month 10).</summary>
+    private static DateTime? EidAlFitr(int year)
+    {
+        int hy = ApproxHijriYear(year);
+        for (int h = hy - 1; h <= hy + 1; h++)
+        {
+            var dt = IslamicToGregorian(h, 10, 1);
+            if (dt.Year == year) return dt;
+        }
+        return null;
+    }
+
+    /// <summary>Eid al-Adha: 10 Dhu al-Hijjah (Islamic month 12).</summary>
+    private static DateTime? EidAlAdha(int year)
+    {
+        int hy = ApproxHijriYear(year);
+        for (int h = hy - 1; h <= hy + 1; h++)
+        {
+            var dt = IslamicToGregorian(h, 12, 10);
+            if (dt.Year == year) return dt;
+        }
+        return null;
+    }
+
+    // ── Hebrew calendar (Rosh Hashanah / Yom Kippur / Hanukkah) ──────────────
+    // Uses the traditional molad-based calculation (Maimonides / standard
+    // rabbinical algorithm). Exact for the proleptic Hebrew calendar.
+
+    private static bool IsHebrewLeapYear(int hy) => (7 * hy + 1) % 19 < 7;
+
+    private static int HebrewElapsedDays(int hy)
+    {
+        int monthsElapsed = 235 * ((hy - 1) / 19)
+                          + 12  * ((hy - 1) % 19)
+                          + (7  * ((hy - 1) % 19) + 1) / 19;
+        int parts = 204 + 793 * (monthsElapsed % 1080);
+        int hours = 5 + 12 * monthsElapsed + 793 * (monthsElapsed / 1080) + parts / 1080;
+        int day   = 1 + 29 * monthsElapsed + hours / 24;
+        int pMod  = 1080 * (hours % 24) + parts % 1080;
+
+        int alt = day;
+        if (pMod >= 19440
+            || (day % 7 == 2 && pMod >= 9924  && !IsHebrewLeapYear(hy))
+            || (day % 7 == 1 && pMod >= 16789 &&  IsHebrewLeapYear(hy - 1)))
+            alt++;
+
+        if (alt % 7 == 0 || alt % 7 == 3 || alt % 7 == 5) alt++;
+        return alt;
+    }
+
+    private static int HebrewYearDays(int hy) =>
+        HebrewElapsedDays(hy + 1) - HebrewElapsedDays(hy);
+
+    private static int HebrewMonthLength(int hy, int hm)
+    {
+        int yd = HebrewYearDays(hy);
+        // Cheshvan (2): 30 only in complete years
+        if (hm == 2) return yd % 10 == 5 ? 30 : 29;
+        // Kislev (3): 29 only in deficient years
+        if (hm == 3) return yd % 10 == 3 ? 29 : 30;
+        // Adar (6) is 30 days in leap years, 29 in regular
+        if (hm == 6) return IsHebrewLeapYear(hy) ? 30 : 29;
+        return hm is 1 or 5 or 7 or 10 or 12 ? 30 : 29;
+    }
+
+    /// <summary>
+    /// Converts a Hebrew date to a Gregorian DateTime.
+    /// Month numbering: Tishrei=1, Cheshvan=2, Kislev=3, Tevet=4, Shevat=5,
+    /// Adar(I)=6, [AdarII=7 in leap years], Nisan=7(8), … Elul=12(13).
+    /// </summary>
+    private static DateTime HebrewToGregorian(int hy, int hm, int hd)
+    {
+        const int HebrewEpoch = 347997; // JDN of 1 Tishrei AM 1
+        int elapsed = HebrewElapsedDays(hy);
+        int doy = hd;
+        for (int mo = 1; mo < hm; mo++)
+            doy += HebrewMonthLength(hy, mo);
+        return JdnToDateTime(HebrewEpoch + elapsed + doy - 1);
+    }
+
+    private static int ApproxHebrewYear(int gregorianYear) => gregorianYear + 3760;
+
+    /// <summary>Rosh Hashanah: 1 Tishrei of the Hebrew year beginning in <paramref name="year"/>.</summary>
+    private static DateTime? RoshHashanah(int year)
+    {
+        int hy0 = ApproxHebrewYear(year);
+        for (int hy = hy0 - 1; hy <= hy0 + 1; hy++)
+        {
+            var dt = HebrewToGregorian(hy, 1, 1);
+            if (dt.Year == year) return dt;
+        }
+        return null;
+    }
+
+    /// <summary>Yom Kippur: 10 Tishrei.</summary>
+    private static DateTime? YomKippur(int year)
+    {
+        int hy0 = ApproxHebrewYear(year);
+        for (int hy = hy0 - 1; hy <= hy0 + 1; hy++)
+        {
+            var dt = HebrewToGregorian(hy, 1, 10);
+            if (dt.Year == year) return dt;
+        }
+        return null;
+    }
+
+    /// <summary>Hanukkah: 25 Kislev (first day/night).</summary>
+    private static DateTime? HanukkahDate(int year)
+    {
+        // 25 Kislev of Hebrew year ~(Gregorian + 3761) falls in Nov/Dec.
+        int hy0 = ApproxHebrewYear(year) + 1;
+        for (int hy = hy0 - 1; hy <= hy0 + 1; hy++)
+        {
+            var dt = HebrewToGregorian(hy, 3, 25);
+            if (dt.Year == year) return dt;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Diwali: the new moon (Amavasya) of Kartika, falling in October or
+    /// early November.
+    /// </summary>
+    private static DateTime? DiwaliDate(int year)
+    {
+        // Try October new moon first; accept it if day >= 14 (Kartika new moon
+        // is always in the second half of October or early November).
+        var oct = MoonInMonth(year, 10, fullMoon: false);
+        if (oct != null && oct.Value.Day >= 14) return oct;
+        var nov = MoonInMonth(year, 11, fullMoon: false);
+        if (nov != null && nov.Value.Day <= 15) return nov;
+        return oct; // fallback
+    }
+
+    /// <summary>
+    /// Sharad Navratri: begins on the day after the new moon of Ashwin
+    /// (Shukla Pratipada), which falls in September or early October.
+    /// </summary>
+    private static DateTime? NavratriDate(int year)
+    {
+        // Ashwin new moon falls in Sep (day >= 15) or early Oct (day <= 10).
+        var sep = MoonInMonth(year, 9, fullMoon: false);
+        if (sep != null && sep.Value.Day >= 15) return sep.Value.AddDays(1);
+        var oct = MoonInMonth(year, 10, fullMoon: false);
+        if (oct != null && oct.Value.Day <= 10) return oct.Value.AddDays(1);
+        return null;
+    }
+
     /// <summary>
     /// Returns true when <paramref name="date"/> falls on a Saturday or Sunday
     /// or is sandwiched into a long weekend (i.e. Friday before a Monday holiday
@@ -3452,6 +3869,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var dayName = now.ToString("dddd");   // e.g. "Monday"
 
         var messages = new List<string>();
+
+        // Personalised name prefix: when a name is set, prepend it to a subset
+        // of the greeting pool so they feel personal without being repetitive.
+        var name = _userName;
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            var tod2 = TimeOfDay(now.Hour);
+
+            messages.Add($"Good {tod2}, {name}!");
+            messages.Add($"Hey {name}! Ready to build?");
+            messages.Add($"Welcome back, {name}!");
+            messages.Add($"Let's go, {name}!");
+
+            // Additional personalised greetings
+            messages.Add($"Great to see you again, {name}!");
+            messages.Add($"Ready for another session, {name}?");
+            messages.Add($"Hope you're feeling productive today, {name}!");
+            messages.Add($"Time to make something awesome, {name}!");
+            messages.Add($"Locked in and ready, {name}?");
+            messages.Add($"Good to have you back, {name}.");
+            messages.Add($"Let's ship something great today, {name}!");
+            messages.Add($"Your workspace is ready, {name}.");
+        }
 
         // ── 1. Holiday / special day ──────────────────────────────────────────
         var holiday = GetHolidayEntry(now, country);
@@ -4035,6 +4475,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void SaveSettings()
     {
+        if (_suppressSettingsSave) return;
+
         // Snapshot all UI-thread-owned state here, before the background task,
         // so we don't access ObservableCollections or bound properties from a background thread.
         var snapshot = new AppSettings
@@ -4054,6 +4496,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             UserCountry                             = _userCountry,
             UserHemisphere                          = _userHemisphere,
             UserTimezoneOffset                      = _userTimezoneOffset,
+            UserName                                = _userName,
             OpenTabPaths = OpenTabs
                 .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
                 .Select(tab => tab.Path)
@@ -4165,9 +4608,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // ApplyThemeToEditor(), which touches the AvaloniaEdit TextEditor before
         // it has been fully laid out, but we CAN silently resolve the accent hex
         // so AccentBrush is correct when bindings first read it.
+        //
+        // WindowsAccentPreviewBrush must also be initialised here from the live
+        // registry value. Without this it stays at its field-initialiser default
+        // (#0078D4) until the poll timer fires ~2 s later, causing the Windows
+        // blob in Settings to flash the wrong colour on every launch.
+        var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
+        try { WindowsAccentPreviewBrush = Brush.Parse(windowsHex); }
+        catch { WindowsAccentPreviewBrush = Brush.Parse("#0078D4"); }
+
         var resolvedAccent = _accentColorMode switch
         {
-            "windows" => GetWindowsAccentColor() ?? _themeAccentHex,
+            "windows" => windowsHex,
             "custom"  => _customAccentHex,
             _         => _themeAccentHex,  // "kodo" - use the theme's own accent
         };
@@ -4845,29 +5297,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Opened -= MainWindow_OnOpened;
 
-        if (IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0)
+        // Suppress saves only during the automated tab-restore and startup-file
+        // open sequence. CollectionChanged / ActiveEditorTab fire SaveSettings()
+        // on every tab, but at that point the tab list is still being built, so
+        // each intermediate save would overwrite OpenTabPaths with a partial set.
+        // The flag is cleared in a finally block so an exception can never leave
+        // it permanently set (which would silently disable all future saves).
+        try
         {
-            foreach (var path in _startupOpenTabPaths)
-            {
-                await OpenFileFromPathAsync(path);
-            }
+            _suppressSettingsSave = true;
 
-            if (!string.IsNullOrWhiteSpace(_startupActiveTabPath))
+            if (IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0)
             {
-                var activeTab = OpenTabs.FirstOrDefault(tab =>
-                    !tab.IsUntitled &&
-                    string.Equals(tab.Path, _startupActiveTabPath, StringComparison.OrdinalIgnoreCase));
-                if (activeTab is not null)
+                foreach (var path in _startupOpenTabPaths)
                 {
-                    ActivateTab(activeTab);
+                    await OpenFileFromPathAsync(path);
+                }
+
+                if (!string.IsNullOrWhiteSpace(_startupActiveTabPath))
+                {
+                    var activeTab = OpenTabs.FirstOrDefault(tab =>
+                        !tab.IsUntitled &&
+                        string.Equals(tab.Path, _startupActiveTabPath, StringComparison.OrdinalIgnoreCase));
+                    if (activeTab is not null)
+                    {
+                        ActivateTab(activeTab);
+                    }
                 }
             }
-        }
 
-        // Open the file passed on the command line (e.g. via "Open with" or double-click)
-        if (!string.IsNullOrWhiteSpace(_startupFilePath))
+            // Open the file passed on the command line (e.g. via "Open with" or double-click)
+            if (!string.IsNullOrWhiteSpace(_startupFilePath))
+            {
+                await OpenFileFromPathAsync(_startupFilePath);
+            }
+        }
+        finally
         {
-            await OpenFileFromPathAsync(_startupFilePath);
+            // Re-enable saves and do one clean write now that the tab list is complete.
+            _suppressSettingsSave = false;
+            SaveSettings();
         }
 
         if (_isFirstLaunch && !_hasCompletedTutorial)
@@ -5285,6 +5754,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenTutorialButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        _tutorialOpenedFromSettings = true;
         TutorialStepIndex = 0;
         NavigateTo(Page.Tutorial);
     }
@@ -5393,6 +5863,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (sender is Control { Tag: string themeName })
             ApplyTheme(themeName);
     }
+
+    // Convenience handlers used by the tutorial setup step's theme buttons.
+    private void ThemeDarkButton_OnClick(object? sender, RoutedEventArgs e)  => ApplyTheme("Dark");
+    private void ThemeLightButton_OnClick(object? sender, RoutedEventArgs e) => ApplyTheme("Light");
 
     private async void FileTreeItem_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -7195,6 +7669,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(TutorialHighlightThree));
         OnPropertyChanged(nameof(CanGoToPreviousTutorialStep));
         OnPropertyChanged(nameof(TutorialPrimaryButtonText));
+        OnPropertyChanged(nameof(IsTutorialSetupStep));
+        OnPropertyChanged(nameof(IsNotTutorialSetupStep));
+        OnPropertyChanged(nameof(IsTutorialWelcomeStep));
+        OnPropertyChanged(nameof(IsNotTutorialWelcomeStep));
+        OnPropertyChanged(nameof(IsTutorialHeaderVisible));
     }
 
     private void CompleteTutorialAndReturnHome()
@@ -7461,6 +7940,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         try
         {
+            _tutorialOpenedFromSettings = false;
             TutorialStepIndex = 0;
             NavigateTo(Page.Tutorial);
         }
@@ -7615,6 +8095,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public string? UserCountry        { get; set; }
         public int     UserHemisphere     { get; set; }
         public string? UserTimezoneOffset { get; set; }
+        public string? UserName         { get; set; }
     }
 
     public sealed class RecentFileEntry
