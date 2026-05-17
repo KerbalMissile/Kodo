@@ -2904,17 +2904,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string TutorialTitle => CurrentTutorialStep.Title;
 
-    public string TutorialBody => CurrentTutorialStep.Body;
+    // Step 5 ("Set up") body contains "accent colour" — swap for US users.
+    public string TutorialBody => IsAmericanEnglish
+        ? CurrentTutorialStep.Body.Replace("accent colour", "accent color")
+        : CurrentTutorialStep.Body;
 
     public string TutorialShortcutText => CurrentTutorialStep.Shortcut;
 
-    public string TutorialSpotlightTitle => CurrentTutorialStep.SpotlightTitle;
+    // Step 4 ("Settings") SpotlightTitle is "Personalize the experience" in the static array.
+    // Step 5 ("Set up") SpotlightTitle is "Why personalise?" in the static array.
+    // Swap to the correct regional form for each.
+    public string TutorialSpotlightTitle => TutorialStepIndex switch
+    {
+        4 => IsAmericanEnglish ? "Personalize the experience"  : "Personalise the experience",
+        5 => IsAmericanEnglish ? "Why personalize?"            : "Why personalise?",
+        _ => CurrentTutorialStep.SpotlightTitle,
+    };
 
     public string TutorialHighlightOne => CurrentTutorialStep.HighlightOne;
 
-    public string TutorialHighlightTwo => CurrentTutorialStep.HighlightTwo;
+    // Step 4 ("Settings") HighlightTwo contains "tab behavior" — swap for non-US users.
+    public string TutorialHighlightTwo => (!IsAmericanEnglish && TutorialStepIndex == 4)
+        ? CurrentTutorialStep.HighlightTwo.Replace("tab behavior", "tab behaviour")
+        : CurrentTutorialStep.HighlightTwo;
 
-    public string TutorialHighlightThree => CurrentTutorialStep.HighlightThree;
+    // Step 5 ("Set up") HighlightThree contains "accent colour" — swap for US users.
+    public string TutorialHighlightThree => IsAmericanEnglish
+        ? CurrentTutorialStep.HighlightThree.Replace("accent colour", "accent color")
+        : CurrentTutorialStep.HighlightThree;
 
     public bool CanGoToPreviousTutorialStep => TutorialStepIndex > 0;
 
@@ -3255,9 +3272,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _userCountry = value.ToUpperInvariant();
             _welcomeMessagesCache = null;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsAmericanEnglish));
+            OnPropertyChanged(nameof(LabelAccentColour));
+            OnPropertyChanged(nameof(LabelPersonalization));
+            OnPropertyChanged(nameof(LabelPersonalizationDescription));
+            OnPropertyChanged(nameof(TutorialSpotlightTitle));
+            OnPropertyChanged(nameof(TutorialBody));
+            OnPropertyChanged(nameof(TutorialHighlightOne));
+            OnPropertyChanged(nameof(TutorialHighlightThree));
             SaveSettings();
         }
     }
+
+    /// <summary>
+    /// True when the user's country is US, driving American English spelling
+    /// (e.g. "Color" / "Personalization") instead of the default British/Canadian spelling.
+    /// </summary>
+    public bool IsAmericanEnglish => _userCountry == "US";
+
+    // Regional spelling labels — swap between American and British/Canadian English
+    // based on the selected country. US gets "Color" / "Personalization" / "personalize";
+    // everyone else gets "Colour" / "Personalization" — wait, "Personalisation" is the
+    // British form but "Personalization" is widely accepted internationally; only
+    // "colour" vs "color" and "personalise" vs "personalize" are the real visible splits.
+    public string LabelAccentColour        => IsAmericanEnglish ? "Accent Color"      : "Accent Colour";
+    public string LabelPersonalization     => IsAmericanEnglish ? "Personalization"   : "Personalisation";
+    public string LabelPersonalizationDescription => IsAmericanEnglish
+        ? "These settings personalize the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible."
+        : "These settings personalise the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible.";
 
     /// <summary>
     /// Hemisphere override: 0 = auto-detect from country, 1 = northern, 2 = southern.
@@ -3464,7 +3506,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (country == "GB")
         {
             if (m == 8 && dow == DayOfWeek.Monday && d >= 25)
-                return new("August Bank Holiday", "Happy Bank Holiday! Long weekend");
+                return new("August Bank Holiday", "Happy Bank Holiday! Long weekend!");
             if (m == 5 && dow == DayOfWeek.Monday && d >= 1 && d <= 7)
                 return new("Early May Bank Holiday", "Happy May Bank Holiday! Long weekend!");
             if (m == 5 && dow == DayOfWeek.Monday && d >= 25)
@@ -3894,22 +3936,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         // ── 1. Holiday / special day ──────────────────────────────────────────
+        // Added multiple times so that on a special day the relevant greeting
+        // has a meaningfully higher chance of being shown than any single
+        // generic message, without making it a certainty.
         var holiday = GetHolidayEntry(now, country);
         if (holiday?.Greeting is not null)
+        {
             messages.Add(holiday.Greeting);
+            messages.Add(holiday.Greeting);
+            messages.Add(holiday.Greeting);
+        }
 
         // ── 2. Long weekend hints ─────────────────────────────────────────────
+        // Also weighted up so long-weekend messages feel timely when applicable.
         if (IsLongWeekendEve(now, country))
         {
             messages.Add("Long weekend starts tomorrow - one more push!");
+            messages.Add("Long weekend starts tomorrow - one more push!");
             messages.Add("Almost there! Long weekend is just around the corner.");
+            messages.Add("Almost there! Long weekend is just around the corner.");
+            messages.Add($"Happy {dayName}! The long weekend is almost here.");
             messages.Add($"Happy {dayName}! The long weekend is almost here.");
         }
 
         if (IsPostLongWeekend(now, country))
         {
             messages.Add("Back from the long weekend - fresh start!");
+            messages.Add("Back from the long weekend - fresh start!");
             messages.Add("Post-long-weekend - let's ease in.");
+            messages.Add("Post-long-weekend - let's ease in.");
+            messages.Add("Hope the long weekend recharged you. Ready to build?");
             messages.Add("Hope the long weekend recharged you. Ready to build?");
         }
 
@@ -3942,7 +3998,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             messages.Add("Monday's for the brave. Welcome back.");
         }
 
-        // ── 4. Time-of-day flavour ─────────────────────────────────────────────
+        // ── 4. Time-of-day flavour ────────────────────────────────────────────
         if (tod != "night")
         {
             messages.Add($"Good {tod}!");
@@ -4007,15 +4063,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         });
 
         // ── 6. Neutral standby messages ───────────────────────────────────────
-        messages.Add("Welcome back!");
-        messages.Add("Great to see you!");
-        messages.Add("Ready to code?");
-        messages.Add("Let's build something!");
-        messages.Add("What are we building today?");
-        messages.Add("Back at it again!");
-        messages.Add("Let's get to work!");
-        messages.Add("Hey there!");
-        messages.Add($"Happy {dayName}!");
+        // Excluded when a name is set so the pool isn't diluted by messages
+        // that could have addressed the user by name instead.
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            messages.Add("Welcome back!");
+            messages.Add("Great to see you!");
+            messages.Add("Ready to code?");
+            messages.Add("Let's build something!");
+            messages.Add("What are we building today?");
+            messages.Add("Back at it again!");
+            messages.Add("Let's get to work!");
+            messages.Add("Hey there!");
+            messages.Add($"Happy {dayName}!");
+        }
 
         return messages.ToArray();
     }
@@ -4034,7 +4095,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string[]? _welcomeMessagesCache;
 
     // Evaluated once per launch: true one in a million times, showing the "Code fast. Stay light" tagline.
-    private readonly bool _isTaglineGreeting = Random.Shared.Next(1_000_000) == 0;
+    private readonly bool _isTaglineGreeting = Random.Shared.Next(1_500) == 0;
     public bool IsTaglineGreeting => _isTaglineGreeting;
 
     public string WelcomeMessage
@@ -4969,7 +5030,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     Spacing  = 14,
                     Children =
                     {
-                        new TextBlock { Text = "Choose an accent colour", FontSize = 15,
+                        new TextBlock { Text = IsAmericanEnglish ? "Choose an accent color" : "Choose an accent colour", FontSize = 15,
                             FontWeight = FontWeight.SemiBold, Foreground = PrimaryTextBrush },
                         svCanvas,
                         hueCanvas,

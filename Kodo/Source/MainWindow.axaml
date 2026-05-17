@@ -1069,7 +1069,7 @@
                                          IsVisible="{Binding IsTaglineGreeting}">
                                     <TextBlock FontSize="32"
                                                FontWeight="Bold"
-                                               xml:space="preserve"><Run Foreground="{Binding PrimaryTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light</Run></TextBlock>
+                                               xml:space="preserve"><Run Foreground="{Binding PrimaryTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light.</Run></TextBlock>
                                 </Viewbox>
                             </StackPanel>
                             <Border Padding="26"
@@ -2619,7 +2619,7 @@
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
                                            VerticalAlignment="Center"
-                                           Text="Personalization" />
+                                           Text="{Binding LabelPersonalization}" />
                             </StackPanel>
 
                             <StackPanel Spacing="8">
@@ -2687,7 +2687,7 @@
                             </StackPanel>
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        TextWrapping="Wrap"
-                                       Text="These settings personalise the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible." />
+                                       Text="{Binding LabelPersonalizationDescription}" />
 
                             <Border Height="1"
                                     Background="{Binding SurfaceBorderBrush}" />
