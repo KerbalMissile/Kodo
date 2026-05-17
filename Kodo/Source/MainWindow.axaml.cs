@@ -4033,6 +4033,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // which are read from settings before DataContext is set.
     private string[]? _welcomeMessagesCache;
 
+    // Evaluated once per launch: true one in a million times, showing the "Code fast. Stay light" tagline.
+    private readonly bool _isTaglineGreeting = Random.Shared.Next(1_000_000) == 0;
+    public bool IsTaglineGreeting => _isTaglineGreeting;
+
     public string WelcomeMessage
     {
         get

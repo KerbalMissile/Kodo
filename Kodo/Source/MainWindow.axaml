@@ -1054,12 +1054,22 @@
                                 </Grid>
                                 <!-- Viewbox shrinks the text when it would overflow the
                                      480 px card, but never upscales it (DownOnly). -->
+                                <!-- Standard greeting (~999,999 in a million) -->
                                 <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
-                                         HorizontalAlignment="Left">
+                                         HorizontalAlignment="Left"
+                                         IsVisible="{Binding !IsTaglineGreeting}">
                                     <TextBlock FontSize="32"
                                                FontWeight="Bold"
                                                Foreground="{Binding PrimaryTextBrush}"
                                                Text="{Binding WelcomeMessage}" />
+                                </Viewbox>
+                                <!-- One-in-a-million tagline: "Code fast. Stay light" -->
+                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                         HorizontalAlignment="Left"
+                                         IsVisible="{Binding IsTaglineGreeting}">
+                                    <TextBlock FontSize="32"
+                                               FontWeight="Bold"
+                                               xml:space="preserve"><Run Foreground="{Binding PrimaryTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light</Run></TextBlock>
                                 </Viewbox>
                             </StackPanel>
                             <Border Padding="26"
@@ -2715,30 +2725,39 @@
                                            Text="About" />
                             </StackPanel>
 
-                            <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-                                <Border Width="3"
-                                        Height="48"
-                                        CornerRadius="2"
-                                        Background="{Binding AccentBrush}" />
-                                <Border Width="48"
-                                        Height="48"
-                                        CornerRadius="12"
-                                        ClipToBounds="True">
-                                    <Image Source="/Assets/kodo-logo.png"
-                                           Stretch="UniformToFill" />
-                                </Border>
-                                <StackPanel Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock FontSize="16"
-                                               FontWeight="SemiBold"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               Text="Kodo" />
-
+                            <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="0"
+                                            Orientation="Horizontal"
+                                            Spacing="14"
+                                            VerticalAlignment="Center">
+                                    <Border Width="3"
+                                            Height="48"
+                                            CornerRadius="2"
+                                            Background="{Binding AccentBrush}" />
+                                    <Border Width="48"
+                                            Height="48"
+                                            CornerRadius="12"
+                                            ClipToBounds="True">
+                                        <Image Source="/Assets/kodo-logo.png"
+                                               Stretch="UniformToFill" />
+                                    </Border>
+                                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock FontSize="16"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Kodo" />
+                                        <TextBlock FontSize="12"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   Text="Code fast. Stay light." />
+                                    </StackPanel>
                                 </StackPanel>
-                                <TextBlock FontSize="13"
+                                <TextBlock Grid.Column="1"
+                                           FontSize="13"
                                            Foreground="{Binding MutedTextBrush}"
                                            VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
                                            Text="{Binding CurrentAppVersionDisplay}" />
-                            </StackPanel>
+                            </Grid>
 
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        Text="Built by KerbalMissile and SS-YYC." />
