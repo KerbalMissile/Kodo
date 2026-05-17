@@ -104,6 +104,11 @@ public class EditorTab : INotifyPropertyChanged
 
     public string TabTitle => IsDirty ? $"{DisplayName} •" : DisplayName;
 
+    // Remembers the first visible line so switching tabs restores scroll position.
+    // Stored as a 1-based line number so it is layout-independent and can be applied
+    // immediately via ScrollToLine without waiting for a layout pass.
+    public int TopLineNumber { get; set; } = 1;
+
     public void Rename(string path, string displayName)
     {
         Path = path;

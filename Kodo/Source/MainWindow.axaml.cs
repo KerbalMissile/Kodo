@@ -586,6 +586,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isFindPanelVisible;
     private bool _isFileCorrupted;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
+
+    // Caches compiled KodoHighlightingDefinition instances by LoadedExtension identity.
+    // Building one involves compiling multiple Regex objects (RegexOptions.Compiled), which
+    // is expensive enough to cause a noticeable delay on every tab switch. The cache lives
+    // for the session and is cleared whenever extensions are reloaded so it never goes stale.
+    private readonly Dictionary<LoadedExtension, KodoHighlightingDefinition> _highlightingCache =
+        new(ReferenceEqualityComparer.Instance);
     private string _findText = string.Empty;
     private int _tutorialStepIndex;
 
@@ -982,6 +989,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void LoadExtensions()
     {
+        // Compiled highlighting definitions are keyed by LoadedExtension reference.
+        // Extension reload creates new instances, so the old entries are now orphaned;
+        // drop them here to avoid a memory leak and ensure fresh definitions are built.
+        _highlightingCache.Clear();
+
         var loadedExtensions = new List<LoadedExtension>();
         var extensionLoadErrors = new List<string>();
         var searchPaths = GetExtensionSearchPaths().ToList();
@@ -2394,7 +2406,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ApplySyntaxHighlighting(LoadedExtension ext)
     {
         if (EditorTextBox is null) return;
-        EditorTextBox.SyntaxHighlighting = new KodoHighlightingDefinition(ext);
+        if (!_highlightingCache.TryGetValue(ext, out var definition))
+        {
+            definition = new KodoHighlightingDefinition(ext);
+            _highlightingCache[ext] = definition;
+        }
+        EditorTextBox.SyntaxHighlighting = definition;
         ConfigureRainbowBrackets(ext);
         ConfigureInterpolatedStrings(ext);
     }
@@ -5198,6 +5215,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         ActiveEditorTab.Content = EditorTextBox.Document.Text;
         ActiveEditorTab.IsDirty = _isDirty;
+        ActiveEditorTab.TopLineNumber = EditorTextBox.TextArea.TextView.GetDocumentLineByVisualTop(
+            EditorTextBox.TextArea.TextView.ScrollOffset.Y)?.LineNumber ?? 1;
         if (!ActiveEditorTab.IsUntitled && !string.IsNullOrWhiteSpace(_currentFilePath))
             ActiveEditorTab.Path = _currentFilePath;
     }
@@ -5231,6 +5250,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
         SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
+        // Restore scroll position synchronously. ScrollToLine works immediately after
+        // SetEditorContent because it operates on line numbers rather than pixel offsets,
+        // so no layout pass is needed and there is no visible delay on tab switch.
+        EditorTextBox.ScrollToLine(tab.TopLineNumber);
         UpdateCurrentDocumentPresentation();
 
         // Directly set the backing field before NavigateTo so the bail-early
