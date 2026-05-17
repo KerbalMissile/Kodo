@@ -41,6 +41,64 @@ using Kodo.Models;
 
 namespace Kodo;
 
+// Compares strings the way humans expect: "1.9" < "1.10" < "1.11"
+// by splitting each string into alternating non-digit / digit chunks and
+// comparing digit chunks numerically instead of lexicographically.
+public sealed class NaturalSortComparer : IComparer<string>
+{
+    public static readonly NaturalSortComparer OrdinalIgnoreCase = new();
+
+    public int Compare(string? x, string? y)
+    {
+        if (ReferenceEquals(x, y)) return 0;
+        if (x is null) return -1;
+        if (y is null) return  1;
+
+        var xi = 0;
+        var yi = 0;
+
+        while (xi < x.Length && yi < y.Length)
+        {
+            var xIsDigit = char.IsAsciiDigit(x[xi]);
+            var yIsDigit = char.IsAsciiDigit(y[yi]);
+
+            if (xIsDigit && yIsDigit)
+            {
+                // Skip leading zeros so "007" == "7" numerically
+                while (xi < x.Length && x[xi] == '0') xi++;
+                while (yi < y.Length && y[yi] == '0') yi++;
+
+                // Find end of digit run in both strings
+                var xStart = xi;
+                var yStart = yi;
+                while (xi < x.Length && char.IsAsciiDigit(x[xi])) xi++;
+                while (yi < y.Length && char.IsAsciiDigit(y[yi])) yi++;
+
+                var xLen = xi - xStart;
+                var yLen = yi - yStart;
+
+                // Longer digit sequence is numerically larger
+                if (xLen != yLen) return xLen.CompareTo(yLen);
+
+                // Same length: compare digit-by-digit
+                var cmp = string.Compare(x, xStart, y, yStart, xLen, StringComparison.Ordinal);
+                if (cmp != 0) return cmp;
+            }
+            else
+            {
+                // Non-digit chunk: plain case-insensitive char comparison
+                var cmp = char.ToUpperInvariant(x[xi])
+                              .CompareTo(char.ToUpperInvariant(y[yi]));
+                if (cmp != 0) return cmp;
+                xi++;
+                yi++;
+            }
+        }
+
+        return (x.Length - xi).CompareTo(y.Length - yi);
+    }
+}
+
 // Represents a single row in the file explorer tree
 public class FileTreeItem : INotifyPropertyChanged
 {
@@ -5583,12 +5641,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var dirs = Directory.GetDirectories(dirPath)
                 .Where(d => !Path.GetFileName(d).StartsWith('.'))
-                .OrderBy(d => Path.GetFileName(d), StringComparer.OrdinalIgnoreCase)
+                .OrderBy(d => Path.GetFileName(d), NaturalSortComparer.OrdinalIgnoreCase)
                 .ToArray();
 
             var files = Directory.GetFiles(dirPath)
                 .Where(f => !Path.GetFileName(f).StartsWith('.'))
-                .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+                .OrderBy(f => Path.GetFileName(f), NaturalSortComparer.OrdinalIgnoreCase)
                 .ToArray();
 
             return [.. dirs, .. files];
