@@ -2760,7 +2760,7 @@
                             </Grid>
 
                             <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       Text="Built by KerbalMissile and SS-YYC." />
+                                       Text="© 2026 KerbalMissile and SS-YYC. Licensed under KPL-v1.1." />
 
                             <Border IsVisible="{Binding IsNewerVersionAvailable}"
                                     Background="{Binding AccentBrush}"
