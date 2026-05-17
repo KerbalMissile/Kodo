@@ -414,7 +414,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string DefaultDiscordClientId = "1495509170756255744";
     private const string DefaultDiscordLargeImageKey = "kodo_logo";
     private const string DefaultDiscordLargeImageText = "Kodo";
-    private const string SettingsFileName = "settings.json";
+    private const string SettingsFileName = "kodosettings.json";
     private const string DiscordClientIdEnvironmentVariable = "KODO_DISCORD_CLIENT_ID";
     private const string AutoSaveSavedMessage = "Saved.";
     private const string AutoSaveSavingMessage = "Saving...";
@@ -2904,7 +2904,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string TutorialTitle => CurrentTutorialStep.Title;
 
-    // Step 5 ("Set up") body contains "accent colour" — swap for US users.
+    // Step 5 ("Set up") body contains "accent colour" - swap for US users.
     public string TutorialBody => IsAmericanEnglish
         ? CurrentTutorialStep.Body.Replace("accent colour", "accent color")
         : CurrentTutorialStep.Body;
@@ -2923,12 +2923,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string TutorialHighlightOne => CurrentTutorialStep.HighlightOne;
 
-    // Step 4 ("Settings") HighlightTwo contains "tab behavior" — swap for non-US users.
+    // Step 4 ("Settings") HighlightTwo contains "tab behavior" - swap for non-US users.
     public string TutorialHighlightTwo => (!IsAmericanEnglish && TutorialStepIndex == 4)
         ? CurrentTutorialStep.HighlightTwo.Replace("tab behavior", "tab behaviour")
         : CurrentTutorialStep.HighlightTwo;
 
-    // Step 5 ("Set up") HighlightThree contains "accent colour" — swap for US users.
+    // Step 5 ("Set up") HighlightThree contains "accent colour" - swap for US users.
     public string TutorialHighlightThree => IsAmericanEnglish
         ? CurrentTutorialStep.HighlightThree.Replace("accent colour", "accent color")
         : CurrentTutorialStep.HighlightThree;
@@ -3290,9 +3290,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     /// </summary>
     public bool IsAmericanEnglish => _userCountry == "US";
 
-    // Regional spelling labels — swap between American and British/Canadian English
+    // Regional spelling labels - swap between American and British/Canadian English
     // based on the selected country. US gets "Color" / "Personalization" / "personalize";
-    // everyone else gets "Colour" / "Personalization" — wait, "Personalisation" is the
+    // everyone else gets "Colour" / "Personalization" - wait, "Personalisation" is the
     // British form but "Personalization" is widely accepted internationally; only
     // "colour" vs "color" and "personalise" vs "personalize" are the real visible splits.
     public string LabelAccentColour        => IsAmericanEnglish ? "Accent Color"      : "Accent Colour";
