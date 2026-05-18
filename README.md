@@ -1,69 +1,73 @@
 # Kodo
+### Code fast. Stay light.
 
-<img width="540" height="540" alt="KodoLogo" src="https://github.com/user-attachments/assets/e044cdac-5434-41d7-b08f-20897a1ba771" />
-<br>
-<img src="https://img.shields.io/github/downloads/KerbalMissile/Kodo/total">
+<p align="center">
+  <img width="160" height="160" alt="Kodo Logo" src="https://github.com/user-attachments/assets/e044cdac-5434-41d7-b08f-20897a1ba771" />
+</p>
 
-<img src="https://img.shields.io/github/commit-activity/t/KerbalMissile/Kodo">
+<p align="center">
+  <strong>A fast, lightweight code editor. No accounts. No ads. Free forever.</strong>
+</p>
 
-<img src="https://img.shields.io/github/v/tag/KerbalMissile/Kodo?label=latest%20version">
-
-
----
-
-**Description:**
-
-Kodo is a fast, lightweight IDE built by KerbalMissile and SS-YYC. It’s designed for simplicity - quick compiler setup, real-time collaborative editing, and zero friction: no accounts, no ads, completely free forever. Kodo is released under the [Kodo Public License v1.1](LICENSE.md).
-
-**Join the Discord Server!**
-https://discord.gg/cUQ6C88Z9C
+<p align="center">
+  <img src="https://img.shields.io/github/downloads/KerbalMissile/Kodo/total" alt="Downloads" />
+  <img src="https://img.shields.io/github/commit-activity/t/KerbalMissile/Kodo" alt="Commits" />
+  <img src="https://img.shields.io/github/v/tag/KerbalMissile/Kodo?label=latest%20version" alt="Latest Version" />
+</p>
 
 ---
 
-**Demo:**
-- [Youtube](https://youtu.be/jYXhelB9CfM)
+Kodo is built by [KerbalMissile](https://github.com/KerbalMissile) and [SS-YYC](https://github.com/SS-YYC) around a single idea: your editor should stay out of your way. Quick setup, syntax highlighting via extensions, and zero friction from launch to coding.
+
+Released under the [Kodo Public License v1.1](LICENSE.md).
+
+**[▶ Watch the Demo](https://youtu.be/jYXhelB9CfM)  ·  [🌐 Website](https://kerbalmissile.github.io/Kodo-Website/)  ·  [💬 Join Discord](https://discord.gg/cUQ6C88Z9C)**
 
 ---
 
-**Website:**
-- https://kerbalmissile.github.io/Kodo-Website/
+## Features
+
+| | |
+|---|---|
+| 🧩 **Extension Marketplace** | Install syntax highlighting and themes via `.kox` files |
+| 🎨 **Themes** | Built-in Dark, Light, and High Contrast modes + custom extension themes |
+| 📁 **Folder Support** | Open and browse entire project folders in the file explorer |
+| 💾 **Autosave** | Configurable autosave so you never lose work |
+| 🔤 **Syntax Highlighting** | Language support delivered through the extension system |
+| 🕓 **Recent Files** | Jump back into recent files from the home screen |
+| 🎮 **Discord Rich Presence** | Show what you're working on in Discord |
+| ⌨️ **Smart Editing** | Auto-closing brackets, auto-indent, and find-in-file |
+| 🖼️ **Image Preview** | View image files directly in the editor |
+| 🔔 **Update Notifications** | In-app banners when a new version or extension update is available |
+
+**Coming soon:** real-time collaborative editing · downloadable compilers · integrated terminal · and much more!
 
 ---
 
-**Release Status:**
-Kodo is currently in a Beta release; expect bugs and unfinished features. We are slowly working upon it until it reaches a point where we can do a full release with many extensions, some compilers, and possibly even collaboration. If there are bugs, feel free to report them in the [Issues](https://github.com/KerbalMissile/Kodo/issues) section of the repository and we will fix them!
+## Getting Started
+
+Releases are also available through installers on the [Releases page](https://github.com/KerbalMissile/Kodo/releases) - download, install, and run.
 
 ---
 
-**Current Features:**
-- Extension Marketplace (`.kox` file extension).
-- Dark / Light mode with High Contrast themes
-- Folder support
-- File Read / Write support
-- File Save / Load support
-- New File Creation Support
-- Discord Rich Presence Support
-- Autosave Functionality
-- Syntax Highlighting via `.kox` extensions
-- Recently Edited Files Section
-- Automatically formatted brackets and indents
+## Release Status
 
-**Planned Features:**
-- Multi-person file editing in real time, at the same time
-- Downloadable compilers
-- Terminal integration
+Kodo is currently in **Beta**. Expect rough edges and unfinished features. Bug reports in [Issues](https://github.com/KerbalMissile/Kodo/issues) are genuinely helpful right now - we read and act on every one.
 
 ---
 
-**Contributing:**
+## Contributing
 
-To download, run, and edit Kodo's source code, follow these steps:
+Contributions are welcome. The best ways to help:
 
-1. Download [.NET](https://dotnet.microsoft.com/en-us/download) minimum version 8
-2. Run `dotnet new install Avalonia.Templates`.
-3. Then change your directory to Kodo's Source folder `cd path\to\Kodo\Source`.
-4. To run it, do `dotnet run` and it should take a few seconds then open up.
+- **Bug reports** - open an Issue with steps to reproduce
+- **Pull Requests** - keep them focused; one change per PR
+- **Extensions** - build a `.kox` and submit it to the marketplace
 
-Kodo is always welcome to any Issues or Pull Requests made by the community, we appreciate and encourage any help, feedback, or anything else.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full details, including how to build and submit extensions.
 
-For further information please see [Contributing](CONTRIBUTING.md).
+---
+
+## License
+
+© 2026 KerbalMissile and SS-YYC. Licensed under the [Kodo Public License v1.1](LICENSE.md).
