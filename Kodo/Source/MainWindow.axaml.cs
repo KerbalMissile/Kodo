@@ -4439,6 +4439,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush SurfaceBorderBrush    { get; private set; } = Brush.Parse("#2B2B2B");
     public IBrush AccentBrush           { get; private set; } = Brush.Parse("#8C00FF");
 
+    // Black or white — whichever contrasts better against the current AccentBrush.
+    // Used wherever text or icons sit directly on an AccentBrush background so that
+    // dark accent colours (e.g. black, navy) don't make content invisible.
+    public IBrush AccentForegroundBrush { get; private set; } = Brushes.White;
+
+    // Returns Brushes.White or Brushes.Black depending on which gives better contrast
+    // against the supplied brush, using the WCAG relative-luminance formula.
+    private static IBrush GetAccentForeground(IBrush accent)
+    {
+        if (accent.ToImmutable() is not ISolidColorBrush solid)
+            return Brushes.White;
+        var c = solid.Color;
+        // Convert sRGB channels to linear light
+        static double Lin(byte channel)
+        {
+            var s = channel / 255.0;
+            return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
+        }
+        var L = 0.2126 * Lin(c.R) + 0.7152 * Lin(c.G) + 0.0722 * Lin(c.B);
+        // White (L=1) contrast ratio vs L: (1.05)/(L+0.05)
+        // Black (L=0) contrast ratio vs L: (L+0.05)/(0.05)
+        // Pick whichever is higher
+        return (1.05 / (L + 0.05)) >= ((L + 0.05) / 0.05)
+            ? Brushes.White
+            : Brushes.Black;
+    }
+
     // Always reflects the live Windows accent colour; used by the Windows blob
     // preview even when another accent mode is active.
     public IBrush WindowsAccentPreviewBrush { get; private set; } =
@@ -4916,6 +4943,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
         try { AccentBrush = Brush.Parse(resolvedAccent); }
         catch { AccentBrush = Brush.Parse("#8C00FF"); }
+        AccentForegroundBrush = GetAccentForeground(AccentBrush);
     }
 
     private void ApplyTheme(string themeName)
@@ -5018,7 +5046,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             try { AccentBrush = Brush.Parse(_themeAccentHex); }
             catch { AccentBrush = Brush.Parse("#8C00FF"); }
+            AccentForegroundBrush = GetAccentForeground(AccentBrush);
             OnPropertyChanged(nameof(AccentBrush));
+            OnPropertyChanged(nameof(AccentForegroundBrush));
             ApplyThemeToEditor();
             return;
         }
@@ -5031,7 +5061,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
         try { AccentBrush = Brush.Parse(hex); }
         catch { AccentBrush = Brush.Parse("#8C00FF"); }
+        AccentForegroundBrush = GetAccentForeground(AccentBrush);
         OnPropertyChanged(nameof(AccentBrush));
+        OnPropertyChanged(nameof(AccentForegroundBrush));
         ApplyThemeToEditor();
     }
 
@@ -5275,7 +5307,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                             {
                                 CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
                                     () => dialog!.Close()),
-                                CreateDialogButton("Apply", AccentBrush, AccentBrush, Brushes.White,
+                                CreateDialogButton("Apply", AccentBrush, AccentBrush, AccentForegroundBrush,
                                     () => { confirmed = true; dialog!.Close(); }),
                             }
                         }
@@ -5595,6 +5627,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void MainWindow_OnOpened(object? sender, EventArgs e)
     {
         Opened -= MainWindow_OnOpened;
+
+        // ApplyThemeBrushes() (called during the constructor) resolves AccentBrush
+        // correctly but intentionally skips ApplyThemeToEditor() because the
+        // AvaloniaEdit TextEditor isn't fully laid out yet at that point.
+        // Now that the window is open and the editor exists, apply the editor theme
+        // so that SelectionBrush (and other editor-specific properties) reflect the
+        // actual accent colour rather than AvaloniaEdit's built-in defaults.
+        ApplyThemeToEditor();
 
         // Suppress saves only during the automated tab-restore and startup-file
         // open sequence. CollectionChanged / ActiveEditorTab fire SaveSettings()
@@ -6560,7 +6600,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CaretBrush       = PrimaryTextBrush,
         };
 
-        var confirmButton = CreateDialogButton("Rename", AccentBrush, AccentBrush, Brushes.White, () =>
+        var confirmButton = CreateDialogButton("Rename", AccentBrush, AccentBrush, AccentForegroundBrush, () =>
         {
             result = inputBox.Text?.Trim();
             dialog!.Close();
@@ -8167,7 +8207,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush, cancelAction),
                 CreateDialogButton("Discard", ButtonHoverBrush, SurfaceBorderBrush, PrimaryTextBrush, discardAction),
-                CreateDialogButton("Save", AccentBrush, AccentBrush, Brushes.White, saveAction)
+                CreateDialogButton("Save", AccentBrush, AccentBrush, AccentForegroundBrush, saveAction)
             }
         };
 
@@ -8363,7 +8403,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Padding             = new Thickness(20, 8),
                 Background          = AccentBrush,
-                Foreground          = Brushes.White,
+                Foreground          = AccentForegroundBrush,
                 BorderThickness     = new Thickness(0),
                 CornerRadius        = new CornerRadius(8),
             };

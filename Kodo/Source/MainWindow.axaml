@@ -40,7 +40,7 @@
 
         <Style Selector="Button.marketaction">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
-            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
@@ -159,7 +159,7 @@
         </Style>
 
         <Style Selector="Button.activity:pressed">
-            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
         </Style>
 
         <Style Selector="Button.activity TextBlock">
@@ -217,7 +217,7 @@
             <Setter Property="Background" Value="{Binding AccentBrush}" />
         </Style>
         <Style Selector="Button.statusitem:pressed">
-            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
         </Style>
 
         <Style Selector="Button.editortab">
@@ -715,12 +715,12 @@
                                     Spacing="10"
                                     VerticalAlignment="Center">
                             <TextBlock FontSize="13"
-                                       Foreground="White"
+                                       Foreground="{Binding AccentForegroundBrush}"
                                        VerticalAlignment="Center"
                                        Text="A new version of Kodo is available -" />
                             <TextBlock FontSize="13"
                                        FontWeight="SemiBold"
-                                       Foreground="White"
+                                       Foreground="{Binding AccentForegroundBrush}"
                                        VerticalAlignment="Center"
                                        Text="{Binding LatestReleaseTag}" />
                         </StackPanel>
@@ -734,7 +734,7 @@
                         <Button Grid.Column="2"
                                 Background="Transparent"
                                 BorderThickness="0"
-                                Foreground="White"
+                                Foreground="{Binding AccentForegroundBrush}"
                                 Padding="6,4"
                                 VerticalAlignment="Center"
                                 Click="DismissUpdateBanner_OnClick"
@@ -750,7 +750,7 @@
                         Padding="18,8">
                     <Grid ColumnDefinitions="*,Auto,Auto">
                         <TextBlock FontSize="13"
-                                   Foreground="White"
+                                   Foreground="{Binding AccentForegroundBrush}"
                                    VerticalAlignment="Center"
                                    Text="{Binding ExtensionUpdatesBannerText}" />
                         <Button Grid.Column="1"
@@ -762,7 +762,7 @@
                         <Button Grid.Column="2"
                                 Background="Transparent"
                                 BorderThickness="0"
-                                Foreground="White"
+                                Foreground="{Binding AccentForegroundBrush}"
                                 Padding="6,4"
                                 VerticalAlignment="Center"
                                 Click="DismissExtensionUpdateBanner_OnClick"
@@ -2056,7 +2056,7 @@
                                                                VerticalAlignment="Center"
                                                                FontSize="14"
                                                                FontWeight="SemiBold"
-                                                               Foreground="White"
+                                                               Foreground="{Binding #RootWindow.AccentForegroundBrush}"
                                                                Text="{Binding NameAbbreviation}" />
                                                 </Border>
                                                 <Border Width="48" Height="48" CornerRadius="8" Margin="0,0,16,0"
@@ -2141,7 +2141,7 @@
                                                                VerticalAlignment="Center"
                                                                FontSize="14"
                                                                FontWeight="SemiBold"
-                                                               Foreground="White"
+                                                               Foreground="{Binding #RootWindow.AccentForegroundBrush}"
                                                                Text="{Binding NameAbbreviation}" />
                                                 </Border>
                                                 <Border Width="48" Height="48" CornerRadius="8"
@@ -2769,12 +2769,12 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <TextBlock FontSize="13"
-                                                   Foreground="White"
+                                                   Foreground="{Binding AccentForegroundBrush}"
                                                    VerticalAlignment="Center"
                                                    Text="Update available -" />
                                         <TextBlock FontSize="13"
                                                    FontWeight="SemiBold"
-                                                   Foreground="White"
+                                                   Foreground="{Binding AccentForegroundBrush}"
                                                    VerticalAlignment="Center"
                                                    Text="{Binding LatestReleaseTag}" />
                                     </StackPanel>
