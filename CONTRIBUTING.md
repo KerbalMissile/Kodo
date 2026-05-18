@@ -45,7 +45,7 @@ Look at the existing code and match it. A few things to keep consistent:
   ```
   // April 24th, 2026 - YourName - Brief description of what you changed
   ```
-- Keep comments descriptive but not excessive — explain *why*, not just *what*
+- Keep comments descriptive but not excessive - explain *why*, not just *what*
 - Don't leave dead code or commented-out blocks behind
 
 ---
