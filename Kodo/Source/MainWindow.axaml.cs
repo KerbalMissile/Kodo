@@ -3694,7 +3694,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (m == 11 && d == 11) return new("Remembrance Day", "Lest we forget. Happy coding.");
             // Victoria Day: last Monday before May 25
             if (m == 5 && dow == DayOfWeek.Monday && d >= 18 && d <= 24)
-                return new("Victoria Day", "Happy Victoria Day! Long weekend!");
+                return new("Victoria Day", "Happy Victoria Day! Enjoy the long weekend.");
             // Labour Day: first Monday of September
             if (m == 9 && dow == DayOfWeek.Monday && d <= 7)
                 return new("Labour Day", "Happy Labour Day! Enjoy the long weekend.");
@@ -3725,18 +3725,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return new("MLK Day", "Happy Martin Luther King Jr. Day!");
             // Presidents' Day: third Monday of February
             if (m == 2 && dow == DayOfWeek.Monday && d >= 15 && d <= 21)
-                return new("Presidents' Day", "Happy Presidents' Day! Long weekend!");
+                return new("Presidents' Day", "Happy Presidents' Day! Enjoy the long weekend!");
         }
 
         // ── United Kingdom ────────────────────────────────────────────────────
         if (country == "GB")
         {
             if (m == 8 && dow == DayOfWeek.Monday && d >= 25)
-                return new("August Bank Holiday", "Happy Bank Holiday! Long weekend!");
+                return new("August Bank Holiday", "Happy Bank Holiday! Enjoy the long weekend!");
             if (m == 5 && dow == DayOfWeek.Monday && d >= 1 && d <= 7)
-                return new("Early May Bank Holiday", "Happy May Bank Holiday! Long weekend!");
+                return new("Early May Bank Holiday", "Happy May Bank Holiday! Enjoy the long weekend!");
             if (m == 5 && dow == DayOfWeek.Monday && d >= 25)
-                return new("Spring Bank Holiday", "Happy Spring Bank Holiday! Long weekend!");
+                return new("Spring Bank Holiday", "Happy Spring Bank Holiday! Enjoy the long weekend!");
             if (m == 11 && d == 5)
                 return new("Bonfire Night", "Remember, remember the 5th of November!");
         }
@@ -4153,8 +4153,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // Additional personalised greetings
             messages.Add($"Great to see you again, {name}!");
             messages.Add($"Ready for another session, {name}?");
-            messages.Add($"Hope you're feeling productive today, {name}!");
-            messages.Add($"Time to make something awesome, {name}!");
+            messages.Add($"Time to be productive, {name}!");
+            messages.Add($"Time to build something great, {name}!");
             messages.Add($"Locked in and ready, {name}?");
             messages.Add($"Good to have you back, {name}.");
             messages.Add($"Let's ship something great today, {name}!");
@@ -4189,8 +4189,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             messages.Add("Back from the long weekend - fresh start!");
             messages.Add("Back from the long weekend - fresh start!");
-            messages.Add("Post-long-weekend - let's ease in.");
-            messages.Add("Post-long-weekend - let's ease in.");
+            messages.Add("Post-long-weekend. Let's ease back in.");
+            messages.Add("Post-long-weekend. Let's ease back in.");
             messages.Add("Hope the long weekend recharged you. Ready to build?");
             messages.Add("Hope the long weekend recharged you. Ready to build?");
         }
@@ -4210,7 +4210,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (dow == DayOfWeek.Friday)
         {
-            messages.Add("TGIF - let's ship something before the weekend!");
+            messages.Add("It's Friday — let's ship something before the weekend!");
             messages.Add("Friday energy. Let's make the most of it.");
         }
         if (dow is DayOfWeek.Saturday or DayOfWeek.Sunday)
@@ -4243,11 +4243,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         if (tod == "afternoon")
         {
-            messages.Add("Afternoon grind, let's go!");
+            messages.Add("Afternoon grind — let's go!");
             messages.Add("Hope the day's treating you well!");
             messages.Add("Halfway through the day, keep it up!");
             messages.Add("Afternoon slump? Not here.");
-            messages.Add("Post-lunch focus: loading...");
+            messages.Add("Post-lunch focus: activated.");
         }
         if (tod == "evening")
         {
@@ -4263,7 +4263,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             messages.Add("The best code gets written at night.");
             messages.Add("Still at it? Respect.");
             messages.Add("Late night, great code.");
-            messages.Add("The quieter the world, the louder the code.");
+            messages.Add("The quieter the world, the clearer the code.");
             messages.Add("Dark outside, bright ideas inside.");
             messages.Add("Another late one? Worth it.");
         }
@@ -4283,7 +4283,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             "winter" => "Warm up your fingers - it's time to code.",
             "spring" => "Spring energy - let's build something fresh.",
-            "summer" => "Summer vibes, hot code.",
+            "summer" => "Hot outside, hotter code.",
             "autumn" => "Cozy season, perfect for shipping features.",
             _        => "Great day to write some code."
         });
