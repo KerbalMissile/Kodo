@@ -61,7 +61,10 @@ theme.json       ← for theme extensions
 icon.png         ← optional, must be square
 ```
 
-**manifest.json** example:
+### manifest.json
+
+Required for all extensions:
+
 ```json
 {
   "id": "mylang-kodo-extension",
@@ -74,9 +77,85 @@ icon.png         ← optional, must be square
 }
 ```
 
-**language.json** supports: `keywords`, `types`, `commentLine`, `commentBlockStart`, `commentBlockEnd`, and `colorTokens` (`keyword`, `type`, `string`, `comment`, `number`).
+### language.json
 
-**theme.json** supports: `themeId`, `displayName`, `baseTheme` (`"Dark"` or `"Light"`), and color keys for `windowBackground`, `topBar`, `sidebar`, `button`, `buttonHover`, `editorBackground`, `card`, `primaryText`, `mutedText`, `surfaceBorder`, `accent`, `previewBackground`, `previewBorder`.
+All fields are optional unless noted. Below is a full example followed by field descriptions.
+
+```json
+{
+  "keywords": ["if", "else", "return", "while"],
+  "types": ["int", "string", "bool", "MyClass"],
+  "functions": [],
+  "properties": [],
+  "namespaces": [],
+  "commentLine": "//",
+  "commentBlockStart": "/*",
+  "commentBlockEnd": "*/",
+  "stringDelimiters": ["\"", "'"],
+  "multiLineStringDelimiters": ["\"\"\""],
+  "disableSingleQuoteStrings": false,
+  "colorTokens": {
+    "keyword":      "#569CD6",
+    "type":         "#4EC9B0",
+    "string":       "#CE9178",
+    "comment":      "#6A9955",
+    "number":       "#B5CEA8",
+    "operator":     "#D4D4D4",
+    "punctuation":  "#D4D4D4",
+    "function":     "#DCDCAA",
+    "property":     "#9CDCFE",
+    "namespace":    "#4FC1FF",
+    "attribute":    "#C586C0",
+    "preprocessor": "#C586C0",
+    "variable":     "#A0DBFD",
+    "charLiteral":  "#CE9178"
+  }
+}
+```
+
+**Token lists**
+
+| Field | Description |
+|---|---|
+| `keywords` | Reserved words colored with `keyword` color (e.g. `if`, `return`, `class`) |
+| `types` | Type names colored with `type` color (e.g. `int`, `string`, built-in classes) |
+| `functions` | Function/method names colored with `function` color |
+| `properties` | Property/field names colored with `property` color |
+| `namespaces` | Namespace/module names colored with `namespace` color |
+
+All five accept a JSON array of strings. Word-boundary matching is applied automatically, so `"int"` won't match inside `"integer"`.
+
+**Comment delimiters**
+
+| Field | Description |
+|---|---|
+| `commentLine` | Single-character or string that starts a line comment (e.g. `"//"`, `"#"`, `">"`) |
+| `commentBlockStart` | Opening delimiter for block comments (e.g. `"/*"`) |
+| `commentBlockEnd` | Closing delimiter for block comments (e.g. `"*/"`) |
+
+**String delimiters**
+
+| Field | Description |
+|---|---|
+| `stringDelimiters` | Single-line string delimiters (e.g. `["\"", "'"]`). The span ends at the closing delimiter or end of line. |
+| `multiLineStringDelimiters` | Multi-line string delimiters (e.g. `["\"\"\"", "'''", "` ``` `"]`). The span continues across lines until the closing delimiter is found. List longer delimiters first. |
+| `disableSingleQuoteStrings` | Set to `true` to replace the open-ended `'…'` span with a precise char-literal regex. Use for languages like C# where `'` appears in non-string contexts. Defaults to `false`. |
+
+**colorTokens**
+
+Overrides the default colors for any highlighting category. All values are hex color strings. Available keys:
+
+`keyword`, `type`, `string`, `comment`, `number`, `operator`, `punctuation`, `function`, `property`, `namespace`, `attribute`, `preprocessor`, `variable`, `charLiteral`
+
+Any key you omit falls back to the built-in default for that category.
+
+### theme.json
+
+Supports: `themeId`, `displayName`, `baseTheme` (`"Dark"` or `"Light"`), and color keys for `windowBackground`, `topBar`, `sidebar`, `button`, `buttonHover`, `editorBackground`, `card`, `primaryText`, `mutedText`, `surfaceBorder`, `accent`, `previewBackground`, `previewBorder`.
+
+---
+
+## Submitting an Extension
 
 If you want your extension in the official marketplace, open a PR adding your `.kox` to `Official_Extensions/` and the relevant entry to `Indexs/ExtensionsIndex.json`.
 
