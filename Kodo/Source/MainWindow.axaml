@@ -50,32 +50,60 @@
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
-        <Style Selector="Button.marketaction:pointerover">
+        <Style Selector="Button.marketaction:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+        </Style>
+        <Style Selector="Button.marketaction:pointerover">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
 
-        <Style Selector="Button.marketaction:disabled">
+        <Style Selector="Button.marketaction:disabled /template/ ContentPresenter">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
+        <Style Selector="Button.marketaction:disabled">
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
-            <Setter Property="Opacity" Value="0.45" />
         </Style>
 
         <Style Selector="Button.uninstall">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
-            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="Foreground" Value="{Binding #RootWindow.PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding #RootWindow.SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="12,8" />
             <Setter Property="MinWidth" Value="92" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="PART_Border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Name="PART_ContentPresenter"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
         </Style>
 
+        <Style Selector="Button.uninstall:pointerover /template/ Border#PART_Border">
+            <Setter Property="Background" Value="{Binding #RootWindow.ButtonHoverBrush}" />
+        </Style>
         <Style Selector="Button.uninstall:pointerover">
-            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
-            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding #RootWindow.AccentBrush}" />
+        </Style>
+
+        <Style Selector="Button.uninstall:disabled">
+            <Setter Property="Opacity" Value="0.45" />
         </Style>
 
         <Style Selector="Button.tab">
@@ -2174,13 +2202,25 @@
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center">
                                                     <TextBlock HorizontalAlignment="Right"
+                                                               VerticalAlignment="Center"
                                                                Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                Text="{Binding Version}" />
-                                                    <Button Classes="marketaction"
-                                                            Tag="{Binding}"
-                                                            Click="InstallMarketplaceExtensionButton_OnClick"
-                                                            IsEnabled="{Binding IsInstallEnabled}"
-                                                            Content="{Binding InstallButtonText}" />
+                                                    <StackPanel Orientation="Horizontal"
+                                                                HorizontalAlignment="Right"
+                                                                Spacing="8"
+                                                                IsVisible="{Binding !IsInstalled}">
+                                                        <!-- Update button: mirrors chrome "Update" in Installed tab -->
+                                                        <Button Classes="chrome"
+                                                                Tag="{Binding}"
+                                                                Click="InstallMarketplaceExtensionButton_OnClick"
+                                                                Content="Update"
+                                                                IsVisible="{Binding IsUpdateAvailable}" />
+                                                        <!-- Install button (not yet installed) -->
+                                                        <Button Classes="uninstall"
+                                                                Tag="{Binding}"
+                                                                Click="InstallMarketplaceExtensionButton_OnClick"
+                                                                Content="{Binding InstallButtonText}" />
+                                                    </StackPanel>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
