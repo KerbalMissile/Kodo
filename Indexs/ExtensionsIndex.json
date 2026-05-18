@@ -24,13 +24,13 @@
     },
     {
       "id": "cpp-kodo-extension",
-      "version": "v1.0.3",
+      "version": "v1.1.0",
       "name": "C++ Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for C and C++ files.",
-      "fileName": "C++-Kodo-Extension-v1.0.3.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%2B%2B-Kodo-Extension-v1.0.3.kox",
+      "fileName": "C++-Kodo-Extension-v1.1.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%2B%2B-Kodo-Extension-v1.1.0.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/ISO_C%2B%2B_Logo.svg/213px-ISO_C%2B%2B_Logo.svg.png"
     },
     {
