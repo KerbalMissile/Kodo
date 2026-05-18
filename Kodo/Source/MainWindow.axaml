@@ -57,9 +57,10 @@
         </Style>
 
         <Style Selector="Button.marketaction:disabled">
-            <Setter Property="Background" Value="{Binding ButtonBrush}" />
-            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
-            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="Opacity" Value="0.45" />
         </Style>
 
         <Style Selector="Button.uninstall">
