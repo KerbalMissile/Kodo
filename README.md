@@ -37,8 +37,7 @@ Released under the [Kodo Public License v1.1](LICENSE.md).
 | 🕓 **Recent Files** | Jump back into recent files from the home screen |
 | 🎮 **Discord Rich Presence** | Show what you're working on in Discord |
 | ⌨️ **Smart Editing** | Auto-closing brackets, auto-indent, and find-in-file |
-| 🖼️ **Image Preview** | View image files directly in the editor |
-| 🔔 **Update Notifications** | In-app banners when a new version or extension update is available |
+| 🖼️ **COMING SOON: Image Preview** | View image files directly in the editor |
 
 **Coming soon:** real-time collaborative editing · downloadable compilers · integrated terminal · and much more!
 
