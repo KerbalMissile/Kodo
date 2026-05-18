@@ -2099,9 +2099,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Functions = ReadStringArray(lang, "functions"),
             Properties = ReadStringArray(lang, "properties"),
             Namespaces = ReadStringArray(lang, "namespaces"),
-            CommentLine = lang.TryGetProperty("commentLine", out var cl) ? cl.GetString() ?? string.Empty : null,
-            CommentBlockStart = lang.TryGetProperty("commentBlockStart", out var cbs) ? cbs.GetString() ?? string.Empty : null,
-            CommentBlockEnd = lang.TryGetProperty("commentBlockEnd", out var cbe) ? cbe.GetString() ?? string.Empty : null,
+            CommentLine = lang.TryGetProperty("commentLine", out var cl) ? NormalizeSyntaxToken(cl.GetString()) : null,
+            CommentBlockStart = lang.TryGetProperty("commentBlockStart", out var cbs) ? NormalizeSyntaxToken(cbs.GetString()) : null,
+            CommentBlockEnd = lang.TryGetProperty("commentBlockEnd", out var cbe) ? NormalizeSyntaxToken(cbe.GetString()) : null,
             StringDelimiters = lang.TryGetProperty("stringDelimiters", out var sd) ? ReadStringArray(sd) : null,
             MultiLineStringDelimiters = lang.TryGetProperty("multiLineStringDelimiters", out var msd) ? ReadStringArray(msd) : null,
             DisableSingleQuoteStrings = lang.TryGetProperty("disableSingleQuoteStrings", out var dsqs) && dsqs.ValueKind is JsonValueKind.True or JsonValueKind.False
@@ -2140,6 +2140,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static string[] ReadStringArray(JsonElement root, string propertyName) =>
         root.TryGetProperty(propertyName, out var value) ? ReadStringArray(value) : [];
+
+    private static string? NormalizeSyntaxToken(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
 
     private static string[] ReadStringArray(JsonElement value) =>
         value.ValueKind == JsonValueKind.Array
@@ -8105,116 +8108,180 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         try
         {
+            // Determine whether this context is file-critical (data may be at risk).
+            var isFileOperation = context.StartsWith("File save", StringComparison.OrdinalIgnoreCase)
+                               || context.StartsWith("Auto-save", StringComparison.OrdinalIgnoreCase);
+ 
+            var subtitleMessage = isFileOperation
+                ? "Kodo could not complete this file operation. Your in-editor content is still intact — try saving again or use Save As to choose a different location."
+                : "Kodo ran into a problem with this operation. No data was lost — you can try again.";
+ 
+            // --- Header ---
             var titleText = new TextBlock
             {
-                Text = "Something went wrong",
-                FontSize = 16,
-                FontWeight = FontWeight.SemiBold,
-                Foreground = PrimaryTextBrush,
+                Text         = "Something went wrong",
+                FontSize     = 16,
+                FontWeight   = FontWeight.SemiBold,
+                Foreground   = PrimaryTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
-
+ 
             var subtitleText = new TextBlock
             {
-                Text = "Kodo ran into a problem with this operation. No data was lost - you can try again.",
-                FontSize = 13,
-                Foreground = MutedTextBrush,
+                Text         = subtitleMessage,
+                FontSize     = 13,
+                Foreground   = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 4, 0, 0),
+                Margin       = new Thickness(0, 4, 0, 0),
             };
-
-            // Context badge (e.g. "File save", "Extension install")
+ 
+            // Context badge (e.g. "File save", "Extension install — MyLang")
             var contextBadge = new Border
             {
-                Background = ButtonBrush,
-                BorderBrush = SurfaceBorderBrush,
+                Background      = ButtonBrush,
+                BorderBrush     = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(10, 5),
+                CornerRadius    = new CornerRadius(6),
+                Padding         = new Thickness(10, 5),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Child = new TextBlock
                 {
-                    Text = context,
-                    FontSize = 12,
+                    Text       = context,
+                    FontSize   = 12,
                     FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
                     Foreground = new SolidColorBrush(Color.Parse("#9CDCFE")),
                 },
             };
-
-            // Scrollable, selectable exception detail so the user can copy it if needed
-            var exceptionText = new SelectableTextBlock
+ 
+            // Human-readable error message — shown above the raw stack trace so the
+            // user gets an immediate plain-English explanation before seeing the detail.
+            var errorMessageText = new TextBlock
             {
-                Text = exception.ToString(),
-                FontSize = 12,
-                FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
-                Foreground = new SolidColorBrush(Color.Parse("#CE9178")),
+                Text         = string.IsNullOrWhiteSpace(exception.Message)
+                                   ? "An unexpected error occurred."
+                                   : exception.Message,
+                FontSize     = 13,
+                Foreground   = PrimaryTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
-
+ 
+            // Collapsible stack trace — SelectableTextBlock so users can copy it.
+            var exceptionText = new SelectableTextBlock
+            {
+                Text         = exception.ToString(),
+                FontSize     = 12,
+                FontFamily   = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                Foreground   = new SolidColorBrush(Color.Parse("#CE9178")),
+                TextWrapping = TextWrapping.Wrap,
+            };
+ 
             var exceptionScroll = new ScrollViewer
             {
-                Content = exceptionText,
-                MaxHeight = 220,
-                VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                Content  = exceptionText,
+                MaxHeight = 200,
+                VerticalScrollBarVisibility   = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             };
-
+ 
+            // Uses CardBrush so the background honours the active theme (Light/Dark/extension).
             var exceptionBorder = new Border
             {
-                Background = new SolidColorBrush(Color.Parse("#1A1A1A")),
-                BorderBrush = SurfaceBorderBrush,
+                Background      = CardBrush,
+                BorderBrush     = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(12),
-                Child = exceptionScroll,
+                CornerRadius    = new CornerRadius(8),
+                Padding         = new Thickness(12),
+                Child           = exceptionScroll,
             };
-
+ 
+            // --- Action buttons ---
+            var copyButton = new Button
+            {
+                Content             = "Copy to Clipboard",
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Padding             = new Thickness(16, 8),
+                Background          = ButtonBrush,
+                Foreground          = MutedTextBrush,
+                BorderBrush         = SurfaceBorderBrush,
+                BorderThickness     = new Thickness(1),
+                CornerRadius        = new CornerRadius(8),
+            };
+ 
             var dismissButton = new Button
             {
-                Content = "Dismiss",
+                Content             = "Dismiss",
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Padding = new Thickness(20, 8),
-                Background = AccentBrush,
-                Foreground = Brushes.White,
-                BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(8),
+                Padding             = new Thickness(20, 8),
+                Background          = AccentBrush,
+                Foreground          = Brushes.White,
+                BorderThickness     = new Thickness(0),
+                CornerRadius        = new CornerRadius(8),
             };
-
+ 
+            var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            buttonRow.Children.Add(copyButton);
+            Grid.SetColumn(dismissButton, 1);
+            buttonRow.Children.Add(dismissButton);
+ 
             var content = new StackPanel
             {
-                Spacing = 12,
-                Margin = new Thickness(20),
+                Spacing  = 12,
+                Margin   = new Thickness(20),
                 Children =
                 {
                     titleText,
                     subtitleText,
                     contextBadge,
+                    errorMessageText,
                     exceptionBorder,
-                    dismissButton,
+                    buttonRow,
                 },
             };
-
+ 
             Window? dialog = null;
             dialog = new Window
             {
-                Title = "Kodo - Error",
-                Width = 520,
+                // Em-dash consistent with the crash dialog title.
+                Title  = "Kodo — Error",
+                Width  = 520,
                 SizeToContent = SizeToContent.Height,
-                MinWidth = 380,
-                MinHeight = 160,
-                MaxHeight = 640,
+                MinWidth  = 380,
+                MinHeight = 180,
+                MaxHeight = 660,
                 CanResize = true,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Background = CardBrush,
-                Content = content,
+                Content    = content,
             };
-
+ 
+            copyButton.Click += async (_, _) =>
+            {
+                try
+                {
+                    var clip = TopLevel.GetTopLevel(dialog)?.Clipboard;
+                    if (clip is not null)
+                    {
+                        var text = $"Context: {context}{Environment.NewLine}{exception}";
+                        await clip.SetTextAsync(text);
+                        copyButton.Content   = "Copied!";
+                        copyButton.Foreground = PrimaryTextBrush;
+                    }
+                }
+                catch
+                {
+                    // Clipboard failures must not crash the error dialog.
+                }
+            };
+ 
             dismissButton.Click += (_, _) => dialog!.Close();
             await dialog.ShowDialog(this);
         }
-        catch
+        catch (Exception dialogEx)
         {
-            // The warning dialog itself must never crash the app.
+            // Log to Debug so the failure surfaces during development without
+            // crashing the app in production.
+            System.Diagnostics.Debug.WriteLine(
+                $"[Kodo] ShowWarningDialogAsync failed to display for context '{context}': {dialogEx}");
         }
     }
 
@@ -8900,7 +8967,8 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
             .Where(d => !string.IsNullOrEmpty(d))
             .ToHashSet(StringComparer.Ordinal);
 
-        var supportsJavaScriptTemplate = multiLineDelimiters.Contains("`");
+        var supportsJavaScriptTemplate = multiLineDelimiters.Contains("`") &&
+            !string.Equals(extension.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase);
         var supportsPythonStyleInterpolation =
             string.Equals(extension.CommentLine, "#", StringComparison.Ordinal) &&
             !extension.DisableSingleQuoteStrings &&
@@ -9430,6 +9498,8 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             ext.MultiLineStringDelimiters.Contains("\"\"\"") ||
             ext.MultiLineStringDelimiters.Contains("'''");
 
+        var isMarkdown = string.Equals(ext.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase);
+
         // ── Inner rulesets ────────────────────────────────────────────────────────────
         // codeRuleSet  - holds keyword/type/number rules; used as the inner ruleset of
         //                spans that should still syntax-colour their contents.
@@ -9510,7 +9580,8 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         // In XML-family languages dots appear in file paths and version strings between
         // element tags, so these rules would wrongly colour path segments as namespace/
         // property tokens. Skip them entirely for XML - no chained member access exists.
-        if (ext.CommentBlockStart != "<!--")
+        // Also skip for Markdown where dots in URLs and file extensions cause false matches.
+        if (ext.CommentBlockStart != "<!--" && !isMarkdown)
         {
             codeRuleSet.Rules.Add(new HighlightingRule
             {
@@ -9525,74 +9596,116 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        codeRuleSet.Rules.Add(new HighlightingRule
-        {
-            Regex = new Regex(@"(?<![\p{L}\p{Nd}_])[@#][\p{L}_][\p{L}\p{Nd}_-]*", RegexOptions.Compiled),
-            Color = preprocessorColor
-        });
-
-        codeRuleSet.Rules.Add(new HighlightingRule
-        {
-            Regex = new Regex(@"(?<=\[)[\p{L}_][\p{L}\p{Nd}_:.]*(?=[,\]\(])|(?<=<)[\p{L}_][\p{L}\p{Nd}_:-]*(?=[^>]*>)", RegexOptions.Compiled),
-            Color = attributeColor
-        });
-
-        codeRuleSet.Rules.Add(new HighlightingRule
-        {
-            Regex = new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\s*\()", RegexOptions.Compiled),
-            Color = functionColor
-        });
-
-        codeRuleSet.Rules.Add(new HighlightingRule
-        {
-            Regex = new Regex(@"=>|->|::|\+\+|--|\+=|-=|\*=|/=|%=|&&|\|\||<<|>>|<=|>=|==|!=|=|\+|-|\*|/|%|!|\?|:|<|>|&|\||\^|~", RegexOptions.Compiled),
-            Color = operatorColor
-        });
-
-        // For XML-family languages the dot appears in file paths and version strings
-        // between element tags, so exclude it from punctuation to avoid grey fragments.
-        codeRuleSet.Rules.Add(new HighlightingRule
-        {
-            Regex = new Regex(ext.CommentBlockStart == "<!--" ? @"[{}\[\]();,]" : @"[{}\[\]();,.]", RegexOptions.Compiled),
-            Color = punctuationColor
-        });
-
-        // Last segment of an import/using directive for any language.
-        // Covers: "using System;", "import os", "import numpy as np",
-        //         "#include <vector>", "require 'json'", "use std::io", etc.
-        // The final identifier before ; or end-of-line - after a chain of
-        // dotted/slashed segments - is coloured as a namespace.
-        // This fires for C#, Python, Java, Rust, Ruby, Go, JS/TS, C/C++, and more.
-        codeRuleSet.Rules.Add(new HighlightingRule
-        {
-            Regex = new Regex(
-                @"(?<=\b(?:using|import|include|require|use|from)\b\s+(?:[\p{L}_][\p{L}\p{Nd}_./\\]*\s*[./\\]\s*)?)[\p{L}_][\p{L}\p{Nd}_]*(?=\s*(?:;|$))",
-                RegexOptions.Compiled),
-            Color = namespaceColor
-        });
-
-        // User-defined variables - bare identifiers that are not preceded by a dot
-        // (property), not followed by '(' (function call) or '.' (namespace segment),
-        // and were not already claimed by keyword/type/number rules above.
-        codeRuleSet.Rules.Add(new HighlightingRule
-        {
-            Regex = BuildVariableRegex(ext.Keywords.Concat(ext.Types).Concat(ext.Functions).Concat(ext.Properties).Concat(ext.Namespaces)),
-            Color = variableColor
-        });
-
-        // Char literal rule (C#-style languages with disableSingleQuoteStrings).
-        // Lives in codeRuleSet so that its rules can be copied to mainRuleSet;
-        // it will not fire inside comment or string spans (which use emptyRuleSet).
-        if (ext.DisableSingleQuoteStrings)
+        if (!isMarkdown)
         {
             codeRuleSet.Rules.Add(new HighlightingRule
             {
-                Regex = new Regex(
-                    @"'(?:\\(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|x[0-9A-Fa-f]{1,4}|[0-7]{1,3}|[abfnrtv\\""'0])|[^\\'])'",
-                    RegexOptions.Compiled),
-                Color = charLiteralColor
+                Regex = new Regex(@"(?<![\p{L}\p{Nd}_])[@#][\p{L}_][\p{L}\p{Nd}_-]*", RegexOptions.Compiled),
+                Color = preprocessorColor
+            });
+
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"(?<=\[)[\p{L}_][\p{L}\p{Nd}_:.]*(?=[,\]\(])|(?<=<)[\p{L}_][\p{L}\p{Nd}_:-]*(?=[^>]*>)", RegexOptions.Compiled),
+                Color = attributeColor
             });
         }
+
+        if (!isMarkdown)
+        {
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\s*\()", RegexOptions.Compiled),
+                Color = functionColor
+            });
+
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"=>|->|::|\+\+|--|\+=|-=|\*=|/=|%=|&&|\|\||<<|>>|<=|>=|==|!=|=|\+|-|\*|/|%|!|\?|:|<|>|&|\||\^|~", RegexOptions.Compiled),
+                Color = operatorColor
+            });
+
+            // For XML-family languages the dot appears in file paths and version strings
+            // between element tags, so exclude it from punctuation to avoid grey fragments.
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(ext.CommentBlockStart == "<!--" ? @"[{}\[\]();,]" : @"[{}\[\]();,.]", RegexOptions.Compiled),
+                Color = punctuationColor
+            });
+
+            // Last segment of an import/using directive for any language.
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(
+                    @"(?<=\b(?:using|import|include|require|use|from)\b\s+(?:[\p{L}_][\p{L}\p{Nd}_./\\]*\s*[./\\]\s*)?)[\p{L}_][\p{L}\p{Nd}_]*(?=\s*(?:;|$))",
+                    RegexOptions.Compiled),
+                Color = namespaceColor
+            });
+
+            // User-defined variables - bare identifiers not preceded by dot, not followed
+            // by '(' or '.', and not already claimed by keyword/type/number rules.
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = BuildVariableRegex(ext.Keywords.Concat(ext.Types).Concat(ext.Functions).Concat(ext.Properties).Concat(ext.Namespaces)),
+                Color = variableColor
+            });
+
+            // Char literal rule (C#-style languages with disableSingleQuoteStrings).
+            if (ext.DisableSingleQuoteStrings)
+            {
+                codeRuleSet.Rules.Add(new HighlightingRule
+                {
+                    Regex = new Regex(
+                        @"'(?:\\(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|x[0-9A-Fa-f]{1,4}|[0-7]{1,3}|[abfnrtv\\""'0])|[^\\'])'",
+                        RegexOptions.Compiled),
+                    Color = charLiteralColor
+                });
+            }
+        }
+        else
+        {
+            // ── Markdown-specific inline rules ─────────────────────────────────────────
+            // Bold/bold-italic markers: ** *** __ ___
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"\*{2,3}|_{2,3}", RegexOptions.Compiled),
+                Color = operatorColor
+            });
+            // Italic markers: single * or _ not adjacent to another
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"(?<!\*)\*(?!\*)|(?<!_)_(?!_)", RegexOptions.Compiled),
+                Color = operatorColor
+            });
+            // Strikethrough markers: ~~
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"~~", RegexOptions.Compiled),
+                Color = operatorColor
+            });
+            // Link/image bracket and paren delimiters
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"!?\[|\]\(|\)", RegexOptions.Compiled),
+                Color = punctuationColor
+            });
+            // Table pipe separators
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"\|", RegexOptions.Compiled),
+                Color = punctuationColor
+            });
+            // Unordered list markers at start of line: - + *
+            codeRuleSet.Rules.Add(new HighlightingRule
+            {
+                Regex = new Regex(@"(?<=^|\n)[ \t]*[-+*](?=[ \t])", RegexOptions.Compiled),
+                Color = operatorColor
+            });
+        }
+
+        // Char literal rule for non-Markdown languages with disableSingleQuoteStrings
+        // (already handled inside the !isMarkdown block above; this guard is now a no-op
+        // for Markdown but kept outside to satisfy the original structure expectation).
 
         // ── Main ruleset ──────────────────────────────────────────────────────────────
         // Spans are checked in order - first match wins. SpanColor is applied by
@@ -9611,6 +9724,22 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 SpanColor              = commentColor,
                 SpanColorIncludesStart = true,
                 SpanColorIncludesEnd   = true,
+                RuleSet                = emptyRuleSet
+            });
+        }
+
+        // ── Markdown heading spans ────────────────────────────────────────────────────
+        // Added before the generic commentLine span so that #-headings are coloured
+        // with keywordColor rather than commentColor (which handles blockquotes via >).
+        if (isMarkdown)
+        {
+            mainRuleSet.Spans.Add(new HighlightingSpan
+            {
+                StartExpression        = new Regex(@"^#{1,6}(?=\s)", RegexOptions.Compiled | RegexOptions.Multiline),
+                EndExpression          = new Regex(@"$", RegexOptions.Compiled),
+                SpanColor              = keywordColor,
+                SpanColorIncludesStart = true,
+                SpanColorIncludesEnd   = false,
                 RuleSet                = emptyRuleSet
             });
         }

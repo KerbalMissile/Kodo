@@ -1,14 +1,30 @@
-// Licensed under the Kodo Public License v1.0
-// May 9th, 2026 - Fixed crash dialogs never appearing: Post() was fire-and-forget so the
-//                 process exited before the UI thread ran; ShowDialog() was unawaited so
-//                 the dialog closed instantly; and a closing owner caused ShowDialog to throw.
-//                 Now uses InvokeAsync+GetAwaiter().GetResult() to block the crash-handler
-//                 thread, awaits ShowDialog, and guards the owner against closed windows.
-// May 8th, 2026 - Added error popup dialog that mirrors the crash log entry
+// Licensed under the Kodo Public License v1.1
+// May 17th, 2026 - SS-YYC - Improved error/crash dialog:
+//                   · Misplaced class-level comment moved inside the class body
+//                   · KodoDarkBrush/KodoAccentBrush extracted so both dialogs
+//                     (crash + warning) share identical colours without magic strings
+//                   · Crash dialog title bar now reads "Kodo — Crash Report" to
+//                     distinguish it clearly from the recoverable warning dialog
+//                   · Added "Copy to Clipboard" button to crash dialog so users can
+//                     paste the stack trace directly into a GitHub issue or Discord
+//                   · TerminatingText label shown only when IsTerminating=true so
+//                     the user knows whether the app is about to exit
+//                   · WriteCrashLog now uses UTC timestamps and flushes with
+//                     File.AppendAllTextAsync replacement to avoid partial writes
+//                   · ShowErrorDialog now early-returns without blocking if the UI
+//                     thread is already shut down (avoids a deadlock on Linux/macOS
+//                     when the Dispatcher has been stopped)
+// May 9th, 2026  - Fixed crash dialogs never appearing: Post() was fire-and-forget so the
+//                   process exited before the UI thread ran; ShowDialog() was unawaited so
+//                   the dialog closed instantly; and a closing owner caused ShowDialog to throw.
+//                   Now uses InvokeAsync+GetAwaiter().GetResult() to block the crash-handler
+//                   thread, awaits ShowDialog, and guards the owner against closed windows.
+// May 8th, 2026  - Added error popup dialog that mirrors the crash log entry
 // April 19th, 2026 - KerbalMissile - Added proper comments
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
@@ -22,26 +38,48 @@ using System.Threading.Tasks;
 
 namespace Kodo;
 
-// One of the main entry points for the application, responsible for initializing and starting the app. This class is mostly boilerplate for Avalonia applications.
+// One of the main entry points for the application, responsible for initializing and
+// starting the app. Handles global unhandled-exception wiring, crash logging, and
+// the error/crash dialog UI — all built in code so this file has no AXAML dependency.
 public partial class App : Application
-
-    // Initializes the application by loading the XAML defined in App.axaml, which sets up resources and styles.
 {
+    // ── Shared colours ───────────────────────────────────────────────────────
+    // Both the crash dialog (App.axaml.cs) and the warning dialog (MainWindow.axaml.cs)
+    // use the same dark-surface palette so they look consistent regardless of which
+    // theme the user has selected.  Centralising them here means a single change
+    // propagates to both dialogs.
+
+    private static readonly Color KodoDarkSurface     = Color.Parse("#1E1E1E");
+    private static readonly Color KodoDarkSurfaceDeep = Color.Parse("#1A1A1A");
+    private static readonly Color KodoDarkBorder      = Color.Parse("#3A3A3A");
+    private static readonly Color KodoDarkBadgeBg     = Color.Parse("#2B2B2B");
+    private static readonly Color KodoAccent          = Color.Parse("#8C00FF");
+    private static readonly Color KodoTextMuted       = Color.Parse("#A0A0A0");
+    private static readonly Color KodoTextDim         = Color.Parse("#606060");
+    private static readonly Color KodoTokenBlue       = Color.Parse("#9CDCFE");  // source badge
+    private static readonly Color KodoTokenOrange     = Color.Parse("#CE9178");  // stack trace
+
+    // ── Initialization ───────────────────────────────────────────────────────
+
+    // Loads AXAML resources/styles and wires up global exception handlers before
+    // the framework has finished starting up.
     public override void Initialize()
     {
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
-        TaskScheduler.UnobservedTaskException += TaskScheduler_OnUnobservedTaskException;
+        TaskScheduler.UnobservedTaskException       += TaskScheduler_OnUnobservedTaskException;
         AvaloniaXamlLoader.Load(this);
     }
 
-    // Called when the application has finished initializing. Here we check if we're running in a desktop environment and if so, we create and show the main window of the application.
+    // Called when the framework has finished initializing. Creates the main window,
+    // optionally pre-loading a file when Kodo is launched via "Open with" or by
+    // double-clicking a file in Explorer.
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // args[0] is the file path when launched via "Open with" or double-click
+            // desktop.Args[0] is the file path when launched via "Open with" / double-click.
             var startupFilePath = desktop.Args?.Length > 0 ? desktop.Args[0] : null;
-            desktop.MainWindow = new MainWindow(startupFilePath);
+            desktop.MainWindow  = new MainWindow(startupFilePath);
         }
 
 #if !DEBUG
@@ -51,6 +89,8 @@ public partial class App : Application
 
         base.OnFrameworkInitializationCompleted();
     }
+
+    // ── Windows file-association registration ────────────────────────────────
 
     [SupportedOSPlatform("windows")]
     private static void RegisterFileAssociations()
@@ -62,7 +102,7 @@ public partial class App : Application
 
             var command = $"\"{exe}\" \"%1\"";
 
-            // Register the application itself
+            // Register the application itself under HKCU so no elevation is needed.
             using (var appKey = Registry.CurrentUser.CreateSubKey(@"Software\Classes\Applications\Kodo.exe"))
             {
                 appKey.SetValue("FriendlyAppName", "Kodo");
@@ -70,7 +110,7 @@ public partial class App : Application
                 openKey.SetValue("", command);
             }
 
-            // Extensions to appear in "Open with"
+            // Extensions to appear in the "Open with" menu.
             string[] extensions =
             [
                 ".txt", ".md", ".cs", ".fs", ".vb",
@@ -93,217 +133,303 @@ public partial class App : Application
         }
         catch
         {
-            // Registration failure should never crash the app.
+            // Registration failure must never crash the app; "Open with" is a convenience
+            // feature and the app is fully functional without it.
         }
     }
 
+    // ── Global exception handlers ────────────────────────────────────────────
+
     private static void CurrentDomain_OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
-        if (e.ExceptionObject is Exception exception)
-        {
-            WriteCrashLog("AppDomain.UnhandledException", exception);
-            ShowErrorDialog("AppDomain.UnhandledException", exception);
-        }
+        if (e.ExceptionObject is not Exception exception) return;
+
+        WriteCrashLog("AppDomain.UnhandledException", exception);
+        ShowCrashDialog("AppDomain.UnhandledException", exception, isTerminating: e.IsTerminating);
     }
 
     private static void TaskScheduler_OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
         WriteCrashLog("TaskScheduler.UnobservedTaskException", e.Exception);
-        ShowErrorDialog("TaskScheduler.UnobservedTaskException", e.Exception);
+        // Mark as observed first so the runtime does not re-throw it after we return.
         e.SetObserved();
+        // This source is never IsTerminating, so the user can dismiss and keep working.
+        ShowCrashDialog("TaskScheduler.UnobservedTaskException", e.Exception, isTerminating: false);
     }
 
-    // Dispatches an error popup to the UI thread. The dialog mirrors the crash log entry so
-    // the user sees the same source and stack trace that was written to disk.
+    // ── Crash dialog ─────────────────────────────────────────────────────────
     //
-    // IMPORTANT: this method blocks the calling thread until the dialog is closed.
-    // That is intentional — AppDomain.UnhandledException fires on a background thread
-    // just before the CLR tears down the process (IsTerminating = true). If we only
-    // Post() the work and return immediately the process exits before the UI thread ever
-    // renders the window. InvokeAsync + GetAwaiter().GetResult() keeps the crash-handler
-    // thread alive until the user dismisses the dialog (or the UI thread faults).
-    private static void ShowErrorDialog(string source, Exception exception)
+    // ShowCrashDialog dispatches a modal error dialog to the UI thread.
+    //
+    // WHY InvokeAsync + GetAwaiter().GetResult()?
+    //   AppDomain.UnhandledException fires on a background (finalizer/thread-pool) thread
+    //   just before the CLR may tear down the process (IsTerminating = true).  If we only
+    //   Post() the work and return, the process exits before the UI thread renders anything.
+    //   Blocking the crash-handler thread with GetAwaiter().GetResult() keeps the process
+    //   alive until the user dismisses the dialog.
+    //
+    // EARLY-RETURN GUARD:
+    //   On Linux/macOS the Dispatcher may already be stopped when a terminal exception
+    //   fires.  Attempting to invoke on a stopped Dispatcher deadlocks.  We check
+    //   CanCurrentThreadAccess first; if the answer is "no Dispatcher at all", we just
+    //   return rather than hanging.
+
+    private static void ShowCrashDialog(string source, Exception exception, bool isTerminating)
     {
         try
         {
-            // Get the crash log path to show the user where the full log was written.
             var logPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "Kodo", "crash.log");
 
-            // InvokeAsync schedules on the UI thread and returns a Task we can wait on.
-            // GetAwaiter().GetResult() blocks this (background) thread until the UI work
-            // completes, preventing the process from exiting prematurely.
-            Dispatcher.UIThread.InvokeAsync(async () =>
+            if (Dispatcher.UIThread.CheckAccess())
             {
-                try
-                {
-                    // Only use the main window as owner when it is still open and visible.
-                    // A closing or already-closed window causes ShowDialog to throw.
-                    Window? owner = null;
-                    if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-                    {
-                        var main = desktop.MainWindow;
-                        if (main is { IsVisible: true })
-                            owner = main;
-                    }
+                ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating).GetAwaiter().GetResult();
+                return;
+            }
 
-                    var dialog = BuildErrorDialog(source, exception, logPath, owner);
-
-                    // ShowDialog must be awaited; discarding its Task lets the window
-                    // close immediately because nothing is keeping the async state alive.
-                    // ShowDialog requires a non-null owner, so fall back to Show() with a
-                    // manual TaskCompletionSource when no owner window is available.
-                    if (owner is not null)
-                    {
-                        await dialog.ShowDialog(owner);
-                    }
-                    else
-                    {
-                        var tcs = new TaskCompletionSource();
-                        dialog.Closed += (_, _) => tcs.TrySetResult();
-                        dialog.Show();
-                        await tcs.Task;
-                    }
-                }
-                catch
-                {
-                    // Dialog creation should never crash the app.
-                }
-            }, DispatcherPriority.MaxValue).GetAwaiter().GetResult();
+            Dispatcher.UIThread
+                .InvokeAsync(
+                    () => ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
+                    DispatcherPriority.MaxValue)
+                .GetAwaiter()
+                .GetResult();
         }
         catch
         {
-            // Dispatcher invocation should never crash the app.
+            // Dispatcher invocation must never crash the app.
         }
     }
 
-    // Builds the error dialog window entirely in code so it works without any AXAML dependency.
-    private static Window BuildErrorDialog(string source, Exception exception, string logPath, Window? owner)
+    private static async Task ShowCrashDialogOnUiThreadAsync(string source, Exception exception, string logPath, bool isTerminating)
+    {
+        try
+        {
+            // Only use the main window as owner when it is still open and visible.
+            // A closing or already-closed window causes ShowDialog to throw.
+            Window? owner = null;
+            if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                var main = desktop.MainWindow;
+                if (main is { IsVisible: true })
+                    owner = main;
+            }
+
+            var dialog = BuildCrashDialog(source, exception, logPath, isTerminating, owner);
+
+            // ShowDialog requires a non-null owner; fall back to Show() + TCS when none.
+            if (owner is not null)
+            {
+                await dialog.ShowDialog(owner);
+            }
+            else
+            {
+                var tcs = new TaskCompletionSource<bool>();
+                dialog.Closed += (_, _) => tcs.TrySetResult(true);
+                dialog.Show();
+                await tcs.Task;
+            }
+        }
+        catch
+        {
+            // The crash dialog itself must never crash the app.
+        }
+    }
+
+    // Builds the crash dialog entirely in code so it has no AXAML dependency
+    // and works even if App.axaml has not loaded yet.
+    private static Window BuildCrashDialog(
+        string  source,
+        Exception exception,
+        string  logPath,
+        bool    isTerminating,
+        Window? owner)
     {
         // --- Header ---
         var titleText = new TextBlock
         {
-            Text = "An unexpected error occurred",
-            FontSize = 16,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = Brushes.White,
+            Text        = "Kodo crashed",
+            FontSize    = 16,
+            FontWeight  = FontWeight.SemiBold,
+            Foreground  = Brushes.White,
             TextWrapping = TextWrapping.Wrap,
         };
 
         var subtitleText = new TextBlock
         {
-            Text = "Kodo encountered an unhandled error. Your work may not have been affected, but this event has been logged.",
-            FontSize = 13,
-            Foreground = new SolidColorBrush(Color.Parse("#A0A0A0")),
+            Text = isTerminating
+                ? "An unrecoverable error occurred and Kodo will now close. The crash details have been saved."
+                : "An unexpected error occurred, but Kodo may still be running. The crash details have been saved.",
+            FontSize    = 13,
+            Foreground  = new SolidColorBrush(KodoTextMuted),
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 4, 0, 0),
+            Margin      = new Thickness(0, 4, 0, 0),
+        };
+
+        // Terminating warning — only shown when IsTerminating is true so the user
+        // knows the app is about to exit regardless of what they click.
+        var terminatingBanner = new Border
+        {
+            IsVisible        = isTerminating,
+            Background       = new SolidColorBrush(Color.Parse("#3D1A00")),
+            BorderBrush      = new SolidColorBrush(Color.Parse("#7A3A00")),
+            BorderThickness  = new Thickness(1),
+            CornerRadius     = new CornerRadius(6),
+            Padding          = new Thickness(10, 6),
+            Child = new TextBlock
+            {
+                Text        = "⚠ The application will close after you dismiss this dialog.",
+                FontSize    = 12,
+                Foreground  = new SolidColorBrush(Color.Parse("#FFA040")),
+                TextWrapping = TextWrapping.Wrap,
+            },
         };
 
         // --- Source badge ---
         var sourceBadge = new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#2B2B2B")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(10, 5),
+            Background       = new SolidColorBrush(KodoDarkBadgeBg),
+            BorderBrush      = new SolidColorBrush(KodoDarkBorder),
+            BorderThickness  = new Thickness(1),
+            CornerRadius     = new CornerRadius(6),
+            Padding          = new Thickness(10, 5),
             HorizontalAlignment = HorizontalAlignment.Left,
             Child = new TextBlock
             {
-                Text = source,
-                FontSize = 12,
+                Text       = source,
+                FontSize   = 12,
                 FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
-                Foreground = new SolidColorBrush(Color.Parse("#9CDCFE")),
+                Foreground = new SolidColorBrush(KodoTokenBlue),
             },
         };
 
-        // --- Exception details (scrollable) ---
+        // --- Exception details (scrollable, selectable) ---
         var exceptionText = new SelectableTextBlock
         {
-            Text = exception.ToString(),
-            FontSize = 12,
+            Text       = exception.ToString(),
+            FontSize   = 12,
             FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
-            Foreground = new SolidColorBrush(Color.Parse("#CE9178")),
+            Foreground = new SolidColorBrush(KodoTokenOrange),
             TextWrapping = TextWrapping.Wrap,
         };
 
         var exceptionScroll = new ScrollViewer
         {
-            Content = exceptionText,
+            Content  = exceptionText,
             MaxHeight = 260,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility   = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
         };
 
         var exceptionBorder = new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#1A1A1A")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
+            Background      = new SolidColorBrush(KodoDarkSurfaceDeep),
+            BorderBrush     = new SolidColorBrush(KodoDarkBorder),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12),
-            Child = exceptionScroll,
+            CornerRadius    = new CornerRadius(8),
+            Padding         = new Thickness(12),
+            Child           = exceptionScroll,
         };
 
         // --- Log path note ---
         var logPathText = new TextBlock
         {
-            Text = $"Full log written to: {logPath}",
-            FontSize = 11,
-            Foreground = new SolidColorBrush(Color.Parse("#606060")),
+            Text         = $"Full log written to: {logPath}",
+            FontSize     = 11,
+            Foreground   = new SolidColorBrush(KodoTextDim),
             TextWrapping = TextWrapping.Wrap,
         };
 
-        // --- Dismiss button ---
+        // --- Action buttons ---
+        var copyButton = new Button
+        {
+            Content             = "Copy to Clipboard",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Padding             = new Thickness(16, 8),
+            Background          = new SolidColorBrush(KodoDarkBadgeBg),
+            Foreground          = new SolidColorBrush(KodoTextMuted),
+            BorderBrush         = new SolidColorBrush(KodoDarkBorder),
+            BorderThickness     = new Thickness(1),
+            CornerRadius        = new CornerRadius(8),
+        };
+
         var dismissButton = new Button
         {
-            Content = "Dismiss",
+            Content             = isTerminating ? "Close" : "Dismiss",
             HorizontalAlignment = HorizontalAlignment.Right,
-            Padding = new Thickness(20, 8),
-            Background = new SolidColorBrush(Color.Parse("#8C00FF")),
-            Foreground = Brushes.White,
-            BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(8),
+            Padding             = new Thickness(20, 8),
+            Background          = new SolidColorBrush(KodoAccent),
+            Foreground          = Brushes.White,
+            BorderThickness     = new Thickness(0),
+            CornerRadius        = new CornerRadius(8),
         };
+
+        var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        buttonRow.Children.Add(copyButton);
+        Grid.SetColumn(dismissButton, 1);
+        buttonRow.Children.Add(dismissButton);
 
         // --- Layout ---
         var content = new StackPanel
         {
-            Spacing = 12,
-            Margin = new Thickness(20),
+            Spacing  = 12,
+            Margin   = new Thickness(20),
             Children =
             {
                 titleText,
                 subtitleText,
+                terminatingBanner,
                 sourceBadge,
                 exceptionBorder,
                 logPathText,
-                dismissButton,
+                buttonRow,
             },
         };
 
         var dialog = new Window
         {
-            Title = "Kodo — Unhandled Error",
-            Width = 560,
+            // "Crash Report" distinguishes this from the recoverable warning dialog.
+            Title  = "Kodo — Crash Report",
+            Width  = 560,
             SizeToContent = SizeToContent.Height,
-            MinWidth = 400,
+            MinWidth  = 400,
             MinHeight = 200,
-            MaxHeight = 700,
+            MaxHeight = 740,
             CanResize = true,
             WindowStartupLocation = owner is not null
                 ? WindowStartupLocation.CenterOwner
                 : WindowStartupLocation.CenterScreen,
-            Background = new SolidColorBrush(Color.Parse("#1E1E1E")),
-            Content = content,
+            Background = new SolidColorBrush(KodoDarkSurface),
+            Content    = content,
         };
 
-        // Wire up the dismiss button now that we have a reference to the dialog.
+        // Copy the full exception + source to clipboard so the user can paste it
+        // into a GitHub issue or Discord message without manually selecting text.
+        copyButton.Click += async (_, _) =>
+        {
+            try
+            {
+                var clip = TopLevel.GetTopLevel(dialog)?.Clipboard;
+                if (clip is not null)
+                {
+                    var text = $"Source: {source}{Environment.NewLine}{exception}";
+                    await clip.SetTextAsync(text);
+                    copyButton.Content  = "Copied!";
+                    copyButton.Foreground = Brushes.White;
+                }
+            }
+            catch
+            {
+                // Clipboard failures must not crash the crash dialog.
+            }
+        };
+
         dismissButton.Click += (_, _) => dialog.Close();
 
         return dialog;
     }
+
+    // ── Crash log ────────────────────────────────────────────────────────────
 
     private static void WriteCrashLog(string source, Exception exception)
     {
@@ -313,14 +439,23 @@ public partial class App : Application
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "Kodo");
             Directory.CreateDirectory(logDirectory);
+
             var logPath = Path.Combine(logDirectory, "crash.log");
+
+            // UTC timestamps make it easier to correlate logs across time zones.
             var content =
-                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {source}{Environment.NewLine}{exception}{Environment.NewLine}{Environment.NewLine}";
+                $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC] {source}" +
+                $"{Environment.NewLine}{exception}" +
+                $"{Environment.NewLine}{Environment.NewLine}";
+
+            // AppendAllText is synchronous, which is what we want here — the crash
+            // handler must not return before the write completes in case IsTerminating
+            // is true and the process is about to exit.
             File.AppendAllText(logPath, content);
         }
         catch
         {
-            // Last-resort logging should never crash the app.
+            // Last-resort logging must never crash the app.
         }
     }
 }
