@@ -329,6 +329,14 @@ public class ReleaseLinkItem
     public string Url { get; init; } = string.Empty;
 }
 
+public sealed class TerminalShellOption
+{
+    public string Id { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string FileName { get; init; } = string.Empty;
+    public string Arguments { get; init; } = string.Empty;
+}
+
 public static class ExtensionSortModes
 {
     public const string Alphabetical = "A-Z";
@@ -587,6 +595,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isFindPanelVisible;
     private bool _isFileCorrupted;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
+    private TerminalSession? _activeTerminalSession;
+    private TerminalShellOption? _selectedTerminalShell;
+    private int _nextTerminalNumber = 1;
+    private bool _isTerminalVisible;
+    private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
     // Caches compiled KodoHighlightingDefinition instances by LoadedExtension identity.
     // Building one involves compiling multiple Regex objects (RegexOptions.Compiled), which
@@ -728,9 +741,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public ObservableCollection<FileTreeItem> FileTreeItems { get; } = new();
     public ObservableCollection<RecentFileItem> RecentFiles { get; } = new();
     public ObservableCollection<EditorTab> OpenTabs { get; } = new();
+    public ObservableCollection<TerminalSession> TerminalSessions { get; } = new();
     public ObservableCollection<LoadedExtension> LoadedExtensions { get; } = new();
     public ObservableCollection<MarketplaceExtension> MarketplaceExtensions { get; } = new();
     public ObservableCollection<string> ExtensionLoadErrors { get; } = new();
+    public ObservableCollection<TerminalShellOption> AvailableTerminalShells { get; } = new();
 
     public LoadedExtension? CurrentLanguageExtension
     {
@@ -803,6 +818,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
+        TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
         FileTreeItems.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ExplorerPanelWidth));
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
@@ -833,11 +849,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _userHemisphere     = settings.UserHemisphere is >= 0 and <= 2 ? settings.UserHemisphere : 0;
         _userTimezoneOffset = settings.UserTimezoneOffset ?? string.Empty;
         _userName           = settings.UserName ?? string.Empty;
+        _isTerminalVisible = false; // always start hidden; user opens it manually
         _startupOpenTabPaths.AddRange(settings.OpenTabPaths
             .Where(path => File.Exists(path))
             .Distinct(StringComparer.OrdinalIgnoreCase));
         _startupActiveTabPath = settings.ActiveTabPath;
         LoadRecentFiles(settings.RecentFiles);
+        RefreshAvailableTerminalShells(settings.PreferredTerminalShellId);
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
         _discordReconnectTimer.Tick += DiscordReconnectTimer_OnTick;
@@ -2419,6 +2437,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? new SolidColorBrush(mutedBrush.Color, 0.4)
             : new SolidColorBrush(Color.Parse("#808080"), 0.4);
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+
     }
 
     private void ApplyEditorSettings()
@@ -2433,6 +2452,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.FontSize = EditorFontSize;
         _indentGuideRenderer.TabSize = TabSize;
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+
     }
 
     private void ApplySyntaxHighlighting(LoadedExtension ext)
@@ -3241,6 +3261,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(FilePathText));
             OnPropertyChanged(nameof(LanguageDisplayText));
             OnPropertyChanged(nameof(StatusBarFilePathVisibilityText));
+            OnPropertyChanged(nameof(ActiveTerminalWorkingDirectory));
+            OnPropertyChanged(nameof(ActiveTerminalFooterText));
             SaveSettings();
         }
     }
@@ -3403,6 +3425,118 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsTerminalVisible
+    {
+        get => _isTerminalVisible;
+        set
+        {
+            if (_isTerminalVisible == value) return;
+            _isTerminalVisible = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(TerminalStatusBarText));
+            OnPropertyChanged(nameof(ActiveTerminalFooterText));
+            SaveSettings();
+            if (_isTerminalVisible)
+                FocusActiveTerminal();
+            else
+                RefreshTerminalWindows();
+        }
+    }
+
+    public double TerminalPanelHeight => 250;
+
+
+    public TerminalSession? ActiveTerminalSession
+    {
+        get => _activeTerminalSession;
+        private set
+        {
+            if (ReferenceEquals(_activeTerminalSession, value))
+                return;
+
+            // ── Save the outgoing session's screen buffer ─────────────────────
+            // PseudoConsoleTerminal hosts exactly one ConPTY at a time. Switching
+            // sessions always kills the outgoing process (Start() calls Stop()
+            // internally), so we save the snapshot and mark it not-running now,
+            // before that happens, so the session knows it needs a cold-start
+            // when switched back to.
+            if (_activeTerminalSession is not null)
+            {
+                if (TerminalHostControl.HasLiveProcess)
+                    _activeTerminalSession.Snapshot = TerminalHostControl.SaveSnapshot();
+                _activeTerminalSession.IsRunning = false;
+                _activeTerminalSession.IsSelected = false;
+            }
+
+            _activeTerminalSession = value;
+
+            if (_activeTerminalSession is not null)
+                _activeTerminalSession.IsSelected = true;
+
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasActiveTerminal));
+            OnPropertyChanged(nameof(ActiveTerminalStatusText));
+            OnPropertyChanged(nameof(ActiveTerminalWorkingDirectory));
+            OnPropertyChanged(nameof(ActiveTerminalShellDisplayName));
+            OnPropertyChanged(nameof(ActiveTerminalFooterText));
+            OnPropertyChanged(nameof(TerminalStatusBarText));
+            if (_activeTerminalSession is not null)
+            {
+                // Cold-start the incoming session's process. Start() internally calls
+                // ResizeCells which allocates a fresh empty cell grid, so we must
+                // restore the snapshot AFTER Start() — not before — otherwise the
+                // newly allocated grid would immediately overwrite the restored buffer.
+                var shell = AvailableTerminalShells.FirstOrDefault(s =>
+                    string.Equals(s.Id, _activeTerminalSession.ShellId, StringComparison.OrdinalIgnoreCase))
+                    ?? GetSelectedTerminalShellOrFallback();
+                if (shell is not null)
+                {
+                    try
+                    {
+                        var hasSnapshot = _activeTerminalSession.Snapshot is not null;
+                        TerminalHostControl.Start(shell.FileName, shell.Arguments,
+                            _activeTerminalSession.WorkingDirectory,
+                            suppressOutputUntilRestored: hasSnapshot);
+                        _activeTerminalSession.IsRunning = true;
+                        _activeTerminalSession.StatusText = "Ready";
+                    }
+                    catch (Exception ex)
+                    {
+                        _activeTerminalSession.IsRunning = false;
+                        _activeTerminalSession.StatusText = $"Failed to start: {ex.Message}";
+                    }
+                }
+
+                // Restore the saved screen buffer now that Start() has finished
+                // initialising the cell grid. This makes the previous session output
+                // visible immediately while the new shell process is still starting up.
+                if (_activeTerminalSession.Snapshot is not null)
+                    TerminalHostControl.RestoreSnapshot(_activeTerminalSession.Snapshot);
+            }
+            else
+            {
+                TerminalHostControl.Stop();
+            }
+            RefreshTerminalWindows();
+            SaveSettings();
+        }
+    }
+
+    public TerminalShellOption? SelectedTerminalShell
+    {
+        get => _selectedTerminalShell;
+        set
+        {
+            if (ReferenceEquals(_selectedTerminalShell, value))
+                return;
+
+            _selectedTerminalShell = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ActiveTerminalShellDisplayName));
+            SaveSettings();
+        }
+    }
+
     public string FindText
     {
         get => _findText;
@@ -3464,6 +3598,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         : HasDocumentOpen
         ? $"{GetDocumentDisplayName()}{GetDocumentStatusSuffix()}"
         : "Editor";
+    public bool IsTerminalSupported => _isTerminalSupported;
+    public bool HasActiveTerminal => ActiveTerminalSession is not null;
+    public int TerminalSessionCount => TerminalSessions.Count;
+    public string ActiveTerminalStatusText => ActiveTerminalSession?.StatusText ?? (IsTerminalSupported ? "No active terminal" : "Windows only");
+    public string ActiveTerminalWorkingDirectory
+    {
+        get
+        {
+            var fullPath = ActiveTerminalSession?.WorkingDirectory ?? ResolveTerminalWorkingDirectory();
+            if (IsStatusBarFilePathVisible) return fullPath;
+            var trimmed = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return Path.GetFileName(trimmed) is { Length: > 0 } name ? name : fullPath;
+        }
+    }
+    public string ActiveTerminalShellDisplayName => ActiveTerminalSession?.ShellDisplayName ?? SelectedTerminalShell?.DisplayName ?? "Terminal";
+    public string ActiveTerminalFooterText => HasActiveTerminal
+        ? $"{ActiveTerminalWorkingDirectory}  |  {ActiveTerminalStatusText}"
+        : IsTerminalSupported ? "Choose a shell and open a terminal session." : "Embedded terminal is currently supported on Windows only.";
+    public string TerminalStatusBarText => IsTerminalVisible
+        ? $"Terminal ({TerminalSessionCount})"
+        : TerminalSessionCount > 0 ? $"Show terminal ({TerminalSessionCount})" : "Terminal";
 
     public string FilePathText => IsTutorialPageVisible
         ? "Getting started with Kodo"
@@ -4517,6 +4672,43 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SaveSettings();
     }
 
+    private void TerminalSessions_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is not null)
+        {
+            foreach (var item in e.NewItems.OfType<TerminalSession>())
+                item.PropertyChanged += TerminalSession_OnPropertyChanged;
+        }
+
+        if (e.OldItems is not null)
+        {
+            foreach (var item in e.OldItems.OfType<TerminalSession>())
+            {
+                item.PropertyChanged -= TerminalSession_OnPropertyChanged;
+                item.Dispose();
+            }
+        }
+
+        OnPropertyChanged(nameof(HasActiveTerminal));
+        OnPropertyChanged(nameof(TerminalSessionCount));
+        OnPropertyChanged(nameof(TerminalStatusBarText));
+        OnPropertyChanged(nameof(ActiveTerminalFooterText));
+        RefreshTerminalWindows();
+        SaveSettings();
+    }
+
+    private void TerminalSession_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(TerminalSession.WorkingDirectory) or nameof(TerminalSession.StatusText) or nameof(TerminalSession.WindowHandle))
+        {
+            OnPropertyChanged(nameof(ActiveTerminalWorkingDirectory));
+            OnPropertyChanged(nameof(ActiveTerminalStatusText));
+            OnPropertyChanged(nameof(ActiveTerminalFooterText));
+            OnPropertyChanged(nameof(TerminalStatusBarText));
+            RefreshTerminalWindows();
+        }
+    }
+
     // ── State management ─────────────────────────────────────────────────────
 
     private void RefreshState()
@@ -4578,6 +4770,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(AutoSaveStatusText));
         OnPropertyChanged(nameof(LanguageDisplayText));
         OnPropertyChanged(nameof(EncodingDisplayText));
+        OnPropertyChanged(nameof(ActiveTerminalWorkingDirectory));
+        OnPropertyChanged(nameof(ActiveTerminalFooterText));
+        OnPropertyChanged(nameof(TerminalStatusBarText));
         UpdateDiscordPresence();
     }
 
@@ -4808,6 +5003,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             EditorFontSize                         = EditorFontSize,
             ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
             RestoreOpenTabsOnLaunchEnabled          = IsRestoreOpenTabsOnLaunchEnabled,
+            PreferredTerminalShellId                = SelectedTerminalShell?.Id,
+            TerminalVisible                         = IsTerminalVisible,
+            TerminalPanelHeight                     = TerminalPanelHeight,
             HasCompletedTutorial                    = _hasCompletedTutorial,
             AccentColorMode                         = _accentColorMode,
             CustomAccentHex                         = _customAccentHex,
@@ -5979,6 +6177,306 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             DispatcherPriority.Background);
     }
 
+    // ── Terminal helpers ─────────────────────────────────────────────────────
+
+    private void RefreshAvailableTerminalShells(string? preferredShellId = null)
+    {
+        AvailableTerminalShells.Clear();
+
+        foreach (var shell in DetectTerminalShells())
+            AvailableTerminalShells.Add(shell);
+
+        SelectedTerminalShell = AvailableTerminalShells.FirstOrDefault(shell =>
+            string.Equals(shell.Id, preferredShellId, StringComparison.OrdinalIgnoreCase))
+            ?? AvailableTerminalShells.FirstOrDefault(shell =>
+                string.Equals(shell.Id, "powershell", StringComparison.OrdinalIgnoreCase))
+            ?? AvailableTerminalShells.FirstOrDefault();
+    }
+
+    private IEnumerable<TerminalShellOption> DetectTerminalShells()
+    {
+        var shells = new List<TerminalShellOption>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddShell(string id, string displayName, string? resolvedPath, string arguments)
+        {
+            if (string.IsNullOrWhiteSpace(resolvedPath) || !File.Exists(resolvedPath) || !seen.Add(resolvedPath))
+                return;
+
+            shells.Add(new TerminalShellOption
+            {
+                Id = id,
+                DisplayName = displayName,
+                FileName = resolvedPath,
+                Arguments = arguments
+            });
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            AddShell(
+                "powershell",
+                "PowerShell",
+                ResolveExecutable("pwsh.exe")
+                    ?? ResolveExecutable("powershell.exe", Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.System),
+                        @"WindowsPowerShell\v1.0\powershell.exe")),
+                "-NoLogo");
+            AddShell(
+                "windows-powershell",
+                "Windows PowerShell",
+                ResolveExecutable("powershell.exe", Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.System),
+                        @"WindowsPowerShell\v1.0\powershell.exe")),
+                "-NoLogo");
+            AddShell(
+                "cmd",
+                "Command Prompt",
+                ResolveExecutable(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
+                    ?? ResolveExecutable("cmd.exe"),
+                "/K");
+            AddShell(
+                "bash",
+                "Git Bash",
+                ResolveExecutable("bash.exe",
+                    @"C:\Program Files\Git\bin\bash.exe",
+                    @"C:\Program Files\Git\usr\bin\bash.exe"),
+                "--login -i");
+        }
+        else
+        {
+            AddShell("bash", "Bash", ResolveExecutable("bash"), "-i");
+            AddShell("zsh", "Zsh", ResolveExecutable("zsh"), "-i");
+            AddShell("sh", "Shell", ResolveExecutable("sh"), "-i");
+        }
+
+        return shells;
+    }
+
+    private static string? ResolveExecutable(string fileName, params string[] fallbacks)
+    {
+        if (Path.IsPathFullyQualified(fileName) && File.Exists(fileName))
+            return fileName;
+
+        var pathValue = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        var extensions = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT;.COM")
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            : [string.Empty];
+
+        foreach (var path in pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                continue;
+
+            if (Path.HasExtension(fileName))
+            {
+                var candidate = Path.Combine(path, fileName);
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+            else
+            {
+                foreach (var ext in extensions)
+                {
+                    var candidate = Path.Combine(path, fileName + ext);
+                    if (File.Exists(candidate))
+                        return candidate;
+                }
+            }
+        }
+
+        foreach (var fallback in fallbacks)
+        {
+            if (!string.IsNullOrWhiteSpace(fallback) && File.Exists(fallback))
+                return fallback;
+        }
+
+        return null;
+    }
+
+    private string ResolveTerminalWorkingDirectory()
+    {
+        if (!string.IsNullOrWhiteSpace(ActiveTerminalSession?.WorkingDirectory) && Directory.Exists(ActiveTerminalSession.WorkingDirectory))
+            return ActiveTerminalSession.WorkingDirectory;
+        if (!string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath))
+            return _currentFolderPath;
+        if (!string.IsNullOrWhiteSpace(_currentFilePath))
+        {
+            var fileDirectory = Path.GetDirectoryName(_currentFilePath);
+            if (!string.IsNullOrWhiteSpace(fileDirectory) && Directory.Exists(fileDirectory))
+                return fileDirectory;
+        }
+
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
+    private TerminalShellOption? GetSelectedTerminalShellOrFallback() =>
+        SelectedTerminalShell ?? AvailableTerminalShells.FirstOrDefault();
+
+    private void ToggleTerminalPanel(bool ensureVisible = false)
+    {
+        NavigateTo(Page.Editor);
+
+        if (ensureVisible)
+            IsTerminalVisible = true;
+        else
+            IsTerminalVisible = !IsTerminalVisible;
+
+        // Do NOT auto-spawn a shell when the panel opens — the user must click
+        // "Create terminal" or use Ctrl+Shift+` to start one explicitly.
+        if (IsTerminalVisible && ActiveTerminalSession is not null)
+            FocusActiveTerminal();
+    }
+
+    private void CreateTerminalSession(TerminalShellOption? shell = null, TerminalSession? replaceExisting = null)
+    {
+        if (!IsTerminalSupported)
+            return;
+
+        shell ??= GetSelectedTerminalShellOrFallback();
+        if (shell is null)
+            return;
+
+        var workingDirectory = ResolveTerminalWorkingDirectory();
+        var title = _nextTerminalNumber == 1 ? shell.DisplayName : $"{shell.DisplayName} {_nextTerminalNumber}";
+        _nextTerminalNumber++;
+
+        var session = new TerminalSession(shell.Id, shell.DisplayName, title, workingDirectory);
+        StartTerminalProcess(session, shell);
+
+        if (replaceExisting is not null)
+        {
+            var index = TerminalSessions.IndexOf(replaceExisting);
+            if (index >= 0)
+            {
+                CloseTerminalSession(replaceExisting, activateReplacement: false);
+                TerminalSessions.Insert(Math.Min(index, TerminalSessions.Count), session);
+            }
+            else
+            {
+                TerminalSessions.Add(session);
+            }
+        }
+        else
+        {
+            TerminalSessions.Add(session);
+        }
+
+        ActiveTerminalSession = session;
+        IsTerminalVisible = true;
+        FocusActiveTerminal();
+    }
+
+    private void StartTerminalProcess(TerminalSession session, TerminalShellOption shell)
+    {
+        // The actual ConPTY Start() is called by the ActiveTerminalSession setter
+        // (set just after this method returns in CreateTerminalSession). Here we
+        // just wire up the exit event and mark the session as launching so the UI
+        // shows the right status text while the process is starting.
+        TerminalHostControl.SessionExited += OnSessionExited;
+
+        void OnSessionExited(object? s, EventArgs _)
+        {
+            // Unhook so stale lambdas from replaced sessions don't pile up.
+            TerminalHostControl.SessionExited -= OnSessionExited;
+            session.IsRunning = false;
+            session.StatusText = "Exited";
+            OnPropertyChanged(nameof(TerminalStatusBarText));
+            OnPropertyChanged(nameof(ActiveTerminalFooterText));
+        }
+
+        session.IsRunning = true;
+        session.StatusText = "Launching...";
+    }
+
+
+
+    private void ClearActiveTerminal()
+    {
+        if (ActiveTerminalSession is null)
+            return;
+
+        SendTextToTerminal(ActiveTerminalSession, GetClearCommandForShell(ActiveTerminalSession.ShellId));
+    }
+
+    private static string GetClearCommandForShell(string shellId) =>
+        shellId switch
+        {
+            "bash" or "zsh" or "sh" => "clear\r",
+            _ => "cls\r"
+        };
+
+    private void RestartActiveTerminal()
+    {
+        if (ActiveTerminalSession is null)
+        {
+            CreateTerminalSession();
+            return;
+        }
+
+        var shell = AvailableTerminalShells.FirstOrDefault(option =>
+            string.Equals(option.Id, ActiveTerminalSession.ShellId, StringComparison.OrdinalIgnoreCase))
+            ?? GetSelectedTerminalShellOrFallback();
+        CreateTerminalSession(shell, ActiveTerminalSession);
+    }
+
+    private void RefreshTerminalWindows()
+    {
+        // PseudoConsoleTerminal is a native Avalonia control — it handles its own
+        // layout and rendering. Showing / hiding is driven by IsVisible bindings on
+        // the host Grid in AXAML, so there is nothing to manually synchronise here.
+        // The method is kept so call-sites that still reference it compile cleanly.
+    }
+
+    private void FocusActiveTerminal()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (IsTerminalVisible && ActiveTerminalSession is not null)
+                TerminalHostControl.Focus();
+        }, DispatcherPriority.Input);
+    }
+
+    private void SendTextToTerminal(TerminalSession session, string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        TerminalHostControl.SendInput(text);
+    }
+
+    private void CloseTerminalSession(TerminalSession session, bool activateReplacement = true)
+    {
+        // Stop the ConPTY process for this session.
+        if (ReferenceEquals(session, ActiveTerminalSession))
+            TerminalHostControl.Stop();
+
+        session.IsRunning = false;
+        session.Dispose();
+
+        var index = TerminalSessions.IndexOf(session);
+        TerminalSessions.Remove(session);
+
+        if (!activateReplacement)
+            return;
+
+        if (ReferenceEquals(ActiveTerminalSession, session))
+        {
+            ActiveTerminalSession = TerminalSessions.Count == 0
+                ? null
+                : TerminalSessions[Math.Clamp(index - 1, 0, TerminalSessions.Count - 1)];
+        }
+    }
+
+    private void CloseAllTerminalSessions()
+    {
+        foreach (var session in TerminalSessions.ToList())
+            CloseTerminalSession(session);
+
+        ActiveTerminalSession = null;
+    }
+
     private void FocusEditor()
     {
         Dispatcher.UIThread.Post(() =>
@@ -6048,6 +6546,81 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void NewFileButton_OnClick(object? sender, RoutedEventArgs e) =>
         NewFile();
+
+    private void ToggleTerminalButton_OnClick(object? sender, RoutedEventArgs e) =>
+        ToggleTerminalPanel();
+
+    private void NewTerminalButton_OnClick(object? sender, RoutedEventArgs e) =>
+        CreateTerminalSession();
+
+    private void ClearTerminalButton_OnClick(object? sender, RoutedEventArgs e) =>
+        ClearActiveTerminal();
+
+    private void RestartTerminalButton_OnClick(object? sender, RoutedEventArgs e) =>
+        RestartActiveTerminal();
+
+    private void StatusBar_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        e.Handled = true;
+    }
+
+
+
+    private void CloseTerminalButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (ActiveTerminalSession is not null)
+            CloseTerminalSession(ActiveTerminalSession);
+    }
+
+    private void OpenTerminalSessionButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: TerminalSession session })
+        {
+            ActiveTerminalSession = session;
+            IsTerminalVisible = true;
+            FocusActiveTerminal();
+        }
+    }
+
+    private void CloseTerminalSessionButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: TerminalSession session })
+            CloseTerminalSession(session);
+    }
+
+    private async void RenameTerminalSessionMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<TerminalSession>(sender) is not { } session) return;
+        var newName = await ShowRenameDialogAsync(session.Title);
+        if (newName is null || string.Equals(newName, session.Title, StringComparison.Ordinal)) return;
+        session.Title = newName;
+    }
+
+    private void DuplicateTerminalSessionMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<TerminalSession>(sender) is not { } session) return;
+        var shell = AvailableTerminalShells.FirstOrDefault(s =>
+            string.Equals(s.Id, session.ShellId, StringComparison.OrdinalIgnoreCase))
+            ?? GetSelectedTerminalShellOrFallback();
+        CreateTerminalSession(shell);
+    }
+
+    private void RestartTerminalSessionMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<TerminalSession>(sender) is not { } session) return;
+        var shell = AvailableTerminalShells.FirstOrDefault(s =>
+            string.Equals(s.Id, session.ShellId, StringComparison.OrdinalIgnoreCase))
+            ?? GetSelectedTerminalShellOrFallback();
+        CreateTerminalSession(shell, session);
+    }
+
+    private void CloseOtherTerminalSessionsMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<TerminalSession>(sender) is not { } pivotSession) return;
+        var others = TerminalSessions.Where(s => !ReferenceEquals(s, pivotSession)).ToList();
+        foreach (var s in others)
+            CloseTerminalSession(s);
+    }
 
     private async void OpenFolderButton_OnClick(object? sender, RoutedEventArgs e) =>
         await OpenFolderAsync();
@@ -7924,6 +8497,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _windowsAccentPollTimer.Stop();
         NetworkChange.NetworkAvailabilityChanged -= NetworkChange_OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged -= NetworkChange_OnNetworkAddressChanged;
+        CloseAllTerminalSessions();
         DisposeExtensionFolderWatchers();
         DisposeDiscordPresence();
         CurrentImagePreview = null;
@@ -8138,6 +8712,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 e.Handled = true;
                 break;
 
+            case Key.J:
+                // Ctrl+J - toggle the bottom terminal panel
+                ToggleTerminalPanel();
+                e.Handled = true;
+                break;
+
             case Key.W:
                 // Ctrl+W - close current tab
                 if (ActiveEditorTab is not null)
@@ -8159,6 +8739,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 NavigateTo(Page.Extensions);
                 RefreshMarketplaceConnectivityState();
                 _ = RefreshExtensionsDataAsync();
+                e.Handled = true;
+                break;
+
+            case Key.Oem3:
+                if (hasShift)
+                    CreateTerminalSession();
+                else
+                    ToggleTerminalPanel();
                 e.Handled = true;
                 break;
         }
@@ -8486,6 +9074,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public int EditorFontSize { get; set; } = 14;
         public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
         public bool RestoreOpenTabsOnLaunchEnabled { get; set; }
+        public string? PreferredTerminalShellId { get; set; }
+        public bool TerminalVisible { get; set; }
+        public double TerminalPanelHeight { get; set; } = 250;
         public List<string> OpenTabPaths { get; set; } = [];
         public string? ActiveTabPath { get; set; }
         public List<RecentFileEntry> RecentFiles { get; set; } = [];
@@ -8525,6 +9116,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         string HighlightTwo,
         string HighlightThree);
 }
+
 
 public sealed class RecentFileItem
 {

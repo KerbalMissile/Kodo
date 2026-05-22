@@ -11,7 +11,7 @@
         x:Name="RootWindow"
         x:CompileBindings="False"
         Width="1100"
-        Height="760"
+        Height="810"
         MinWidth="900"
         MinHeight="620"
         Title="Kodo"
@@ -803,7 +803,16 @@
             </StackPanel>
 
             <Panel Grid.Row="1">
-            <Grid IsVisible="{Binding IsEditorPageVisible}" IsHitTestVisible="{Binding IsEditorPageVisible}" RowDefinitions="Auto,Auto,*,Auto">
+            <Grid IsVisible="{Binding IsEditorPageVisible}" IsHitTestVisible="{Binding IsEditorPageVisible}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="4" />
+                    <RowDefinition Height="Auto" MaxHeight="420" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
                 <Border Grid.Row="0"
                         Background="{Binding TopBarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
@@ -1247,11 +1256,235 @@
                     </Grid>
                 </Border>
 
-                <Border Grid.Row="3"
+
+
+                <Border Grid.Row="4"
+                        IsVisible="{Binding IsTerminalVisible}"
+                        Background="{Binding CardBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="0,1,0,1"
+                        Height="300">
+                    <Grid RowDefinitions="Auto,Auto,*,Auto">
+                        <Border Grid.Row="0"
+                                Background="{Binding TopBarBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="0,0,0,1"
+                                Padding="12,10">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="8"
+                                            VerticalAlignment="Center">
+                                    <TextBlock FontSize="13"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="TERMINAL" />
+                                    <TextBlock FontSize="12"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="{Binding ActiveTerminalShellDisplayName}" />
+                                    <TextBlock FontSize="12"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Opacity="0.5"
+                                               Text="•" />
+                                    <TextBlock FontSize="12"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="{Binding ActiveTerminalStatusText}" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            Spacing="8"
+                                            VerticalAlignment="Center">
+                                    <ComboBox MinWidth="120"
+                                              MaxWidth="240"
+                                              ItemsSource="{Binding AvailableTerminalShells}"
+                                              SelectedItem="{Binding SelectedTerminalShell, Mode=TwoWay}"
+                                              Background="{Binding ButtonBrush}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              BorderBrush="{Binding SurfaceBorderBrush}"
+                                              CornerRadius="8"
+                                              Padding="12,8"
+                                              VerticalContentAlignment="Center"
+                                              ToolTip.Tip="Choose the default shell for new terminals">
+                                        <ComboBox.Styles>
+                                            <Style Selector="ComboBox /template/ Border#PART_Border">
+                                                <Setter Property="MinHeight" Value="0" />
+                                            </Style>
+                                        </ComboBox.Styles>
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="kodo:TerminalShellOption">
+                                                <TextBlock Text="{Binding DisplayName}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <Button Classes="chrome"
+                                            Click="NewTerminalButton_OnClick"
+                                            ToolTip.Tip="New terminal (Ctrl+Shift+`)"
+                                            Content="+" />
+                                    <Button Classes="chrome"
+                                            Click="ClearTerminalButton_OnClick"
+                                            IsEnabled="{Binding HasActiveTerminal}"
+                                            ToolTip.Tip="Clear terminal"
+                                            Content="Clear" />
+                                    <Button Classes="chrome"
+                                            Click="RestartTerminalButton_OnClick"
+                                            IsEnabled="{Binding HasActiveTerminal}"
+                                            ToolTip.Tip="Restart active terminal with the selected shell"
+                                            Content="Restart" />
+                                    <Button Classes="chrome"
+                                            Click="CloseTerminalButton_OnClick"
+                                            IsEnabled="{Binding HasActiveTerminal}"
+                                            ToolTip.Tip="Close active terminal"
+                                            Content="×" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="1"
+                                Background="{Binding TopBarBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="0,0,0,1">
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding TerminalSessions}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="kodoModels:TerminalSession">
+                                            <Border Classes="tabwrap"
+                                                    Classes.active="{Binding IsSelected}">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="Rename"
+                                                                  Tag="{Binding}"
+                                                                  Click="RenameTerminalSessionMenuItem_OnClick" />
+                                                        <Separator />
+                                                        <MenuItem Header="Restart"
+                                                                  Tag="{Binding}"
+                                                                  Click="RestartTerminalSessionMenuItem_OnClick" />
+                                                        <MenuItem Header="Duplicate"
+                                                                  Tag="{Binding}"
+                                                                  Click="DuplicateTerminalSessionMenuItem_OnClick" />
+                                                        <Separator />
+                                                        <MenuItem Header="Close Others"
+                                                                  Tag="{Binding}"
+                                                                  Click="CloseOtherTerminalSessionsMenuItem_OnClick" />
+                                                        <MenuItem Header="Close"
+                                                                  Tag="{Binding}"
+                                                                  Click="CloseTerminalSessionButton_OnClick" />
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
+                                                <Grid RowDefinitions="Auto,2"
+                                                      ColumnDefinitions="*,Auto">
+                                                    <Button Grid.Row="0"
+                                                            Grid.Column="0"
+                                                            Grid.ColumnSpan="2"
+                                                            Classes="editortab"
+                                                            Tag="{Binding}"
+                                                            Click="OpenTerminalSessionButton_OnClick"
+                                                            Background="Transparent"
+                                                            Padding="14,10,36,10">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <TextBlock FontSize="13"
+                                                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                       Text="{Binding Title}" />
+                                                            <TextBlock FontSize="11"
+                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                       Text="{Binding ShellDisplayName}" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Grid.Row="0"
+                                                            Grid.Column="1"
+                                                            Classes="tabclose"
+                                                            Classes.active="{Binding IsSelected}"
+                                                            Tag="{Binding}"
+                                                            Click="CloseTerminalSessionButton_OnClick"
+                                                            Margin="0,0,6,0"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center"
+                                                            ToolTip.Tip="Close terminal">
+                                                        <TextBlock FontSize="11"
+                                                                   Text="&#x2715;"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}" />
+                                                    </Button>
+                                                    <Border Grid.Row="1"
+                                                            Grid.Column="0"
+                                                            Grid.ColumnSpan="2"
+                                                            Classes="tabunderline tabunderlinebase"
+                                                            Height="2"
+                                                            Background="{Binding #RootWindow.AccentBrush}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+
+                        <Grid Grid.Row="2"
+                              IsVisible="{Binding HasActiveTerminal}">
+                            <kodo:PseudoConsoleTerminal x:Name="TerminalHostControl" />
+                        </Grid>
+
+                        <Border Grid.Row="2"
+                                IsVisible="{Binding !HasActiveTerminal}"
+                                Background="{Binding EditorBackgroundBrush}">
+                            <StackPanel HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Spacing="10">
+                                <TextBlock FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           HorizontalAlignment="Center"
+                                           Text="No active terminal" />
+                                <TextBlock FontSize="13"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           HorizontalAlignment="Center"
+                                           Text="Choose a shell and open a terminal session." />
+                                <Button Classes="chrome"
+                                        Click="NewTerminalButton_OnClick"
+                                        HorizontalAlignment="Center"
+                                        Content="Create terminal" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="3"
+                                x:Name="TerminalFooterBar"
+                                Background="{Binding TopBarBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="0,1,0,0"
+                                Padding="12,6"
+                                PointerPressed="StatusBar_OnPointerPressed">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="{Binding ActiveTerminalFooterText}" />
+                                <Button Grid.Column="1"
+                                        Classes="statusitem"
+                                        Click="ToggleTerminalButton_OnClick"
+                                        ToolTip.Tip="Hide terminal (Ctrl+` or Ctrl+J)">
+                                    <TextBlock FontSize="12"
+                                               Text="Hide terminal" />
+                                </Button>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="5"
                         Background="{Binding TopBarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,1,0,0"
-                        Padding="16,10">
+                        Padding="16,10"
+                        PointerPressed="StatusBar_OnPointerPressed">
                     <Grid ColumnDefinitions="*,Auto">
                         <!-- File path - takes all remaining space, left-aligned -->
                         <TextBlock Grid.Column="0"
@@ -1324,6 +1557,15 @@
                                        IsVisible="{Binding CanShowFindInFile}"
                                        Text="|" />
 
+                            <Button Classes="statusitem"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,4,0"
+                                    Click="ToggleTerminalButton_OnClick"
+                                    ToolTip.Tip="Toggle terminal (Ctrl+` or Ctrl+J)">
+                                <TextBlock FontSize="12"
+                                           Text="{Binding TerminalStatusBarText}" />
+                            </Button>
+
                             <!-- Find button - far right -->
                             <Button Background="Transparent"
                                     BorderThickness="0"
@@ -1342,7 +1584,7 @@
                 </Border>
 
                 <!-- Find in file panel -->
-                <Border Grid.Row="3"
+                <Border Grid.Row="5"
                         IsVisible="{Binding IsFindPanelActive}"
                         Background="{Binding CardBrush}"
                         BorderBrush="{Binding AccentBrush}"
@@ -2554,6 +2796,40 @@
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        TextWrapping="Wrap"
                                        Text="{Binding EditorBehaviorStatusText}" />
+
+                            <Border Height="1"
+                                    Background="{Binding SurfaceBorderBrush}" />
+
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                <TextBlock FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           VerticalAlignment="Center"
+                                           Text="Terminal" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="12"
+                                        VerticalAlignment="Center">
+                                <TextBlock VerticalAlignment="Center"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Default shell" />
+                                <ComboBox Width="220"
+                                          ItemsSource="{Binding AvailableTerminalShells}"
+                                          SelectedItem="{Binding SelectedTerminalShell, Mode=TwoWay}"
+                                          Background="{Binding ButtonBrush}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          BorderBrush="{Binding SurfaceBorderBrush}"
+                                          CornerRadius="8">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="kodo:TerminalShellOption">
+                                            <TextBlock Text="{Binding DisplayName}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </StackPanel>
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="New terminal sessions use the selected shell. PowerShell is preferred when it is available." />
 
                             <Border Height="1"
                                     Background="{Binding SurfaceBorderBrush}" />
