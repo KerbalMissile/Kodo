@@ -67,6 +67,7 @@ public partial class App : Application
     {
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
         TaskScheduler.UnobservedTaskException       += TaskScheduler_OnUnobservedTaskException;
+        Dispatcher.UIThread.UnhandledException      += DispatcherUiThread_OnUnhandledException;
         AvaloniaXamlLoader.Load(this);
     }
 
@@ -144,17 +145,24 @@ public partial class App : Application
     {
         if (e.ExceptionObject is not Exception exception) return;
 
-        WriteCrashLog("AppDomain.UnhandledException", exception);
+        KodoDiagnostics.WriteDiagnosticLog("AppDomain.UnhandledException", exception, e.IsTerminating, "Crash");
         ShowCrashDialog("AppDomain.UnhandledException", exception, isTerminating: e.IsTerminating);
     }
 
     private static void TaskScheduler_OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        WriteCrashLog("TaskScheduler.UnobservedTaskException", e.Exception);
+        KodoDiagnostics.WriteDiagnosticLog("TaskScheduler.UnobservedTaskException", e.Exception, false, "Crash");
         // Mark as observed first so the runtime does not re-throw it after we return.
         e.SetObserved();
         // This source is never IsTerminating, so the user can dismiss and keep working.
         ShowCrashDialog("TaskScheduler.UnobservedTaskException", e.Exception, isTerminating: false);
+    }
+
+    private static void DispatcherUiThread_OnUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        KodoDiagnostics.WriteDiagnosticLog("Dispatcher.UIThread.UnhandledException", e.Exception, false, "Crash");
+        ShowCrashDialog("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
+        e.Handled = true;
     }
 
     // ── Crash dialog ─────────────────────────────────────────────────────────
@@ -178,9 +186,7 @@ public partial class App : Application
     {
         try
         {
-            var logPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "Kodo", "crash.log");
+            var logPath = KodoDiagnostics.LogFilePath;
 
             if (Dispatcher.UIThread.CheckAccess())
             {
@@ -303,10 +309,19 @@ public partial class App : Application
             },
         };
 
+        var metadataText = new SelectableTextBlock
+        {
+            Text         = KodoDiagnostics.BuildDiagnosticSummary(source, isTerminating),
+            FontSize     = 11,
+            FontFamily   = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+            Foreground   = new SolidColorBrush(KodoTextMuted),
+            TextWrapping = TextWrapping.Wrap,
+        };
+
         // --- Exception details (scrollable, selectable) ---
         var exceptionText = new SelectableTextBlock
         {
-            Text       = exception.ToString(),
+            Text       = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, "Crash"),
             FontSize   = 12,
             FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
             Foreground = new SolidColorBrush(KodoTokenOrange),
@@ -380,6 +395,7 @@ public partial class App : Application
                 subtitleText,
                 terminatingBanner,
                 sourceBadge,
+                metadataText,
                 exceptionBorder,
                 logPathText,
                 buttonRow,
@@ -412,7 +428,7 @@ public partial class App : Application
                 var clip = TopLevel.GetTopLevel(dialog)?.Clipboard;
                 if (clip is not null)
                 {
-                    var text = $"Source: {source}{Environment.NewLine}{exception}";
+                    var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, "Crash");
                     await clip.SetTextAsync(text);
                     copyButton.Content  = "Copied!";
                     copyButton.Foreground = Brushes.White;
@@ -429,33 +445,4 @@ public partial class App : Application
         return dialog;
     }
 
-    // ── Crash log ────────────────────────────────────────────────────────────
-
-    private static void WriteCrashLog(string source, Exception exception)
-    {
-        try
-        {
-            var logDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "Kodo");
-            Directory.CreateDirectory(logDirectory);
-
-            var logPath = Path.Combine(logDirectory, "crash.log");
-
-            // UTC timestamps make it easier to correlate logs across time zones.
-            var content =
-                $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC] {source}" +
-                $"{Environment.NewLine}{exception}" +
-                $"{Environment.NewLine}{Environment.NewLine}";
-
-            // AppendAllText is synchronous, which is what we want here — the crash
-            // handler must not return before the write completes in case IsTerminating
-            // is true and the process is about to exit.
-            File.AppendAllText(logPath, content);
-        }
-        catch
-        {
-            // Last-resort logging must never crash the app.
-        }
-    }
 }

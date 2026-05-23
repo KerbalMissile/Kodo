@@ -75,6 +75,7 @@ public sealed class PseudoConsoleTerminal : Control
     private Stream? _writeStream;
     private Stream? _readStream;
     private CancellationTokenSource? _cts;
+    private int _renderInvalidationQueued;
 
     // When non-zero, the read loop discards all shell output until this
     // timestamp (from Environment.TickCount64) has passed. Set by Start()
@@ -228,7 +229,7 @@ public sealed class PseudoConsoleTerminal : Control
     {
         if (_writeStream is null || string.IsNullOrEmpty(text)) return;
         var bytes = Encoding.UTF8.GetBytes(text);
-        try { _writeStream.Write(bytes, 0, bytes.Length); _writeStream.Flush(); }
+        try { _writeStream.Write(bytes, 0, bytes.Length); }
         catch { }
     }
 
@@ -300,7 +301,7 @@ public sealed class PseudoConsoleTerminal : Control
             // after 500 ms, at which point the shell's redrawn prompt takes over.
         }
         // Redraw immediately with the restored content.
-        InvalidateVisual();
+        QueueInvalidateVisual();
     }
 
     // ── Avalonia overrides ────────────────────────────────────────────────────
@@ -496,11 +497,23 @@ public sealed class PseudoConsoleTerminal : Control
                     if (Environment.TickCount64 >= _suppressOutputUntilTick)
                         foreach (var ch in text) ProcessChar(ch);
                 }
-                Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
+                QueueInvalidateVisual();
             }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { Console.WriteLine($"[ConPTY] ReadOutputLoop: {ex.Message}"); }
+    }
+
+    private void QueueInvalidateVisual()
+    {
+        if (Interlocked.Exchange(ref _renderInvalidationQueued, 1) != 0)
+            return;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            Interlocked.Exchange(ref _renderInvalidationQueued, 0);
+            InvalidateVisual();
+        }, DispatcherPriority.Render);
     }
 
     // ── VT / ANSI parser ──────────────────────────────────────────────────────

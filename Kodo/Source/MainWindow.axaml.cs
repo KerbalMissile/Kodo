@@ -15,6 +15,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
@@ -506,6 +507,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _autoSaveStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private readonly DispatcherTimer _discordReconnectTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
+    private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(175) };
+    private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     // Polls the Windows accent registry key so the blob and active accent stay
     // live without requiring the Microsoft.Win32.SystemEvents NuGet package.
     private readonly DispatcherTimer _windowsAccentPollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -535,6 +538,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isFileTreeExpanded;
     private bool _isStatusBarFilePathVisible = true;
     private bool _isWordWrapEnabled;
+    private bool _suppressExplorerWidthRefresh;
     private bool _isConfirmBeforeClosingUnsavedTabsEnabled = true;
     private bool _isRestoreOpenTabsOnLaunchEnabled;
     private bool _isMarketplaceTabSelected;
@@ -553,6 +557,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _requestedThemeName = "Dark";
     private string _editorStatsText = "0 lines";
     private string _wordCountText = string.Empty;
+    private bool _pendingFullStateRefresh = true;
     private string _lastDiscordPresenceDetails = string.Empty;
     private string _lastDiscordPresenceState = string.Empty;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
@@ -571,7 +576,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _extensionsRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly IndentGuideBackgroundRenderer _indentGuideRenderer = new();
     private readonly List<string> _startupOpenTabPaths = [];
+    private readonly Dictionary<string, IBrush> _brushCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, byte[]> _marketplaceIconBytesCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _warningDialogCooldowns = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _iconFetchSemaphore = new(4, 4);
     private static readonly TimeSpan ExtensionsRefreshCooldown = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan WarningDialogCooldown = TimeSpan.FromSeconds(10);
     private static readonly HashSet<string> ImagePreviewExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".apng", ".jpg", ".jpeg", ".jpe", ".jfif", ".bmp", ".dib", ".gif",
@@ -819,7 +829,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
-        FileTreeItems.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ExplorerPanelWidth));
+        FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => QueueRefreshState();
@@ -860,6 +870,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
         _discordReconnectTimer.Tick += DiscordReconnectTimer_OnTick;
         _editorStateRefreshTimer.Tick += EditorStateRefreshTimer_OnTick;
+        _wordCountRefreshTimer.Tick += WordCountRefreshTimer_OnTick;
+        _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
 
         // ── Pre-DataContext theme bootstrap ────────────────────────────────────
@@ -881,8 +893,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // populated the theme; the async path below will update everything else
         // (marketplace data, update badges) without touching the brush values again
         // unless the user has changed settings while offline.
-        _ = RefreshExtensionsDataAsync();
-        _ = RefreshLatestReleaseAsync();
         UpdateDiscordRichPresenceLifecycle();
         ApplyEditorSettings();
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
@@ -899,7 +909,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Opened += MainWindow_OnOpened;
         Closing += MainWindow_OnClosing;
         Closed += MainWindow_OnClosed;
-        RefreshState();
+        RefreshState(fullRefresh: true);
     }
 
     // ── Extension loading ────────────────────────────────────────────────────
@@ -1008,7 +1018,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            LoadExtensions();
+            var extensionScan = await Task.Run(ScanInstalledExtensions);
+            ApplyLoadedExtensionsResult(extensionScan);
             await LoadMarketplaceExtensionsAsync();
             if (!string.Equals(CurrentThemeName, _requestedThemeName, StringComparison.OrdinalIgnoreCase) &&
                 (string.Equals(_requestedThemeName, "Light", StringComparison.OrdinalIgnoreCase) ||
@@ -1036,11 +1047,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void LoadExtensions()
     {
+        ApplyLoadedExtensionsResult(ScanInstalledExtensions());
+    }
+
+    private ExtensionScanResult ScanInstalledExtensions()
+    {
         // Compiled highlighting definitions are keyed by LoadedExtension reference.
         // Extension reload creates new instances, so the old entries are now orphaned;
         // drop them here to avoid a memory leak and ensure fresh definitions are built.
-        _highlightingCache.Clear();
-
         var loadedExtensions = new List<LoadedExtension>();
         var extensionLoadErrors = new List<string>();
         var searchPaths = GetExtensionSearchPaths().ToList();
@@ -1088,8 +1102,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!anyFolderFound)
             extensionLoadErrors.Add($"Extensions folder not found. Expected: {ExtensionsFolderPath}");
 
-        SyncObservableCollection(LoadedExtensions, loadedExtensions, ext => ext.Id);
-        SyncObservableCollection(ExtensionLoadErrors, extensionLoadErrors, error => error);
+        return new ExtensionScanResult(loadedExtensions, extensionLoadErrors);
+    }
+
+    private void ApplyLoadedExtensionsResult(ExtensionScanResult result)
+    {
+        _highlightingCache.Clear();
+        SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
+        SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
 
         // Re-stamp IsActiveTheme on every theme extension now that the collection
         // may contain brand-new LoadedExtension instances (SyncObservableCollection
@@ -1148,36 +1168,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(ExtensionLoadErrors));
         OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
         NotifyExtensionFiltersChanged();
-        await FetchMarketplaceIconsAsync();
-        await FetchInstalledExtensionIconsAsync();
+        var marketplaceIconMap = MarketplaceExtensions
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
+            .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
+        await FetchMarketplaceIconsAsync(marketplaceIconMap);
+        await FetchInstalledExtensionIconsAsync(marketplaceIconMap);
     }
 
-    private async Task FetchInstalledExtensionIconsAsync()
+    private async Task FetchInstalledExtensionIconsAsync(IReadOnlyDictionary<string, string> marketplaceIconMap)
     {
-        // For each installed extension, look up its IconUrl from the marketplace index
-        // and fetch it so the Installed tab shows the same artwork as the Marketplace tab.
         var tasks = LoadedExtensions
-            .Select(ext =>
-            {
-                var marketplaceEntry = MarketplaceExtensions.FirstOrDefault(m =>
-                    m.Id.Equals(ext.Id, StringComparison.OrdinalIgnoreCase));
-                return (ext, iconUrl: marketplaceEntry?.IconUrl ?? string.Empty);
-            })
+            .Select(ext => (ext, iconUrl: marketplaceIconMap.TryGetValue(ext.Id, out var iconUrl) ? iconUrl : string.Empty))
             .Where(pair => !string.IsNullOrWhiteSpace(pair.iconUrl))
             .Select(async pair =>
             {
                 try
                 {
-                    var bytes = await MarketplaceHttpClient.GetByteArrayAsync(pair.iconUrl);
+                    var bitmap = await GetCachedBitmapFromUrlAsync(pair.iconUrl);
+                    if (bitmap is null)
+                        return;
+
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        try
-                        {
-                            using var ms = new MemoryStream(bytes);
-                            pair.ext.IconImage = new Bitmap(ms);
-                            pair.ext.NotifyIconChanged();
-                        }
-                        catch { /* Bad image data - keep existing icon or abbreviation. */ }
+                        ReplaceLoadedExtensionIcon(pair.ext, bitmap);
                     });
                 }
                 catch { /* Network failure - keep existing icon or abbreviation. */ }
@@ -1186,32 +1199,79 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await Task.WhenAll(tasks);
     }
 
-    private async Task FetchMarketplaceIconsAsync()
+    private async Task FetchMarketplaceIconsAsync(IReadOnlyDictionary<string, string> marketplaceIconMap)
     {
-        // Fetch the icon from IconUrl for every entry that has one.
-        // For installed extensions, the remote icon takes priority over the local
-        // .kox icon so the marketplace always shows the index-supplied artwork.
         var tasks = MarketplaceExtensions
-            .Where(e => !string.IsNullOrWhiteSpace(e.IconUrl))
+            .Where(entry => marketplaceIconMap.TryGetValue(entry.Id, out _))
             .Select(async entry =>
             {
                 try
                 {
-                    var bytes = await MarketplaceHttpClient.GetByteArrayAsync(entry.IconUrl);
+                    var bitmap = await GetCachedBitmapFromUrlAsync(marketplaceIconMap[entry.Id]);
+                    if (bitmap is null)
+                        return;
+
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        try
-                        {
-                            using var ms = new MemoryStream(bytes);
-                            entry.IconImage = new Bitmap(ms);
-                        }
-                        catch { /* Silently ignore bad image data - fallback to abbreviation. */ }
+                        ReplaceMarketplaceIcon(entry, bitmap);
                     });
                 }
                 catch { /* Network failure - fallback to local icon or abbreviation. */ }
             });
 
         await Task.WhenAll(tasks);
+    }
+
+    private async Task<Bitmap?> GetCachedBitmapFromUrlAsync(string iconUrl)
+    {
+        if (string.IsNullOrWhiteSpace(iconUrl))
+            return null;
+
+        if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out var bytes))
+        {
+            await _iconFetchSemaphore.WaitAsync();
+            try
+            {
+                if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out bytes))
+                {
+                    bytes = await MarketplaceHttpClient.GetByteArrayAsync(iconUrl);
+                    _marketplaceIconBytesCache[iconUrl] = bytes;
+                }
+            }
+            finally
+            {
+                _iconFetchSemaphore.Release();
+            }
+        }
+
+        try
+        {
+            using var ms = new MemoryStream(bytes);
+            return new Bitmap(ms);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void ReplaceLoadedExtensionIcon(LoadedExtension extension, Bitmap newBitmap)
+    {
+        if (ReferenceEquals(extension.IconImage, newBitmap))
+            return;
+
+        extension.IconImage?.Dispose();
+        extension.IconImage = newBitmap;
+        extension.NotifyIconChanged();
+    }
+
+    private static void ReplaceMarketplaceIcon(MarketplaceExtension extension, Bitmap newBitmap)
+    {
+        if (ReferenceEquals(extension.IconImage, newBitmap))
+            return;
+
+        extension.IconImage?.Dispose();
+        extension.IconImage = newBitmap;
     }
 
     private async Task RefreshLatestReleaseAsync()
@@ -1364,10 +1424,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             entry.SetInstalledState(localExt, isUpdateAvailable);
             if (localExt is not null)
                 localExt.IsUpdateAvailable = isUpdateAvailable;
-
-            // When installed, prefer the local icon from the .kox file over the remote IconUrl.
-            if (localExt?.IconImage is not null)
-                entry.IconImage = localExt.IconImage;
         }
 
         OnPropertyChanged(nameof(AvailableExtensionUpdatesCount));
@@ -1415,38 +1471,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Func<T, TKey> keySelector)
         where TKey : notnull
     {
+        var sourceByKey = source.ToDictionary(keySelector);
+
         for (var i = target.Count - 1; i >= 0; i--)
         {
             var key = keySelector(target[i]);
-            if (!source.Any(item => EqualityComparer<TKey>.Default.Equals(keySelector(item), key)))
+            if (!sourceByKey.ContainsKey(key))
                 target.RemoveAt(i);
         }
+
+        var targetIndexByKey = new Dictionary<TKey, int>();
+        for (var i = 0; i < target.Count; i++)
+            targetIndexByKey[keySelector(target[i])] = i;
 
         for (var i = 0; i < source.Count; i++)
         {
             var item = source[i];
             var key = keySelector(item);
-            var existingIndex = -1;
-            for (var j = 0; j < target.Count; j++)
-            {
-                if (EqualityComparer<TKey>.Default.Equals(keySelector(target[j]), key))
-                {
-                    existingIndex = j;
-                    break;
-                }
-            }
+            var existingIndex = targetIndexByKey.TryGetValue(key, out var foundIndex) ? foundIndex : -1;
 
             if (existingIndex == -1)
             {
                 target.Insert(Math.Min(i, target.Count), item);
+                for (var j = i; j < target.Count; j++)
+                    targetIndexByKey[keySelector(target[j])] = j;
                 continue;
             }
 
             if (existingIndex != i)
+            {
                 target.Move(existingIndex, i);
+                var start = Math.Min(existingIndex, i);
+                for (var j = start; j < target.Count; j++)
+                    targetIndexByKey[keySelector(target[j])] = j;
+            }
 
             if (!ReferenceEquals(target[i], item))
+            {
                 target[i] = item;
+                targetIndexByKey[key] = i;
+            }
         }
     }
 
@@ -4672,6 +4736,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SaveSettings();
     }
 
+    private void FileTreeItems_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (!_suppressExplorerWidthRefresh)
+            OnPropertyChanged(nameof(ExplorerPanelWidth));
+    }
+
     private void TerminalSessions_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.NewItems is not null)
@@ -4711,7 +4781,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // ── State management ─────────────────────────────────────────────────────
 
-    private void RefreshState()
+    private void RefreshState(bool fullRefresh = false)
+    {
+        RefreshCaretAndDocumentStats();
+
+        if (!fullRefresh)
+            return;
+
+        _pendingFullStateRefresh = false;
+        RefreshWordCount();
+        RefreshNonCaretState();
+    }
+
+    private void RefreshCaretAndDocumentStats()
     {
         var document = EditorTextBox?.Document;
         if (HasDocumentOpen && !IsHomePageVisible)
@@ -4728,27 +4810,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var ln         = caret?.Line ?? 1;
                 var col        = caret?.Column ?? 1;
                 EditorStatsText = $"Ln {ln}, Col {col}  |  {lines} lines  |  {characters} characters";
-
-                // Word count - only shown for plain-text files
-                if (IsPlainTextFile(_currentFilePath) && document is not null)
-                {
-                    var text = document.Text;
-                    var wordCount = string.IsNullOrWhiteSpace(text)
-                        ? 0
-                        : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-                    WordCountText = $"{wordCount} words";
-                }
-                else
-                {
-                    WordCountText = string.Empty;
-                }
             }
         }
         else
         {
             EditorStatsText = string.Empty;
         }
+    }
 
+    private void RefreshNonCaretState()
+    {
         Title = HasDocumentOpen ? $"{GetDocumentDisplayName()} - Kodo" : "Kodo";
         OnPropertyChanged(nameof(HasDocumentOpen));
         OnPropertyChanged(nameof(IsDocumentViewVisible));
@@ -4776,8 +4847,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         UpdateDiscordPresence();
     }
 
-    private void QueueRefreshState()
+    private void QueueRefreshState(bool fullRefresh = false)
     {
+        _pendingFullStateRefresh |= fullRefresh;
         _editorStateRefreshTimer.Stop();
         _editorStateRefreshTimer.Start();
     }
@@ -4785,7 +4857,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void EditorStateRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _editorStateRefreshTimer.Stop();
-        RefreshState();
+        RefreshState(fullRefresh: _pendingFullStateRefresh);
+    }
+
+    private void QueueWordCountRefresh()
+    {
+        _wordCountRefreshTimer.Stop();
+        _wordCountRefreshTimer.Start();
+    }
+
+    private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
+    {
+        _wordCountRefreshTimer.Stop();
+        RefreshWordCount();
+        OnPropertyChanged(nameof(IsWordCountVisible));
+    }
+
+    private void RefreshWordCount()
+    {
+        if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null)
+        {
+            WordCountText = string.Empty;
+            return;
+        }
+
+        var text = EditorTextBox.Document.Text;
+        var wordCount = string.IsNullOrWhiteSpace(text)
+            ? 0
+            : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+        WordCountText = $"{wordCount} words";
     }
 
     private string GetDocumentStatusSuffix()
@@ -4986,13 +5086,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { return new AppSettings(); }
     }
 
-    private void SaveSettings()
+    private void SaveSettings(bool immediate = false)
     {
         if (_suppressSettingsSave) return;
 
+        if (!immediate)
+        {
+            _settingsSaveDebounceTimer.Stop();
+            _settingsSaveDebounceTimer.Start();
+            return;
+        }
+
+        _settingsSaveDebounceTimer.Stop();
+        PersistSettingsSnapshot(BuildSettingsSnapshot());
+    }
+
+    private void SettingsSaveDebounceTimer_OnTick(object? sender, EventArgs e)
+    {
+        _settingsSaveDebounceTimer.Stop();
+        if (_suppressSettingsSave)
+            return;
+
+        PersistSettingsSnapshot(BuildSettingsSnapshot());
+    }
+
+    private AppSettings BuildSettingsSnapshot()
+    {
         // Snapshot all UI-thread-owned state here, before the background task,
         // so we don't access ObservableCollections or bound properties from a background thread.
-        var snapshot = new AppSettings
+        return new AppSettings
         {
             ThemeName                              = CurrentThemeName,
             AutoSaveEnabled                        = IsAutoSaveEnabled,
@@ -5025,7 +5147,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 .Select(f => new RecentFileEntry { Path = f.Path, IsFolder = f.IsFolder, LastOpened = f.LastOpened })
                 .ToList()
         };
+    }
 
+    private void PersistSettingsSnapshot(AppSettings snapshot)
+    {
         Task.Run(() =>
         {
             try
@@ -5042,6 +5167,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             catch { /* Ignore settings persistence failures. */ }
         });
+    }
+
+    private IBrush GetCachedBrush(string colorValue)
+    {
+        if (_brushCache.TryGetValue(colorValue, out var brush))
+            return brush;
+
+        brush = Brush.Parse(colorValue);
+        _brushCache[colorValue] = brush;
+        return brush;
     }
 
     // ── Theme application ────────────────────────────────────────────────────
@@ -5067,17 +5202,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? ThemeVariant.Light
                 : ThemeVariant.Dark;
 
-            WindowBackgroundBrush = Brush.Parse(extensionTheme.WindowBackground);
-            TopBarBrush           = Brush.Parse(extensionTheme.TopBar);
-            SidebarBrush          = Brush.Parse(extensionTheme.Sidebar);
-            ButtonBrush           = Brush.Parse(extensionTheme.Button);
-            ButtonHoverBrush      = Brush.Parse(extensionTheme.ButtonHover);
-            EditorBackgroundBrush = Brush.Parse(extensionTheme.EditorBackground);
-            CardBrush             = Brush.Parse(extensionTheme.Card);
-            PrimaryTextBrush      = Brush.Parse(extensionTheme.PrimaryText);
-            MutedTextBrush        = Brush.Parse(extensionTheme.MutedText);
-            SurfaceBorderBrush    = Brush.Parse(extensionTheme.SurfaceBorder);
-            AccentBrush           = Brush.Parse(extensionTheme.Accent);
+            WindowBackgroundBrush = GetCachedBrush(extensionTheme.WindowBackground);
+            TopBarBrush           = GetCachedBrush(extensionTheme.TopBar);
+            SidebarBrush          = GetCachedBrush(extensionTheme.Sidebar);
+            ButtonBrush           = GetCachedBrush(extensionTheme.Button);
+            ButtonHoverBrush      = GetCachedBrush(extensionTheme.ButtonHover);
+            EditorBackgroundBrush = GetCachedBrush(extensionTheme.EditorBackground);
+            CardBrush             = GetCachedBrush(extensionTheme.Card);
+            PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
+            MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
+            SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
+            AccentBrush           = GetCachedBrush(extensionTheme.Accent);
             _themeAccentHex       = extensionTheme.Accent;
         }
         else
@@ -5089,32 +5224,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (CurrentThemeName == "Light")
             {
-                WindowBackgroundBrush = Brush.Parse("#F3F3F3");
-                TopBarBrush           = Brush.Parse("#FFFFFF");
-                SidebarBrush          = Brush.Parse("#EFF2F7");
-                ButtonBrush           = Brush.Parse("#E3E8F1");
-                ButtonHoverBrush      = Brush.Parse("#D5DDE9");
-                EditorBackgroundBrush = Brush.Parse("#FFFFFF");
-                CardBrush             = Brush.Parse("#F7F9FC");
-                PrimaryTextBrush      = Brush.Parse("#202124");
-                MutedTextBrush        = Brush.Parse("#5F6B7A");
-                SurfaceBorderBrush    = Brush.Parse("#D7DCE5");
-                AccentBrush           = Brush.Parse("#8C00FF");
+                WindowBackgroundBrush = GetCachedBrush("#F3F3F3");
+                TopBarBrush           = GetCachedBrush("#FFFFFF");
+                SidebarBrush          = GetCachedBrush("#EFF2F7");
+                ButtonBrush           = GetCachedBrush("#E3E8F1");
+                ButtonHoverBrush      = GetCachedBrush("#D5DDE9");
+                EditorBackgroundBrush = GetCachedBrush("#FFFFFF");
+                CardBrush             = GetCachedBrush("#F7F9FC");
+                PrimaryTextBrush      = GetCachedBrush("#202124");
+                MutedTextBrush        = GetCachedBrush("#5F6B7A");
+                SurfaceBorderBrush    = GetCachedBrush("#D7DCE5");
+                AccentBrush           = GetCachedBrush("#8C00FF");
                 _themeAccentHex       = "#8C00FF";
             }
             else
             {
-                WindowBackgroundBrush = Brush.Parse("#1E1E1E");
-                TopBarBrush           = Brush.Parse("#181818");
-                SidebarBrush          = Brush.Parse("#181818");
-                ButtonBrush           = Brush.Parse("#252526");
-                ButtonHoverBrush      = Brush.Parse("#313437");
-                EditorBackgroundBrush = Brush.Parse("#1E1E1E");
-                CardBrush             = Brush.Parse("#252526");
-                PrimaryTextBrush      = Brush.Parse("#F4F4F4");
-                MutedTextBrush        = Brush.Parse("#A0A0A0");
-                SurfaceBorderBrush    = Brush.Parse("#2B2B2B");
-                AccentBrush           = Brush.Parse("#8C00FF");
+                WindowBackgroundBrush = GetCachedBrush("#1E1E1E");
+                TopBarBrush           = GetCachedBrush("#181818");
+                SidebarBrush          = GetCachedBrush("#181818");
+                ButtonBrush           = GetCachedBrush("#252526");
+                ButtonHoverBrush      = GetCachedBrush("#313437");
+                EditorBackgroundBrush = GetCachedBrush("#1E1E1E");
+                CardBrush             = GetCachedBrush("#252526");
+                PrimaryTextBrush      = GetCachedBrush("#F4F4F4");
+                MutedTextBrush        = GetCachedBrush("#A0A0A0");
+                SurfaceBorderBrush    = GetCachedBrush("#2B2B2B");
+                AccentBrush           = GetCachedBrush("#8C00FF");
                 _themeAccentHex       = "#8C00FF";
             }
         }
@@ -5130,8 +5265,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // (#0078D4) until the poll timer fires ~2 s later, causing the Windows
         // blob in Settings to flash the wrong colour on every launch.
         var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
-        try { WindowsAccentPreviewBrush = Brush.Parse(windowsHex); }
-        catch { WindowsAccentPreviewBrush = Brush.Parse("#0078D4"); }
+        try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); }
+        catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
 
         var resolvedAccent = _accentColorMode switch
         {
@@ -5139,8 +5274,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             "custom"  => _customAccentHex,
             _         => _themeAccentHex,  // "kodo" - use the theme's own accent
         };
-        try { AccentBrush = Brush.Parse(resolvedAccent); }
-        catch { AccentBrush = Brush.Parse("#8C00FF"); }
+        try { AccentBrush = GetCachedBrush(resolvedAccent); }
+        catch { AccentBrush = GetCachedBrush("#8C00FF"); }
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
     }
 
@@ -5158,17 +5293,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? ThemeVariant.Light
                 : ThemeVariant.Dark;
 
-            WindowBackgroundBrush = Brush.Parse(extensionTheme.WindowBackground);
-            TopBarBrush           = Brush.Parse(extensionTheme.TopBar);
-            SidebarBrush          = Brush.Parse(extensionTheme.Sidebar);
-            ButtonBrush           = Brush.Parse(extensionTheme.Button);
-            ButtonHoverBrush      = Brush.Parse(extensionTheme.ButtonHover);
-            EditorBackgroundBrush = Brush.Parse(extensionTheme.EditorBackground);
-            CardBrush             = Brush.Parse(extensionTheme.Card);
-            PrimaryTextBrush      = Brush.Parse(extensionTheme.PrimaryText);
-            MutedTextBrush        = Brush.Parse(extensionTheme.MutedText);
-            SurfaceBorderBrush    = Brush.Parse(extensionTheme.SurfaceBorder);
-            AccentBrush           = Brush.Parse(extensionTheme.Accent);
+            WindowBackgroundBrush = GetCachedBrush(extensionTheme.WindowBackground);
+            TopBarBrush           = GetCachedBrush(extensionTheme.TopBar);
+            SidebarBrush          = GetCachedBrush(extensionTheme.Sidebar);
+            ButtonBrush           = GetCachedBrush(extensionTheme.Button);
+            ButtonHoverBrush      = GetCachedBrush(extensionTheme.ButtonHover);
+            EditorBackgroundBrush = GetCachedBrush(extensionTheme.EditorBackground);
+            CardBrush             = GetCachedBrush(extensionTheme.Card);
+            PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
+            MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
+            SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
+            AccentBrush           = GetCachedBrush(extensionTheme.Accent);
             _themeAccentHex       = extensionTheme.Accent;
         }
         else
@@ -5180,32 +5315,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (CurrentThemeName == "Light")
             {
-                WindowBackgroundBrush = Brush.Parse("#F3F3F3");
-                TopBarBrush           = Brush.Parse("#FFFFFF");
-                SidebarBrush          = Brush.Parse("#EFF2F7");
-                ButtonBrush           = Brush.Parse("#E3E8F1");
-                ButtonHoverBrush      = Brush.Parse("#D5DDE9");
-                EditorBackgroundBrush = Brush.Parse("#FFFFFF");
-                CardBrush             = Brush.Parse("#F7F9FC");
-                PrimaryTextBrush      = Brush.Parse("#202124");
-                MutedTextBrush        = Brush.Parse("#5F6B7A");
-                SurfaceBorderBrush    = Brush.Parse("#D7DCE5");
-                AccentBrush           = Brush.Parse("#8C00FF");
+                WindowBackgroundBrush = GetCachedBrush("#F3F3F3");
+                TopBarBrush           = GetCachedBrush("#FFFFFF");
+                SidebarBrush          = GetCachedBrush("#EFF2F7");
+                ButtonBrush           = GetCachedBrush("#E3E8F1");
+                ButtonHoverBrush      = GetCachedBrush("#D5DDE9");
+                EditorBackgroundBrush = GetCachedBrush("#FFFFFF");
+                CardBrush             = GetCachedBrush("#F7F9FC");
+                PrimaryTextBrush      = GetCachedBrush("#202124");
+                MutedTextBrush        = GetCachedBrush("#5F6B7A");
+                SurfaceBorderBrush    = GetCachedBrush("#D7DCE5");
+                AccentBrush           = GetCachedBrush("#8C00FF");
                 _themeAccentHex       = "#8C00FF";
             }
             else
             {
-                WindowBackgroundBrush = Brush.Parse("#1E1E1E");
-                TopBarBrush           = Brush.Parse("#181818");
-                SidebarBrush          = Brush.Parse("#181818");
-                ButtonBrush           = Brush.Parse("#252526");
-                ButtonHoverBrush      = Brush.Parse("#313437");
-                EditorBackgroundBrush = Brush.Parse("#1E1E1E");
-                CardBrush             = Brush.Parse("#252526");
-                PrimaryTextBrush      = Brush.Parse("#F4F4F4");
-                MutedTextBrush        = Brush.Parse("#A0A0A0");
-                SurfaceBorderBrush    = Brush.Parse("#2B2B2B");
-                AccentBrush           = Brush.Parse("#8C00FF");
+                WindowBackgroundBrush = GetCachedBrush("#1E1E1E");
+                TopBarBrush           = GetCachedBrush("#181818");
+                SidebarBrush          = GetCachedBrush("#181818");
+                ButtonBrush           = GetCachedBrush("#252526");
+                ButtonHoverBrush      = GetCachedBrush("#313437");
+                EditorBackgroundBrush = GetCachedBrush("#1E1E1E");
+                CardBrush             = GetCachedBrush("#252526");
+                PrimaryTextBrush      = GetCachedBrush("#F4F4F4");
+                MutedTextBrush        = GetCachedBrush("#A0A0A0");
+                SurfaceBorderBrush    = GetCachedBrush("#2B2B2B");
+                AccentBrush           = GetCachedBrush("#8C00FF");
                 _themeAccentHex       = "#8C00FF";
             }
         }
@@ -5226,7 +5361,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ApplyAccentOverride();
         ApplyThemeToEditor();
         SaveSettings();
-        RefreshState();
+        RefreshState(fullRefresh: true);
         RefreshExtensionTheme();
     }
 
@@ -5235,15 +5370,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Always keep the Windows preview brush current so the blob reflects
         // the real system colour regardless of which mode is active.
         var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
-        try { WindowsAccentPreviewBrush = Brush.Parse(windowsHex); }
-        catch { WindowsAccentPreviewBrush = Brush.Parse("#0078D4"); }
+        try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); }
+        catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
         OnPropertyChanged(nameof(WindowsAccentPreviewBrush));
 
         // In "kodo" mode, restore the theme's own accent colour.
         if (_accentColorMode == "kodo")
         {
-            try { AccentBrush = Brush.Parse(_themeAccentHex); }
-            catch { AccentBrush = Brush.Parse("#8C00FF"); }
+            try { AccentBrush = GetCachedBrush(_themeAccentHex); }
+            catch { AccentBrush = GetCachedBrush("#8C00FF"); }
             AccentForegroundBrush = GetAccentForeground(AccentBrush);
             OnPropertyChanged(nameof(AccentBrush));
             OnPropertyChanged(nameof(AccentForegroundBrush));
@@ -5257,8 +5392,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             "custom"  => _customAccentHex,
             _         => "#8C00FF"
         };
-        try { AccentBrush = Brush.Parse(hex); }
-        catch { AccentBrush = Brush.Parse("#8C00FF"); }
+        try { AccentBrush = GetCachedBrush(hex); }
+        catch { AccentBrush = GetCachedBrush("#8C00FF"); }
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
         OnPropertyChanged(nameof(AccentBrush));
         OnPropertyChanged(nameof(AccentForegroundBrush));
@@ -5615,7 +5750,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // Force page state even if NavigateTo bails early due to no change
             _isHomePageVisible = false;
             NavigateTo(Page.Editor);
-            RefreshState();
+            RefreshState(fullRefresh: true);
             if (focusEditor)
                 FocusEditor();
             return;
@@ -5641,7 +5776,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // check doesn't short-circuit when we're already on the editor page.
         _isHomePageVisible = false;
         NavigateTo(Page.Editor);
-        RefreshState();
+        RefreshState(fullRefresh: true);
 
         if (focusEditor)
             FocusEditor();
@@ -5659,7 +5794,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (!closingActiveTab)
         {
-            RefreshState();
+            RefreshState(fullRefresh: true);
             return;
         }
 
@@ -5680,7 +5815,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.SyntaxHighlighting = null;
         ConfigureRainbowBrackets(null);
         SetEditorContent(string.Empty);
-        RefreshState();
+        RefreshState(fullRefresh: true);
     }
 
     private async Task<bool> RequestCloseTabAsync(EditorTab tab)
@@ -5873,8 +6008,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             // Re-enable saves and do one clean write now that the tab list is complete.
             _suppressSettingsSave = false;
-            SaveSettings();
+            SaveSettings(immediate: true);
         }
+
+        _ = RefreshExtensionsDataAsync();
+        _ = RefreshLatestReleaseAsync();
 
         if (_isFirstLaunch && !_hasCompletedTutorial)
             await ShowTutorialAsync();
@@ -5909,7 +6047,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         AddRecentFolder(path);
         await PopulateFileTreeAsync(path);
         IsFileExplorerVisible = true;
-        RefreshState();
+        RefreshState(fullRefresh: true);
     }
 
     private void CloseFolder()
@@ -5917,7 +6055,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _currentFolderPath = null;
         FileTreeItems.Clear();
         IsFileExplorerVisible = false;
-        RefreshState();
+        RefreshState(fullRefresh: true);
     }
 
     private async Task<bool> SaveAsync(bool allowPromptForPath, bool forcePromptForPath)
@@ -5982,7 +6120,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _autoSaveStatusTimer.Start();
             }
 
-            RefreshState();
+            RefreshState(fullRefresh: true);
             return true;
         }
         catch (Exception ex)
@@ -6013,11 +6151,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task PopulateFileTreeAsync(string folderPath)
     {
         var items = await CreateFileTreeItemsAsync(folderPath, depth: 0);
-        // Swap the entire collection in one shot - avoids one CollectionChanged
-        // notification (and ItemsControl re-render) per item.
-        FileTreeItems.Clear();
-        foreach (var item in items)
-            FileTreeItems.Add(item);
+        ReplaceFileTreeItems(items);
     }
 
     private async Task AppendDirectoryContentsAsync(string dirPath, int depth, int insertAfterIndex = -1)
@@ -6035,6 +6169,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 FileTreeItems.Insert(pos, item);
                 pos++;
             }
+        }
+    }
+
+    private void ReplaceFileTreeItems(IReadOnlyList<FileTreeItem> items)
+    {
+        _suppressExplorerWidthRefresh = true;
+        try
+        {
+            FileTreeItems.Clear();
+            foreach (var item in items)
+                FileTreeItems.Add(item);
+        }
+        finally
+        {
+            _suppressExplorerWidthRefresh = false;
+            OnPropertyChanged(nameof(ExplorerPanelWidth));
         }
     }
 
@@ -6526,7 +6676,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(CanShowSaveActions));
         OnPropertyChanged(nameof(FileSummaryText));
         OnPropertyChanged(nameof(FilePathText));
-        RefreshState();
+        RefreshState(fullRefresh: true);
     }
 
     private void EditorButton_OnClick(object? sender, RoutedEventArgs e)
@@ -6802,7 +6952,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AddRecentFolder(item.Path);
             await PopulateFileTreeAsync(item.Path);
             IsFileExplorerVisible = true;
-            RefreshState();
+            RefreshState(fullRefresh: true);
         }
         else
         {
@@ -7148,7 +7298,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (ReferenceEquals(tab, ActiveEditorTab))
             {
                 _currentFilePath = updated;
-                RefreshState();
+                RefreshState(fullRefresh: true);
             }
         }
     }
@@ -7881,7 +8031,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ActiveEditorTab.Content = EditorTextBox.Document.Text;
             ActiveEditorTab.IsDirty = true;
         }
-        QueueRefreshState();
+        QueueRefreshState(fullRefresh: true);
+        QueueWordCountRefresh();
         RestartAutoSaveTimerIfNeeded();
     }
 
@@ -8490,10 +8641,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_OnClosed(object? sender, EventArgs e)
     {
+        SaveSettings(immediate: true);
         _autoSaveTimer.Stop();
         _autoSaveStatusTimer.Stop();
         _discordReconnectTimer.Stop();
         _extensionsRefreshDebounceTimer.Stop();
+        _wordCountRefreshTimer.Stop();
+        _settingsSaveDebounceTimer.Stop();
         _windowsAccentPollTimer.Stop();
         NetworkChange.NetworkAvailabilityChanged -= NetworkChange_OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged -= NetworkChange_OnNetworkAddressChanged;
@@ -8884,6 +9038,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // user needs to know something went wrong.
     private async Task ShowWarningDialogAsync(string context, Exception exception)
     {
+        var source = "MainWindow.Warning";
+        KodoDiagnostics.WriteDiagnosticLog(source, exception, false, "Warning", context);
+
+        if (ShouldSuppressWarningDialog(context, exception))
+        {
+            KodoDiagnostics.WriteDebugFallback($"Suppressed duplicate warning dialog for '{context}'.", exception);
+            return;
+        }
+
         try
         {
             // Determine whether this context is file-critical (data may be at risk).
@@ -8930,6 +9093,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     Foreground = new SolidColorBrush(Color.Parse("#9CDCFE")),
                 },
             };
+
+            var metadataText = new SelectableTextBlock
+            {
+                Text         = KodoDiagnostics.BuildDiagnosticSummary(source, false, context),
+                FontSize     = 11,
+                FontFamily   = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                Foreground   = MutedTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+            };
  
             // Human-readable error message — shown above the raw stack trace so the
             // user gets an immediate plain-English explanation before seeing the detail.
@@ -8946,7 +9118,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // Collapsible stack trace — SelectableTextBlock so users can copy it.
             var exceptionText = new SelectableTextBlock
             {
-                Text         = exception.ToString(),
+                Text         = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, "Warning", context),
                 FontSize     = 12,
                 FontFamily   = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
                 Foreground   = new SolidColorBrush(Color.Parse("#CE9178")),
@@ -8970,6 +9142,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 CornerRadius    = new CornerRadius(8),
                 Padding         = new Thickness(12),
                 Child           = exceptionScroll,
+            };
+
+            var logPathText = new TextBlock
+            {
+                Text         = $"Full log written to: {KodoDiagnostics.LogFilePath}",
+                FontSize     = 11,
+                Foreground   = MutedTextBrush,
+                TextWrapping = TextWrapping.Wrap,
             };
  
             // --- Action buttons ---
@@ -9010,8 +9190,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     titleText,
                     subtitleText,
                     contextBadge,
+                    metadataText,
                     errorMessageText,
                     exceptionBorder,
+                    logPathText,
                     buttonRow,
                 },
             };
@@ -9039,7 +9221,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var clip = TopLevel.GetTopLevel(dialog)?.Clipboard;
                     if (clip is not null)
                     {
-                        var text = $"Context: {context}{Environment.NewLine}{exception}";
+                        var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, "Warning", context);
                         await clip.SetTextAsync(text);
                         copyButton.Content   = "Copied!";
                         copyButton.Foreground = PrimaryTextBrush;
@@ -9056,11 +9238,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception dialogEx)
         {
-            // Log to Debug so the failure surfaces during development without
-            // crashing the app in production.
-            System.Diagnostics.Debug.WriteLine(
-                $"[Kodo] ShowWarningDialogAsync failed to display for context '{context}': {dialogEx}");
+            KodoDiagnostics.WriteDiagnosticLog(source, dialogEx, false, "Warning Dialog Failure", context);
+            KodoDiagnostics.WriteDebugFallback($"ShowWarningDialogAsync failed to display for context '{context}'.", dialogEx);
         }
+    }
+
+    private bool ShouldSuppressWarningDialog(string context, Exception exception)
+    {
+        var key = $"{context}|{exception.GetType().FullName}|{exception.Message}";
+        var now = DateTime.UtcNow;
+        if (_warningDialogCooldowns.TryGetValue(key, out var lastShownUtc) &&
+            now - lastShownUtc < WarningDialogCooldown)
+        {
+            return true;
+        }
+
+        _warningDialogCooldowns[key] = now;
+        return false;
     }
 
     private sealed class AppSettings
@@ -9091,6 +9285,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public string? UserTimezoneOffset { get; set; }
         public string? UserName         { get; set; }
     }
+
+    private sealed record ExtensionScanResult(
+        List<LoadedExtension> Extensions,
+        List<string> LoadErrors);
 
     public sealed class RecentFileEntry
     {
