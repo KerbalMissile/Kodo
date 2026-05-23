@@ -2613,40 +2613,81 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (FenceLanguageAliases.TryGetValue(normalized, out var alias))
             normalized = alias;
 
-        return LoadedExtensions.FirstOrDefault(extension =>
-            extension.Type == "language" &&
-            CanExtensionHandleFenceLanguage(extension, normalized));
+        var bestMatch = LoadedExtensions
+            .Where(extension =>
+                extension.Type == "language" &&
+                !string.Equals(extension.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase))
+            .Select(extension => new
+            {
+                Extension = extension,
+                Score = ScoreFenceLanguageMatch(extension, normalized, token)
+            })
+            .Where(result => result.Score > 0)
+            .OrderByDescending(result => result.Score)
+            .ThenBy(result => result.Extension.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+
+        return bestMatch?.Extension;
     }
 
-    private static bool CanExtensionHandleFenceLanguage(LoadedExtension extension, string normalizedFenceLanguage)
+    private static int ScoreFenceLanguageMatch(LoadedExtension extension, string normalizedFenceLanguage, string rawFenceLanguage)
     {
         if (string.IsNullOrWhiteSpace(normalizedFenceLanguage))
-            return false;
+            return 0;
+
+        var score = 0;
+        var normalizedCompact = normalizedFenceLanguage.Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase);
+        var rawCompact = rawFenceLanguage.Trim().TrimStart('.').Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase);
 
         if (extension.Extensions.Any(ext =>
                 ext.TrimStart('.').Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase)))
         {
-            return true;
+            score = Math.Max(score, 100);
         }
 
         var normalizedId = extension.Id
             .Replace("-kodo-extension", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Replace("-language-support", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase);
-        if (normalizedId.Equals(normalizedFenceLanguage.Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase), StringComparison.OrdinalIgnoreCase))
-            return true;
+        if (normalizedId.Equals(normalizedCompact, StringComparison.OrdinalIgnoreCase) ||
+            normalizedId.Equals(rawCompact, StringComparison.OrdinalIgnoreCase))
+        {
+            score = Math.Max(score, 90);
+        }
 
         var compactName = extension.Name
             .Replace("Language Support", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Replace("Support", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Replace(" ", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Trim();
-        if (compactName.Equals(normalizedFenceLanguage.Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase), StringComparison.OrdinalIgnoreCase))
-            return true;
+        if (compactName.Equals(normalizedCompact, StringComparison.OrdinalIgnoreCase) ||
+            compactName.Equals(rawCompact, StringComparison.OrdinalIgnoreCase))
+        {
+            score = Math.Max(score, 80);
+        }
 
-        return extension.SyntaxProfiles.Any(profile =>
-            profile.Extensions.Any(ext =>
-                ext.TrimStart('.').Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase)));
+        if (extension.SyntaxProfiles.Any(profile =>
+                profile.Extensions.Any(ext =>
+                    ext.TrimStart('.').Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase))))
+        {
+            score = Math.Max(score, 70);
+        }
+
+        if (extension.Types.Any(type =>
+                type.Equals(rawFenceLanguage, StringComparison.OrdinalIgnoreCase) ||
+                type.Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase)))
+        {
+            score = Math.Max(score, 60);
+        }
+
+        if (extension.Keywords.Any(keyword =>
+                keyword.Equals(rawFenceLanguage, StringComparison.OrdinalIgnoreCase) ||
+                keyword.Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase)))
+        {
+            score = Math.Max(score, 40);
+        }
+
+        return score;
     }
 
     private LoadedExtension? ResolveInlineCodeLanguageExtension(string codeSnippet)
@@ -10454,20 +10495,24 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     ];
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
         typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly Regex HeadingRegex = new(@"^\s{0,3}#{1,6}\s+.+$", RegexOptions.Compiled);
+    private static readonly Regex HeadingRegex = new(@"^(?<indent>\s{0,3})(?<marker>#{1,6})(?<space>\s+)(?<content>.+?)\s*(?:#+\s*)?$", RegexOptions.Compiled);
+    private static readonly Regex SetextHeadingUnderlineRegex = new(@"^\s{0,3}(?:=+|-+)\s*$", RegexOptions.Compiled);
     private static readonly Regex HorizontalRuleRegex = new(@"^\s{0,3}(?:([-*_])(?:\s*\1){2,})\s*$", RegexOptions.Compiled);
     private static readonly Regex OrderedListRegex = new(@"^\s{0,3}\d+\.\s+", RegexOptions.Compiled);
     private static readonly Regex UnorderedListRegex = new(@"^\s{0,3}[-+*]\s+", RegexOptions.Compiled);
     private static readonly Regex TaskListRegex = new(@"^(\s{0,3}[-+*]\s+)\[(?<state>[ xX])\]\s+", RegexOptions.Compiled);
-    private static readonly Regex BlockquoteRegex = new(@"^\s{0,3}>\s?", RegexOptions.Compiled);
+    private static readonly Regex BlockquoteRegex = new(@"^(?<indent>\s{0,3})(?<markers>(?:>\s?)+)", RegexOptions.Compiled);
     private static readonly Regex TablePipeRegex = new(@"\|", RegexOptions.Compiled);
-    private static readonly Regex InlineCodeRegex = new(@"(?<!`)(`+)([^`\r\n].*?)(\1)(?!`)", RegexOptions.Compiled);
-    private static readonly Regex LinkRegex = new(@"!\[(?<alt>[^\]]*)\]\((?<image>[^)\r\n]+)\)|\[(?<label>[^\]]+)\]\((?<url>[^)\r\n]+)\)", RegexOptions.Compiled);
-    private static readonly Regex AutoLinkRegex = new(@"(?<!\()https?://[^\s)>\]]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex TableAlignmentRegex = new(@"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$", RegexOptions.Compiled);
+    private static readonly Regex InlineCodeRegex = new(@"(?<!`)(`+)(?!`)(?<content>.*?[^`])\1(?!`)", RegexOptions.Compiled);
+    private static readonly Regex LinkRegex = new(@"!\[(?<alt>[^\]]*)\]\((?<image>[^)\r\n]+)\)|\[(?<label>[^\]]+)\]\((?<url>[^)\r\n]+)\)|\[(?<refLabel>[^\]]+)\]\[(?<refId>[^\]]*)\]", RegexOptions.Compiled);
+    private static readonly Regex LinkReferenceDefinitionRegex = new(@"^\s{0,3}\[(?<id>[^\]]+)\]:\s*(?<url>\S+)(?:\s+(?<title>""[^""]*""|'[^']*'|\([^)]*\)))?\s*$", RegexOptions.Compiled);
+    private static readonly Regex AutoLinkRegex = new(@"(?<!\()https?://[^\s)>\]]+|<(?<auto>(?:https?://|mailto:)[^>\r\n]+)>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex StrongEmphasisRegex = new(@"(?<!\*)\*\*\*(?=\S)(?<content>.+?)(?<=\S)\*\*\*(?!\*)|(?<!_)___(?=\S)(?<content2>.+?)(?<=\S)___(?!_)", RegexOptions.Compiled);
     private static readonly Regex StrongRegex = new(@"(?<!\*)\*\*(?=\S)(?<content>.+?)(?<=\S)\*\*(?!\*)|(?<!_)__(?=\S)(?<content2>.+?)(?<=\S)__(?!_)", RegexOptions.Compiled);
     private static readonly Regex EmphasisRegex = new(@"(?<!\*)\*(?=\S)(?<content>.+?)(?<=\S)\*(?!\*)|(?<!_)_(?=\S)(?<content2>.+?)(?<=\S)_(?!_)", RegexOptions.Compiled);
     private static readonly Regex StrikethroughRegex = new(@"~~(?=\S)(?<content>.+?)(?<=\S)~~", RegexOptions.Compiled);
+    private static readonly Regex HtmlCommentRegex = new(@"<!--.*?-->", RegexOptions.Compiled);
 
     private MarkdownSnapshot? _snapshot;
     private Func<string, LoadedExtension?>? _languageResolver;
@@ -10542,7 +10587,18 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
         var protectedRanges = new bool[text.Length];
 
-        if (HeadingRegex.IsMatch(text))
+        var headingMatch = HeadingRegex.Match(text);
+        if (headingMatch.Success)
+        {
+            ApplyBrush(lineOffset, headingMatch.Groups["marker"].Index, headingMatch.Groups["marker"].Index + headingMatch.Groups["marker"].Length, _keywordBrush);
+            ApplyBrush(lineOffset, headingMatch.Groups["content"].Index, headingMatch.Groups["content"].Index + headingMatch.Groups["content"].Length, _keywordBrush);
+            var trailingMarkerStart = headingMatch.Groups["content"].Index + headingMatch.Groups["content"].Length;
+            if (trailingMarkerStart < text.Length)
+                ApplyBrush(lineOffset, trailingMarkerStart, text.Length, _mutedBrush);
+            return;
+        }
+
+        if (SetextHeadingUnderlineRegex.IsMatch(text))
         {
             ApplyBrush(lineOffset, 0, text.Length, _keywordBrush);
             return;
@@ -10551,6 +10607,32 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         if (HorizontalRuleRegex.IsMatch(text))
         {
             ApplyBrush(lineOffset, 0, text.Length, _mutedBrush);
+            return;
+        }
+
+        if (TableAlignmentRegex.IsMatch(text))
+        {
+            ApplyBrush(lineOffset, 0, text.Length, _mutedBrush);
+            foreach (Match match in TablePipeRegex.Matches(text))
+                ApplyBrush(lineOffset, match.Index, match.Index + match.Length, _punctuationBrush);
+            return;
+        }
+
+        var linkReferenceDefinitionMatch = LinkReferenceDefinitionRegex.Match(text);
+        if (linkReferenceDefinitionMatch.Success)
+        {
+            ApplyBrush(lineOffset, 0, text.Length, _variableBrush);
+            ApplyBrush(lineOffset, linkReferenceDefinitionMatch.Groups["id"].Index, linkReferenceDefinitionMatch.Groups["id"].Index + linkReferenceDefinitionMatch.Groups["id"].Length, _typeBrush);
+            ApplyBrush(lineOffset, linkReferenceDefinitionMatch.Groups["url"].Index, linkReferenceDefinitionMatch.Groups["url"].Index + linkReferenceDefinitionMatch.Groups["url"].Length, _stringBrush);
+            if (linkReferenceDefinitionMatch.Groups["title"].Success)
+            {
+                ApplyBrush(lineOffset, linkReferenceDefinitionMatch.Groups["title"].Index, linkReferenceDefinitionMatch.Groups["title"].Index + linkReferenceDefinitionMatch.Groups["title"].Length, _stringBrush);
+            }
+            foreach (var ch in new[] { '[', ']', ':' })
+            {
+                foreach (var index in AllIndexesOf(text, ch))
+                    ApplyBrush(lineOffset, index, index + 1, _punctuationBrush);
+            }
             return;
         }
 
@@ -10583,8 +10665,17 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         var quoteMatch = BlockquoteRegex.Match(text);
         if (quoteMatch.Success)
         {
-            ApplyBrush(lineOffset, quoteMatch.Index, quoteMatch.Index + quoteMatch.Length, _commentBrush);
-            MarkRange(protectedRanges, quoteMatch.Index, quoteMatch.Index + quoteMatch.Length);
+            var markers = quoteMatch.Groups["markers"];
+            ApplyBrush(lineOffset, markers.Index, markers.Index + markers.Length, _commentBrush);
+            MarkRange(protectedRanges, markers.Index, markers.Index + markers.Length);
+        }
+
+        foreach (Match match in HtmlCommentRegex.Matches(text))
+        {
+            if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
+                continue;
+
+            ApplyBrush(lineOffset, match.Index, match.Index + match.Length, _commentBrush);
         }
 
         foreach (Match match in TablePipeRegex.Matches(text))
@@ -10619,6 +10710,10 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             if (imageGroup.Success)
                 ApplyBrush(lineOffset, imageGroup.Index, imageGroup.Index + imageGroup.Length, _stringBrush);
 
+            var refIdGroup = match.Groups["refId"];
+            if (refIdGroup.Success)
+                ApplyBrush(lineOffset, refIdGroup.Index, refIdGroup.Index + refIdGroup.Length, _stringBrush);
+
             foreach (var ch in new[] { '[', ']', '(', ')' })
             {
                 foreach (var index in AllIndexesOf(match.Value, ch))
@@ -10643,6 +10738,11 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
                 continue;
 
             ApplyBrush(lineOffset, match.Index, match.Index + match.Length, _stringBrush);
+            if (match.Value.StartsWith("<", StringComparison.Ordinal) && match.Value.EndsWith(">", StringComparison.Ordinal))
+            {
+                ApplyBrush(lineOffset, match.Index, match.Index + 1, _punctuationBrush);
+                ApplyBrush(lineOffset, match.Index + match.Length - 1, match.Index + match.Length, _punctuationBrush);
+            }
         }
 
         ApplyDelimitedMarkdownRegex(text, lineOffset, protectedRanges, StrongEmphasisRegex, _operatorBrush);
@@ -10682,34 +10782,12 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             return;
         }
 
-        ColorizeEmbeddedSegment(text, lineOffset, fence.Profile);
+        ColorizeEmbeddedSegment(text, lineOffset, fence.Profile, fence.BracketStack);
     }
 
-    private void ColorizeEmbeddedSegment(string text, int lineOffset, EmbeddedSyntaxProfile profile)
+    private void ColorizeEmbeddedSegment(string text, int lineOffset, EmbeddedSyntaxProfile profile, IReadOnlyList<char>? initialBracketStack = null)
     {
-        var protectedRanges = new bool[text.Length];
-
-        if (profile.SingleLineCommentRegex is { } commentRegex)
-        {
-            foreach (Match match in commentRegex.Matches(text))
-            {
-                if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
-                    continue;
-
-                ApplyBrush(lineOffset, match.Index, match.Index + match.Length, profile.CommentBrush);
-            }
-        }
-
-        foreach (var regex in profile.StringRegexes)
-        {
-            foreach (Match match in regex.Matches(text))
-            {
-                if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
-                    continue;
-
-                ApplyBrush(lineOffset, match.Index, match.Index + match.Length, profile.StringBrush);
-            }
-        }
+        var protectedRanges = BuildEmbeddedProtectedRanges(text, profile, lineOffset, applyColors: true);
 
         foreach (var rule in profile.TokenRules)
         {
@@ -10722,7 +10800,9 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             }
         }
 
-        var stack = new Stack<char>();
+        var stack = initialBracketStack is { Count: > 0 }
+            ? new Stack<char>(initialBracketStack.Reverse())
+            : new Stack<char>();
         for (var index = 0; index < text.Length; index++)
         {
             if (protectedRanges[index])
@@ -10744,6 +10824,37 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
                 stack.Pop();
             }
         }
+    }
+
+    private bool[] BuildEmbeddedProtectedRanges(string text, EmbeddedSyntaxProfile profile, int lineOffset, bool applyColors)
+    {
+        var protectedRanges = new bool[text.Length];
+
+        if (profile.SingleLineCommentRegex is { } commentRegex)
+        {
+            foreach (Match match in commentRegex.Matches(text))
+            {
+                if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
+                    continue;
+
+                if (applyColors)
+                    ApplyBrush(lineOffset, match.Index, match.Index + match.Length, profile.CommentBrush);
+            }
+        }
+
+        foreach (var regex in profile.StringRegexes)
+        {
+            foreach (Match match in regex.Matches(text))
+            {
+                if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
+                    continue;
+
+                if (applyColors)
+                    ApplyBrush(lineOffset, match.Index, match.Index + match.Length, profile.StringBrush);
+            }
+        }
+
+        return protectedRanges;
     }
 
     private void ApplyDelimitedMarkdownRegex(string text, int lineOffset, bool[] protectedRanges, Regex regex, IBrush brush)
@@ -10771,6 +10882,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         var lines = text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
         var states = new List<MarkdownLineState>(lines.Length);
         FenceState? activeFence = null;
+        var bracketStack = new Stack<char>();
 
         foreach (var line in lines)
         {
@@ -10785,7 +10897,9 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
                         opening.MarkerChar,
                         opening.MarkerLength,
                         opening.LanguageLabel,
-                        ResolveEmbeddedProfile(opening.LanguageLabel));
+                        ResolveEmbeddedProfile(opening.LanguageLabel),
+                        []);
+                    bracketStack.Clear();
                     continue;
                 }
 
@@ -10797,23 +10911,57 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             {
                 states.Add(new MarkdownLineState(null, closing));
                 activeFence = null;
+                bracketStack.Clear();
                 continue;
             }
 
-            states.Add(new MarkdownLineState(activeFence, null));
+            var lineFenceState = activeFence with { BracketStack = bracketStack.Reverse().ToArray() };
+            states.Add(new MarkdownLineState(lineFenceState, null));
+            UpdateEmbeddedBracketStack(line, activeFence.Profile, bracketStack);
         }
 
         return new MarkdownSnapshot(text, states);
     }
 
+    private void UpdateEmbeddedBracketStack(string text, EmbeddedSyntaxProfile? profile, Stack<char> bracketStack)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        bool[]? protectedRanges = null;
+        if (profile is not null)
+            protectedRanges = BuildEmbeddedProtectedRanges(text, profile, 0, applyColors: false);
+
+        for (var index = 0; index < text.Length; index++)
+        {
+            if (protectedRanges is not null && protectedRanges[index])
+                continue;
+
+            var ch = text[index];
+            if (OpeningToClosing.ContainsKey(ch))
+            {
+                bracketStack.Push(ch);
+                continue;
+            }
+
+            if (ClosingToOpening.TryGetValue(ch, out var opening) &&
+                bracketStack.Count > 0 &&
+                bracketStack.Peek() == opening)
+            {
+                bracketStack.Pop();
+            }
+        }
+    }
+
     private void ColorizeInlineCode(Match match, int lineOffset)
     {
         var openingTicks = match.Groups[1];
-        var content = match.Groups[2];
-        var closingTicks = match.Groups[3];
+        var content = match.Groups["content"];
+        var closingTicks = match.Groups[1];
+        var closingIndex = match.Index + match.Length - closingTicks.Length;
 
         ApplyBrush(lineOffset, openingTicks.Index, openingTicks.Index + openingTicks.Length, _stringBrush);
-        ApplyBrush(lineOffset, closingTicks.Index, closingTicks.Index + closingTicks.Length, _stringBrush);
+        ApplyBrush(lineOffset, closingIndex, closingIndex + closingTicks.Length, _stringBrush);
 
         if (!content.Success || string.IsNullOrWhiteSpace(content.Value))
         {
@@ -10821,15 +10969,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             return;
         }
 
-        var extension = _inlineLanguageResolver?.Invoke(content.Value);
-        var profile = ResolveEmbeddedProfile(extension);
-        if (profile is null)
-        {
-            ApplyBrush(lineOffset, content.Index, content.Index + content.Length, _stringBrush);
-            return;
-        }
-
-        ColorizeEmbeddedSegment(content.Value, lineOffset + content.Index, profile);
+        ApplyBrush(lineOffset, content.Index, content.Index + content.Length, _stringBrush);
     }
 
     private EmbeddedSyntaxProfile? ResolveEmbeddedProfile(string? languageLabel)
@@ -11117,7 +11257,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
     private readonly record struct MarkdownLineState(FenceState? ActiveFence, FenceDelimiterInfo? Delimiter);
     private readonly record struct FenceDelimiterInfo(char MarkerChar, int MarkerLength, string? LanguageLabel);
-    private sealed record FenceState(char MarkerChar, int MarkerLength, string? LanguageLabel, EmbeddedSyntaxProfile? Profile);
+    private sealed record FenceState(char MarkerChar, int MarkerLength, string? LanguageLabel, EmbeddedSyntaxProfile? Profile, IReadOnlyList<char> BracketStack);
     private sealed record EmbeddedSyntaxProfile(
         IBrush CommentBrush,
         IBrush StringBrush,
