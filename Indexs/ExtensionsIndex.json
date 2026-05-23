@@ -9,7 +9,7 @@
       "description": "Syntax highlighting for C# files, including .csproj and most other .NET based languages.",
       "fileName": "C#-Kodo-Extension-v1.2.5.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.2.5.kox",
-      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/b/bd/Logo_C_sharp.svg"
+      "iconUrl": "https://github.com/KerbalMissile/Kodo/blob/36b20dfe66d6cdc90060f48176d735441342e55f/Official_Extensions/csharp-logo.png"
     },
     {
       "id": "high-contrast-themes",
