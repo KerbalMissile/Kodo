@@ -233,6 +233,9 @@ public record class LoadedExtension : INotifyPropertyChanged
     // True for the 2nd, 3rd, etc. entries split out of a multi-theme array -
     // they appear in ThemeExtensions but are hidden from the Installed list.
     public bool IsThemeSubEntry { get; init; }
+    // Raw PNG bytes read from icon.png on the background scan thread.
+    // Decoded into IconImage on the UI thread by ApplyLoadedExtensionsResult.
+    public byte[]? IconBytes { get; set; }
     // Optional icon loaded from icon.png inside the .kox / folder
     public Bitmap? IconImage { get; set; }
     // Fallback: first two letters of the name, shown when no icon is present
@@ -1120,6 +1123,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
         SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
 
+        // Decode icon bitmaps here on the UI thread. The background scan stored raw
+        // PNG bytes in IconBytes to avoid creating Avalonia Bitmaps off-thread (which
+        // is unsafe and causes silent failures). Now that we're on the UI thread we
+        // can safely decode them and clear the staging bytes to free the memory.
+        foreach (var ext in LoadedExtensions)
+        {
+            if (ext.IconImage is null && ext.IconBytes is not null)
+            {
+                ext.IconImage = DecodeBitmapOnUiThread(ext.IconBytes);
+                ext.IconBytes = null;
+                ext.NotifyIconChanged();
+            }
+        }
+
         // Re-stamp IsActiveTheme on every theme extension now that the collection
         // may contain brand-new LoadedExtension instances (SyncObservableCollection
         // adds new objects with IsActiveTheme = false). The CurrentThemeName setter
@@ -1146,7 +1163,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var remoteJson = await MarketplaceHttpClient.GetStringAsync(DefaultMarketplaceIndexUrl);
+            // Request the index with no-cache so GitHub's CDN always serves the
+            // latest committed version rather than a stale cached copy.
+            using var indexRequest = new HttpRequestMessage(HttpMethod.Get, DefaultMarketplaceIndexUrl);
+            indexRequest.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
+            using var indexResponse = await MarketplaceHttpClient.SendAsync(indexRequest);
+            indexResponse.EnsureSuccessStatusCode();
+            var remoteJson = await indexResponse.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(remoteJson);
             if (doc.RootElement.TryGetProperty("extensions", out var extensionsElement) &&
                 extensionsElement.ValueKind == JsonValueKind.Array)
@@ -1200,7 +1223,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var tasks = LoadedExtensions
             .Select(ext => (ext, iconUrl: marketplaceIconMap.TryGetValue(ext.Id, out var iconUrl) ? iconUrl : string.Empty))
-            .Where(pair => !string.IsNullOrWhiteSpace(pair.iconUrl))
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.iconUrl) && pair.ext.IconImage is null)
             .Select(async pair =>
             {
                 try
@@ -1452,7 +1475,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var description = item.TryGetProperty("description", out var descriptionElement) ? descriptionElement.GetString() ?? string.Empty : string.Empty;
         var rawDownloadUrl = item.TryGetProperty("downloadUrl", out var downloadUrlElement) ? downloadUrlElement.GetString() ?? string.Empty : string.Empty;
         var declaredFileName = item.TryGetProperty("fileName", out var fileNameElement) ? fileNameElement.GetString() ?? string.Empty : string.Empty;
-        var iconUrl = item.TryGetProperty("iconUrl", out var iconUrlElement) ? iconUrlElement.GetString() ?? string.Empty : string.Empty;
+        var iconUrl = NormalizeIconUrl(item.TryGetProperty("iconUrl", out var iconUrlElement) ? iconUrlElement.GetString() ?? string.Empty : string.Empty);
         var urlFileName = TryGetFileNameFromUrl(rawDownloadUrl);
         var bestKnownVersion = GetHighestKnownExtensionVersion(declaredVersion, declaredFileName, urlFileName);
         var canonicalFileName = GetCanonicalMarketplaceFileName(declaredFileName, urlFileName, bestKnownVersion);
@@ -1939,6 +1962,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return builder.Uri.ToString();
     }
 
+    /// <summary>
+    /// Converts a GitHub "blob" viewer URL to its raw.githubusercontent.com equivalent
+    /// so the image bytes can be fetched directly instead of receiving an HTML page.
+    /// e.g. https://github.com/owner/repo/blob/main/icon.png
+    ///   -> https://raw.githubusercontent.com/owner/repo/main/icon.png
+    /// Non-GitHub and already-raw URLs are returned unchanged.
+    /// </summary>
+    private static string NormalizeIconUrl(string iconUrl)
+    {
+        if (string.IsNullOrWhiteSpace(iconUrl))
+            return iconUrl;
+
+        if (!Uri.TryCreate(iconUrl, UriKind.Absolute, out var uri))
+            return iconUrl;
+
+        if (uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
+            return iconUrl;
+
+        if (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            // Expect: /{owner}/{repo}/blob/{branch}/{...path}
+            var segments = uri.AbsolutePath.TrimStart('/').Split('/');
+            if (segments.Length >= 5 &&
+                segments[2].Equals("blob", StringComparison.OrdinalIgnoreCase))
+            {
+                var owner  = segments[0];
+                var repo   = segments[1];
+                var branch = segments[3];
+                var path   = string.Join("/", segments, 4, segments.Length - 4);
+                return $"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}";
+            }
+        }
+
+        return iconUrl;
+    }
+
     private static string ReplaceVersionInValue(string value, string oldVersion, string newVersion)
     {
         if (string.IsNullOrWhiteSpace(value) ||
@@ -2136,7 +2195,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (File.Exists(iconPath))
         {
             using var iconStream = File.OpenRead(iconPath);
-            baseExt.IconImage = LoadIconFromStream(iconStream);
+            baseExt.IconBytes = ReadIconBytesFromStream(iconStream);
         }
 
         var themePath = Path.Combine(folderPath, "theme.json");
@@ -2200,28 +2259,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsDirectorySource = src.IsDirectorySource,
         InstalledOnUtc    = src.InstalledOnUtc,
         IconImage         = src.IconImage,
+        IconBytes         = src.IconBytes,
     };
 
     // Loads a PNG from a stream and scales it to 48x48 if it is square,
     // otherwise returns null so the text fallback is used.
-    private static Bitmap? LoadIconFromStream(Stream stream)
+    private static byte[]? ReadIconBytesFromStream(Stream stream)
     {
         try
         {
             using var ms = new MemoryStream();
             stream.CopyTo(ms);
-            ms.Position = 0;
+            return ms.ToArray();
+        }
+        catch { return null; }
+    }
+
+    // Must be called on the UI thread. Decodes raw PNG bytes into an Avalonia Bitmap
+    // and validates that the image is square (non-square icons are rejected).
+    private static Bitmap? DecodeBitmapOnUiThread(byte[]? iconBytes)
+    {
+        if (iconBytes is null) return null;
+        try
+        {
+            using var ms = new MemoryStream(iconBytes);
             var bmp = new Bitmap(ms);
             if (bmp.PixelSize.Width != bmp.PixelSize.Height) return null;
-            // Scale down to 48x48 - Avalonia Bitmap doesn't resize on load,
-            // but we can let the Image control handle it via Width/Height binding.
-            // Just return the bitmap as-is; sizing is done in AXAML.
             return bmp;
         }
-        catch
-        {
-            return null;
-        }
+        catch { return null; }
     }
 
     private IEnumerable<LoadedExtension> LoadExtensionsFromKox(string koxPath)
@@ -2258,7 +2324,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (iconEntry is not null)
         {
             using var iconStream = iconEntry.Open();
-            baseExt.IconImage = LoadIconFromStream(iconStream);
+            baseExt.IconBytes = ReadIconBytesFromStream(iconStream);
         }
 
         var themeEntry = archive.GetEntry("theme.json");
