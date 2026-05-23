@@ -1,5 +1,5 @@
-# Kodo
-### Code fast. Stay light.
+<h1 align="center">Kodo</h1>
+<h3 align="center">Code fast. Stay light.</h3>
 
 <p align="center">
   <img width="160" height="160" alt="Kodo Logo" src="https://github.com/user-attachments/assets/e044cdac-5434-41d7-b08f-20897a1ba771" />
