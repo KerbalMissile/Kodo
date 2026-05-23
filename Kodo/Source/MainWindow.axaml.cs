@@ -1018,30 +1018,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
+            // ScanInstalledExtensions is pure I/O — run it off the UI thread.
+            // Everything after the scan (collection mutations, PropertyChanged
+            // notifications, marketplace fetch) MUST run on the UI thread because
+            // Avalonia's binding engine requires it.  We marshal explicitly with
+            // InvokeAsync rather than relying on the SynchronizationContext, which
+            // is not guaranteed to be the UI context after a Task.Run await.
             var extensionScan = await Task.Run(ScanInstalledExtensions);
-            ApplyLoadedExtensionsResult(extensionScan);
+            await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(extensionScan));
             await LoadMarketplaceExtensionsAsync();
-            if (!string.Equals(CurrentThemeName, _requestedThemeName, StringComparison.OrdinalIgnoreCase) &&
-                (string.Equals(_requestedThemeName, "Light", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(_requestedThemeName, "Dark", StringComparison.OrdinalIgnoreCase) ||
-                 ThemeExtensions.Any(t => string.Equals(t.ThemeDefinition!.ThemeId, _requestedThemeName, StringComparison.OrdinalIgnoreCase))))
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                ApplyTheme(_requestedThemeName);
-            }
-            var updateCount = MarketplaceExtensions.Count(e => e.IsUpdateAvailable);
-            ExtensionsStatusText = updateCount > 0
-                ? $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s). {updateCount} update(s) available."
-                : $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s).";
-            _lastExtensionsRefreshUtc = DateTime.UtcNow;
+                if (!string.Equals(CurrentThemeName, _requestedThemeName, StringComparison.OrdinalIgnoreCase) &&
+                    (string.Equals(_requestedThemeName, "Light", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(_requestedThemeName, "Dark", StringComparison.OrdinalIgnoreCase) ||
+                     ThemeExtensions.Any(t => string.Equals(t.ThemeDefinition!.ThemeId, _requestedThemeName, StringComparison.OrdinalIgnoreCase))))
+                {
+                    ApplyTheme(_requestedThemeName);
+                }
+                var updateCount = MarketplaceExtensions.Count(e => e.IsUpdateAvailable);
+                ExtensionsStatusText = updateCount > 0
+                    ? $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s). {updateCount} update(s) available."
+                    : $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s).";
+                _lastExtensionsRefreshUtc = DateTime.UtcNow;
+            });
         }
         catch (Exception ex)
         {
-            ExtensionsStatusText = $"Refresh failed: {ex.Message}";
+            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = $"Refresh failed: {ex.Message}");
             await ShowWarningDialogAsync("Extension refresh", ex);
         }
         finally
         {
-            IsRefreshingExtensions = false;
+            await Dispatcher.UIThread.InvokeAsync(() => IsRefreshingExtensions = false);
         }
     }
 
@@ -1132,7 +1141,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var marketplaceExtensions = new List<MarketplaceExtension>();
         var extensionLoadErrors = new List<string>();
-        RefreshMarketplaceConnectivityState();
+
+        await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState());
 
         try
         {
@@ -1154,23 +1164,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             extensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
-            RefreshMarketplaceConnectivityState("Marketplace fetch", ex);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                RefreshMarketplaceConnectivityState("Marketplace fetch", ex);
+            });
             await ShowWarningDialogAsync("Marketplace fetch", ex);
         }
 
-        SyncObservableCollection(MarketplaceExtensions, marketplaceExtensions, ext => ext.Id);
-        SyncObservableCollection(
-            ExtensionLoadErrors,
-            ExtensionLoadErrors.Concat(extensionLoadErrors).Distinct().ToList(),
-            error => error);
+        // All ObservableCollection mutations and PropertyChanged notifications must
+        // run on the UI thread — Avalonia's binding engine requires it.
+        Dictionary<string, string> marketplaceIconMap = [];
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            SyncMarketplaceExtensionCollection(MarketplaceExtensions, marketplaceExtensions);
+            SyncObservableCollection(
+                ExtensionLoadErrors,
+                ExtensionLoadErrors.Concat(extensionLoadErrors).Distinct().ToList(),
+                error => error);
 
-        SyncMarketplaceInstallStates();
-        OnPropertyChanged(nameof(ExtensionLoadErrors));
-        OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
-        NotifyExtensionFiltersChanged();
-        var marketplaceIconMap = MarketplaceExtensions
-            .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
-            .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
+            SyncMarketplaceInstallStates();
+            OnPropertyChanged(nameof(ExtensionLoadErrors));
+            OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
+            NotifyExtensionFiltersChanged();
+
+            marketplaceIconMap = MarketplaceExtensions
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
+                .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
+        });
+
         await FetchMarketplaceIconsAsync(marketplaceIconMap);
         await FetchInstalledExtensionIconsAsync(marketplaceIconMap);
     }
@@ -1201,8 +1222,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task FetchMarketplaceIconsAsync(IReadOnlyDictionary<string, string> marketplaceIconMap)
     {
+        // Apply icons whose bytes are already cached synchronously on the UI thread —
+        // this covers entries that came in via SyncMarketplaceExtensionCollection without
+        // a bitmap (e.g. a brand-new item that happened to share a URL with a previously
+        // fetched icon) and avoids an unnecessary async round-trip for them.
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            foreach (var entry in MarketplaceExtensions)
+            {
+                if (entry.IconImage is not null)
+                    continue;
+
+                if (!marketplaceIconMap.TryGetValue(entry.Id, out var cachedUrl))
+                    continue;
+
+                if (!_marketplaceIconBytesCache.TryGetValue(cachedUrl, out var cachedBytes))
+                    continue;
+
+                try
+                {
+                    using var ms = new MemoryStream(cachedBytes);
+                    var bitmap = new Bitmap(ms);
+                    ReplaceMarketplaceIcon(entry, bitmap);
+                }
+                catch { /* Corrupt cached bytes — will be re-fetched below. */ }
+            }
+        });
+
         var tasks = MarketplaceExtensions
-            .Where(entry => marketplaceIconMap.TryGetValue(entry.Id, out _))
+            .Where(entry => entry.IconImage is null && marketplaceIconMap.TryGetValue(entry.Id, out _))
             .Select(async entry =>
             {
                 try
@@ -1227,21 +1275,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(iconUrl))
             return null;
 
-        if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out var bytes))
+        // Check the cache before acquiring the semaphore so that already-cached
+        // icons are returned without any contention.
+        if (_marketplaceIconBytesCache.TryGetValue(iconUrl, out var bytes))
         {
-            await _iconFetchSemaphore.WaitAsync();
             try
             {
-                if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out bytes))
-                {
-                    bytes = await MarketplaceHttpClient.GetByteArrayAsync(iconUrl);
-                    _marketplaceIconBytesCache[iconUrl] = bytes;
-                }
+                using var ms = new MemoryStream(bytes);
+                return new Bitmap(ms);
             }
-            finally
+            catch { return null; }
+        }
+
+        // The outer read above is intentionally outside the semaphore for the
+        // fast path.  For a genuine cache miss we acquire the semaphore and
+        // re-check inside it so that two concurrent callers for the same URL
+        // cannot both see a miss and both issue a network request.
+        await _iconFetchSemaphore.WaitAsync();
+        try
+        {
+            if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out bytes))
             {
-                _iconFetchSemaphore.Release();
+                bytes = await MarketplaceHttpClient.GetByteArrayAsync(iconUrl);
+                _marketplaceIconBytesCache[iconUrl] = bytes;
             }
+        }
+        finally
+        {
+            _iconFetchSemaphore.Release();
         }
 
         try
@@ -1509,6 +1570,68 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!ReferenceEquals(target[i], item))
             {
                 target[i] = item;
+                targetIndexByKey[key] = i;
+            }
+        }
+    }
+
+    // Like SyncObservableCollection<MarketplaceExtension>, but carries the already-fetched
+    // IconImage bitmap across to the replacement object instead of discarding it.
+    // Without this, every LoadMarketplaceExtensionsAsync call (including the one triggered
+    // after an install) replaces items with freshly-parsed objects whose IconImage is null,
+    // causing a flicker back to the abbreviation placeholder and an unnecessary re-fetch.
+    private static void SyncMarketplaceExtensionCollection(
+        ObservableCollection<MarketplaceExtension> target,
+        IList<MarketplaceExtension> source)
+    {
+        var sourceByKey = source.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
+
+        for (var i = target.Count - 1; i >= 0; i--)
+        {
+            if (!sourceByKey.ContainsKey(target[i].Id))
+            {
+                target[i].IconImage?.Dispose();
+                target.RemoveAt(i);
+            }
+        }
+
+        var targetIndexByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < target.Count; i++)
+            targetIndexByKey[target[i].Id] = i;
+
+        for (var i = 0; i < source.Count; i++)
+        {
+            var incoming = source[i];
+            var key = incoming.Id;
+            var existingIndex = targetIndexByKey.TryGetValue(key, out var foundIndex) ? foundIndex : -1;
+
+            if (existingIndex == -1)
+            {
+                target.Insert(Math.Min(i, target.Count), incoming);
+                for (var j = i; j < target.Count; j++)
+                    targetIndexByKey[target[j].Id] = j;
+                continue;
+            }
+
+            if (existingIndex != i)
+            {
+                target.Move(existingIndex, i);
+                var start = Math.Min(existingIndex, i);
+                for (var j = start; j < target.Count; j++)
+                    targetIndexByKey[target[j].Id] = j;
+            }
+
+            var existing = target[i];
+            if (!ReferenceEquals(existing, incoming))
+            {
+                // Transfer the already-decoded bitmap so the UI keeps showing the icon
+                // while the rest of the object is refreshed with updated metadata.
+                if (existing.IconImage is not null && incoming.IconImage is null)
+                    incoming.IconImage = existing.IconImage;
+                else
+                    existing.IconImage?.Dispose();
+
+                target[i] = incoming;
                 targetIndexByKey[key] = i;
             }
         }
