@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:avaloniaEdit="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
+        xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
         xmlns:kodo="clr-namespace:Kodo"
         xmlns:kodoModels="clr-namespace:Kodo.Models"
         mc:Ignorable="d"
@@ -2346,10 +2347,17 @@
                                                 <Border Width="48" Height="48" CornerRadius="8" Margin="0,0,16,0"
                                                         IsVisible="{Binding HasIcon}"
                                                         ClipToBounds="True">
-                                                    <Image Source="{Binding IconImage}"
-                                                           Width="48"
-                                                           Height="48"
-                                                           Stretch="Uniform" />
+                                                    <Panel>
+                                                        <Image Source="{Binding IconImage}"
+                                                               Width="48"
+                                                               Height="48"
+                                                               Stretch="Uniform"
+                                                               IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                        <svg:Svg Source="{Binding SvgData}"
+                                                                 Width="48"
+                                                                 Height="48"
+                                                                 IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                    </Panel>
                                                 </Border>
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                                     <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" Text="{Binding Name}" />
@@ -2432,10 +2440,17 @@
                                                         Margin="0,0,16,0"
                                                         IsVisible="{Binding HasIcon}"
                                                         ClipToBounds="True">
-                                                    <Image Source="{Binding IconImage}"
-                                                           Width="48"
-                                                           Height="48"
-                                                           Stretch="Uniform" />
+                                                    <Panel>
+                                                        <Image Source="{Binding IconImage}"
+                                                               Width="48"
+                                                               Height="48"
+                                                               Stretch="Uniform"
+                                                               IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                        <svg:Svg Source="{Binding SvgData}"
+                                                                 Width="48"
+                                                                 Height="48"
+                                                                 IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                    </Panel>
                                                 </Border>
 
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">

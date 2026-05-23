@@ -238,9 +238,11 @@ public record class LoadedExtension : INotifyPropertyChanged
     public byte[]? IconBytes { get; set; }
     // Optional icon loaded from icon.png inside the .kox / folder
     public Bitmap? IconImage { get; set; }
+    // SVG text for icons sourced from the marketplace index (set on UI thread).
+    public string? SvgData { get; set; }
     // Fallback: first two letters of the name, shown when no icon is present
     public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
-    public bool HasIcon => IconImage is not null;
+    public bool HasIcon => IconImage is not null || SvgData is not null;
     public bool IsUpdateAvailable
     {
         get => _isUpdateAvailable;
@@ -278,6 +280,7 @@ public record class LoadedExtension : INotifyPropertyChanged
     public void NotifyIconChanged()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IconImage)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SvgData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIcon)));
     }
 }
@@ -386,7 +389,20 @@ public class MarketplaceExtension : INotifyPropertyChanged
         }
     }
 
-    public bool HasIcon => IconImage is not null;
+    private string? _svgData;
+    public string? SvgData
+    {
+        get => _svgData;
+        set
+        {
+            if (_svgData == value) return;
+            _svgData = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasIcon));
+        }
+    }
+
+    public bool HasIcon => IconImage is not null || SvgData is not null;
     public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
 
     public bool IsInstalling
@@ -1223,26 +1239,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var tasks = LoadedExtensions
             .Select(ext => (ext, iconUrl: marketplaceIconMap.TryGetValue(ext.Id, out var iconUrl) ? iconUrl : string.Empty))
-            .Where(pair => !string.IsNullOrWhiteSpace(pair.iconUrl) && pair.ext.IconImage is null)
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.iconUrl))
             .Select(async pair =>
             {
                 try
                 {
-                    var bitmap = await GetCachedBitmapFromUrlAsync(pair.iconUrl);
-                    if (bitmap is null)
-                        return;
+                    var icon = await GetCachedIconAsync(pair.iconUrl);
 
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        ReplaceLoadedExtensionIcon(pair.ext, bitmap);
+                        if (icon.HasValue)
+                        {
+                            // Index icon fetched successfully — use it, replacing any kox icon.
+                            ReplaceLoadedExtensionIcon(pair.ext, icon);
+                        }
+                        // else: fetch returned nothing (bad URL, corrupt bytes, etc.) —
+                        // leave whatever the kox provided in place.
                     });
                 }
-                catch { /* Network failure - keep existing icon or abbreviation. */ }
+                catch
+                {
+                    // Network failure — leave the kox icon (or abbreviation) in place.
+                }
             });
 
         await Task.WhenAll(tasks);
     }
-
     private async Task FetchMarketplaceIconsAsync(IReadOnlyDictionary<string, string> marketplaceIconMap)
     {
         // Apply icons whose bytes are already cached synchronously on the UI thread —
@@ -1253,7 +1275,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             foreach (var entry in MarketplaceExtensions)
             {
-                if (entry.IconImage is not null)
+                if (entry.IconImage is not null || entry.SvgData is not null)
                     continue;
 
                 if (!marketplaceIconMap.TryGetValue(entry.Id, out var cachedUrl))
@@ -1262,29 +1284,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (!_marketplaceIconBytesCache.TryGetValue(cachedUrl, out var cachedBytes))
                     continue;
 
-                try
-                {
-                    using var ms = new MemoryStream(cachedBytes);
-                    var bitmap = new Bitmap(ms);
-                    ReplaceMarketplaceIcon(entry, bitmap);
-                }
-                catch { /* Corrupt cached bytes — will be re-fetched below. */ }
+                var icon = DecodeCachedIconBytes(cachedBytes);
+                if (icon.HasValue)
+                    ReplaceMarketplaceIcon(entry, icon);
             }
         });
 
         var tasks = MarketplaceExtensions
-            .Where(entry => entry.IconImage is null && marketplaceIconMap.TryGetValue(entry.Id, out _))
+            .Where(entry => entry.IconImage is null && entry.SvgData is null && marketplaceIconMap.TryGetValue(entry.Id, out _))
             .Select(async entry =>
             {
                 try
                 {
-                    var bitmap = await GetCachedBitmapFromUrlAsync(marketplaceIconMap[entry.Id]);
-                    if (bitmap is null)
+                    var icon = await GetCachedIconAsync(marketplaceIconMap[entry.Id]);
+                    if (!icon.HasValue)
                         return;
 
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        ReplaceMarketplaceIcon(entry, bitmap);
+                        ReplaceMarketplaceIcon(entry, icon);
                     });
                 }
                 catch { /* Network failure - fallback to local icon or abbreviation. */ }
@@ -1293,27 +1311,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await Task.WhenAll(tasks);
     }
 
-    private async Task<Bitmap?> GetCachedBitmapFromUrlAsync(string iconUrl)
+    // Discriminated result from GetCachedIconAsync.
+    private readonly record struct IconResult(Bitmap? Bitmap, string? SvgData)
+    {
+        public bool HasValue => Bitmap is not null || SvgData is not null;
+    }
+
+    private static bool IsSvgContent(byte[] bytes)
+    {
+        // SVG files start with either a UTF-8 BOM + '<' or directly with '<'.
+        // Check for the <?xml or <svg opening tag in the first 512 bytes.
+        var header = System.Text.Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, 512));
+        return header.TrimStart().StartsWith("<?xml", StringComparison.OrdinalIgnoreCase)
+            || header.TrimStart().StartsWith("<svg", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<IconResult> GetCachedIconAsync(string iconUrl)
     {
         if (string.IsNullOrWhiteSpace(iconUrl))
-            return null;
+            return default;
 
-        // Check the cache before acquiring the semaphore so that already-cached
-        // icons are returned without any contention.
+        // Fast path: bytes already cached.
         if (_marketplaceIconBytesCache.TryGetValue(iconUrl, out var bytes))
-        {
-            try
-            {
-                using var ms = new MemoryStream(bytes);
-                return new Bitmap(ms);
-            }
-            catch { return null; }
-        }
+            return DecodeCachedIconBytes(bytes);
 
-        // The outer read above is intentionally outside the semaphore for the
-        // fast path.  For a genuine cache miss we acquire the semaphore and
-        // re-check inside it so that two concurrent callers for the same URL
-        // cannot both see a miss and both issue a network request.
+        // Cache miss — fetch under semaphore to avoid duplicate requests.
         await _iconFetchSemaphore.WaitAsync();
         try
         {
@@ -1328,34 +1350,61 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _iconFetchSemaphore.Release();
         }
 
+        return DecodeCachedIconBytes(bytes);
+    }
+
+    private static IconResult DecodeCachedIconBytes(byte[] bytes)
+    {
+        if (IsSvgContent(bytes))
+        {
+            try
+            {
+                return new IconResult(null, System.Text.Encoding.UTF8.GetString(bytes));
+            }
+            catch { return default; }
+        }
+
         try
         {
             using var ms = new MemoryStream(bytes);
-            return new Bitmap(ms);
+            return new IconResult(new Bitmap(ms), null);
         }
-        catch
-        {
-            return null;
-        }
+        catch { return default; }
     }
 
-    private static void ReplaceLoadedExtensionIcon(LoadedExtension extension, Bitmap newBitmap)
+    private static void ReplaceLoadedExtensionIcon(LoadedExtension extension, IconResult icon)
     {
-        if (ReferenceEquals(extension.IconImage, newBitmap))
-            return;
-
-        extension.IconImage?.Dispose();
-        extension.IconImage = newBitmap;
+        if (icon.Bitmap is not null)
+        {
+            if (ReferenceEquals(extension.IconImage, icon.Bitmap)) return;
+            extension.IconImage?.Dispose();
+            extension.IconImage = icon.Bitmap;
+            extension.SvgData = null;
+        }
+        else if (icon.SvgData is not null)
+        {
+            extension.IconImage?.Dispose();
+            extension.IconImage = null;
+            extension.SvgData = icon.SvgData;
+        }
         extension.NotifyIconChanged();
     }
 
-    private static void ReplaceMarketplaceIcon(MarketplaceExtension extension, Bitmap newBitmap)
+    private static void ReplaceMarketplaceIcon(MarketplaceExtension extension, IconResult icon)
     {
-        if (ReferenceEquals(extension.IconImage, newBitmap))
-            return;
-
-        extension.IconImage?.Dispose();
-        extension.IconImage = newBitmap;
+        if (icon.Bitmap is not null)
+        {
+            if (ReferenceEquals(extension.IconImage, icon.Bitmap)) return;
+            extension.IconImage?.Dispose();
+            extension.IconImage = icon.Bitmap;
+            extension.SvgData = null;
+        }
+        else if (icon.SvgData is not null)
+        {
+            extension.IconImage?.Dispose();
+            extension.IconImage = null;
+            extension.SvgData = icon.SvgData;
+        }
     }
 
     private async Task RefreshLatestReleaseAsync()
@@ -1647,12 +1696,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var existing = target[i];
             if (!ReferenceEquals(existing, incoming))
             {
-                // Transfer the already-decoded bitmap so the UI keeps showing the icon
+                // Transfer the already-decoded bitmap/SVG so the UI keeps showing the icon
                 // while the rest of the object is refreshed with updated metadata.
                 if (existing.IconImage is not null && incoming.IconImage is null)
                     incoming.IconImage = existing.IconImage;
                 else
                     existing.IconImage?.Dispose();
+
+                if (existing.SvgData is not null && incoming.SvgData is null)
+                    incoming.SvgData = existing.SvgData;
 
                 target[i] = incoming;
                 targetIndexByKey[key] = i;
