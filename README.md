@@ -37,9 +37,10 @@ Released under the [Kodo Public License v1.1](LICENSE.md).
 | 🕓 **Recent Files** | Jump back into recent files from the home screen |
 | 🎮 **Discord Rich Presence** | Show what you're working on in Discord |
 | ⌨️ **Smart Editing** | Auto-closing brackets, auto-indent, and find-in-file |
-| 🖼️ **COMING SOON: Image Preview** | View image files directly in the editor |
+| 🖼️ **Image Preview** | View image files directly in the editor |
+| 🧑‍💻 **Integrated Terminal** | Run code from within Kodo, no extra terminal needed |
 
-**Coming soon:** real-time collaborative editing · downloadable compilers · integrated terminal · and much more!
+**Coming soon:** real-time collaborative editing · downloadable compilers ·  and much more!
 
 ---
 
@@ -47,11 +48,7 @@ Released under the [Kodo Public License v1.1](LICENSE.md).
 
 Releases are also available through installers on the [Releases page](https://github.com/KerbalMissile/Kodo/releases) - download, install, and run.
 
----
-
-## Release Status
-
-Kodo is currently in **Beta**. Expect rough edges and unfinished features. Bug reports in [Issues](https://github.com/KerbalMissile/Kodo/issues) are genuinely helpful right now - we read and act on every one.
+If you're running from source, feel free to clone the repository and modify code. Make sure all submissions comply with KPL v1.1. Feedback, PRs and discussions are always and will always be welcome!
 
 ---
 
