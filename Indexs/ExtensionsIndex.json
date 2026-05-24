@@ -230,6 +230,17 @@
       "fileName": "Batch-Kodo-Extension-v1.0.2.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Batch-Kodo-Extension-v1.0.2.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/en/thumb/7/7c/Batch_file_icon.png/120px-Batch_file_icon.png"
+    },
+    {
+      "id": "gradle-kodo-extension",
+      "version": "v1.0.0",
+      "name": "Gradle Language Support",
+      "type": "language",
+      "author": "Kodo Team",
+      "description": "Syntax highlighting for Gradle files.",
+      "fileName": "Gradle-Kodo-Extension-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Gradle-Kodo-Extension-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/gradle-icon.png""
     }
   ]
 }
