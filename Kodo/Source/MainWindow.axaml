@@ -1323,20 +1323,24 @@
                                         </ComboBox.ItemTemplate>
                                     </ComboBox>
                                     <Button Classes="chrome"
+                                            Focusable="False"
                                             Click="NewTerminalButton_OnClick"
                                             ToolTip.Tip="New terminal (Ctrl+Shift+`)"
                                             Content="+" />
                                     <Button Classes="chrome"
+                                            Focusable="False"
                                             Click="ClearTerminalButton_OnClick"
                                             IsEnabled="{Binding HasActiveTerminal}"
                                             ToolTip.Tip="Clear terminal"
                                             Content="Clear" />
                                     <Button Classes="chrome"
+                                            Focusable="False"
                                             Click="RestartTerminalButton_OnClick"
                                             IsEnabled="{Binding HasActiveTerminal}"
                                             ToolTip.Tip="Restart active terminal with the selected shell"
                                             Content="Restart" />
                                     <Button Classes="chrome"
+                                            Focusable="False"
                                             Click="CloseTerminalButton_OnClick"
                                             IsEnabled="{Binding HasActiveTerminal}"
                                             ToolTip.Tip="Close active terminal"
@@ -1388,6 +1392,7 @@
                                                             Grid.Column="0"
                                                             Grid.ColumnSpan="2"
                                                             Classes="editortab"
+                                                            Focusable="False"
                                                             Tag="{Binding}"
                                                             Click="OpenTerminalSessionButton_OnClick"
                                                             Background="Transparent"
@@ -1405,6 +1410,7 @@
                                                             Grid.Column="1"
                                                             Classes="tabclose"
                                                             Classes.active="{Binding IsSelected}"
+                                                            Focusable="False"
                                                             Tag="{Binding}"
                                                             Click="CloseTerminalSessionButton_OnClick"
                                                             Margin="0,0,6,0"
@@ -1430,6 +1436,7 @@
                         </Border>
 
                         <Grid Grid.Row="2"
+                              Focusable="False"
                               IsVisible="{Binding HasActiveTerminal}">
                             <kodo:PseudoConsoleTerminal x:Name="TerminalHostControl" />
                         </Grid>
@@ -1471,6 +1478,7 @@
                                            Text="{Binding ActiveTerminalFooterText}" />
                                 <Button Grid.Column="1"
                                         Classes="statusitem"
+                                        Focusable="False"
                                         Click="ToggleTerminalButton_OnClick"
                                         ToolTip.Tip="Hide terminal (Ctrl+` or Ctrl+J)">
                                     <TextBlock FontSize="12"
@@ -1740,6 +1748,7 @@
                                 CornerRadius="20"
                                 Padding="28"
                                 Margin="0,0,20,0">
+                            <StackPanel Spacing="18">
                             <Panel>
                                 <!-- Normal step content - hidden on setup step -->
                                 <StackPanel IsVisible="{Binding IsNotTutorialSetupStep}"
@@ -1796,20 +1805,6 @@
                                     </StackPanel>
                                 </Border>
 
-                                <StackPanel Orientation="Horizontal"
-                                            HorizontalAlignment="Right"
-                                            Spacing="10">
-                                    <Button Classes="chrome"
-                                            Click="PreviousTutorialStepButton_OnClick"
-                                            IsVisible="{Binding CanGoToPreviousTutorialStep}"
-                                            Content="Back" />
-                                    <Button Classes="chrome"
-                                            Click="SkipTutorialButton_OnClick"
-                                            Content="Skip Tutorial" />
-                                    <Button Classes="marketaction"
-                                            Click="NextTutorialStepButton_OnClick"
-                                            Content="{Binding TutorialPrimaryButtonText}" />
-                                </StackPanel>
                             </StackPanel>
 
                                 <!-- Setup step - full-width, two-column layout inside the main card -->
@@ -2132,25 +2127,31 @@
 
                                     </Grid>
 
-                                    <!-- Nav buttons -->
-                                    <StackPanel Orientation="Horizontal"
-                                                HorizontalAlignment="Right"
-                                                Spacing="10">
-                                        <Button Classes="chrome"
-                                                Click="PreviousTutorialStepButton_OnClick"
-                                                IsVisible="{Binding CanGoToPreviousTutorialStep}"
-                                                Content="Back" />
-                                        <Button Classes="chrome"
-                                                Click="SkipTutorialButton_OnClick"
-                                                Content="Skip Tutorial" />
-                                        <Button Classes="marketaction"
-                                                Click="NextTutorialStepButton_OnClick"
-                                                Content="{Binding TutorialPrimaryButtonText}" />
-                                    </StackPanel>
-
                                 </StackPanel>
 
                             </Panel>
+
+                            <!-- Shared nav row — lives outside both IsVisible panels so there
+                                 is only ever one Next button in the tree. This prevents the
+                                 flicker caused by both panels briefly rendering during the
+                                 property-changed notification cycle when switching steps. -->
+                            <StackPanel Orientation="Horizontal"
+                                        HorizontalAlignment="Right"
+                                        Spacing="10">
+                                <Button Classes="chrome"
+                                        Click="PreviousTutorialStepButton_OnClick"
+                                        IsVisible="{Binding CanGoToPreviousTutorialStep}"
+                                        Content="Back" />
+                                <Button Classes="chrome"
+                                        Click="SkipTutorialButton_OnClick"
+                                        Content="Skip Tutorial" />
+                                <Button Classes="marketaction"
+                                        Click="NextTutorialStepButton_OnClick"
+                                        Content="{Binding TutorialPrimaryButtonText}" />
+                            </StackPanel>
+
+                            </StackPanel>
+
                         </Border>
 
                         <StackPanel Grid.Column="1" Spacing="16">

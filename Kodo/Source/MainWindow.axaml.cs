@@ -1186,17 +1186,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             using var indexResponse = await MarketplaceHttpClient.SendAsync(indexRequest);
             indexResponse.EnsureSuccessStatusCode();
             var remoteJson = await indexResponse.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(remoteJson);
+
+            // Use lenient options so minor JSON issues in the remote index
+            // (trailing commas, comments) don't abort the entire fetch.
+            var jsonOptions = new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
+            };
+            using var doc = JsonDocument.Parse(remoteJson, jsonOptions);
             if (doc.RootElement.TryGetProperty("extensions", out var extensionsElement) &&
                 extensionsElement.ValueKind == JsonValueKind.Array)
             {
                 foreach (var item in extensionsElement.EnumerateArray())
                 {
-                    var entry = ParseMarketplaceExtension(item);
-                    if (string.IsNullOrWhiteSpace(entry.Id) || marketplaceExtensions.Any(e => e.Id == entry.Id))
-                        continue;
+                    try
+                    {
+                        var entry = ParseMarketplaceExtension(item);
+                        if (string.IsNullOrWhiteSpace(entry.Id) || marketplaceExtensions.Any(e => e.Id == entry.Id))
+                            continue;
 
-                    marketplaceExtensions.Add(entry);
+                        marketplaceExtensions.Add(entry);
+                    }
+                    catch (Exception itemEx)
+                    {
+                        // Skip malformed entries but keep loading the rest of the index.
+                        KodoDiagnostics.WriteDebugFallback("Skipped malformed marketplace entry", itemEx);
+                    }
                 }
             }
         }
@@ -3801,7 +3817,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return;
 
             // ── Save the outgoing session's screen buffer ─────────────────────
-            // PseudoConsoleTerminal hosts exactly one ConPTY at a time. Switching
+            // ConsoleTerminal hosts exactly one ConPTY at a time. Switching
             // sessions always kills the outgoing process (Start() calls Stop()
             // internally), so we save the snapshot and mark it not-running now,
             // before that happens, so the session knows it needs a cold-start
@@ -6666,7 +6682,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 "Command Prompt",
                 ResolveExecutable(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
                     ?? ResolveExecutable("cmd.exe"),
-                "/K");
+                "");
             AddShell(
                 "bash",
                 "Git Bash",
@@ -6814,6 +6830,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             TerminalHostControl.SessionExited -= OnSessionExited;
             session.IsRunning = false;
             session.StatusText = "Exited";
+            Console.WriteLine($"[Terminal] SessionExited — shell={session.ShellId} title={session.Title}");
             OnPropertyChanged(nameof(TerminalStatusBarText));
             OnPropertyChanged(nameof(ActiveTerminalFooterText));
         }
@@ -6855,7 +6872,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshTerminalWindows()
     {
-        // PseudoConsoleTerminal is a native Avalonia control — it handles its own
+        // ConsoleTerminal is a native Avalonia control — it handles its own
         // layout and rendering. Showing / hiding is driven by IsVisible bindings on
         // the host Grid in AXAML, so there is nothing to manually synchronise here.
         // The method is kept so call-sites that still reference it compile cleanly.
@@ -6863,10 +6880,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void FocusActiveTerminal()
     {
+        // Post at DispatcherPriority.Background so our Focus() call fires after all
+        // pending layout and visibility work has fully settled.
+        //
+        // When a session is created, HasActiveTerminal flips to true, which makes the
+        // placeholder Border IsVisible=false. Avalonia's layout pass on that visibility
+        // change moves focus to the window root at DispatcherPriority.Layout. A post
+        // at DispatcherPriority.Loaded (lower than Layout) was intended to win that
+        // race, but Loaded can still tie with residual layout work, causing the Focus()
+        // call to be immediately overwritten. Background is lower than both Layout and
+        // Loaded, guaranteeing all layout-driven focus resets have completed first.
         Dispatcher.UIThread.Post(() =>
         {
             if (IsTerminalVisible && ActiveTerminalSession is not null)
+            {
                 TerminalHostControl.Focus();
+            }
         }, DispatcherPriority.Input);
     }
 
@@ -7017,7 +7046,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void CloseTerminalSessionButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: TerminalSession session })
+        {
             CloseTerminalSession(session);
+            // The × button has Focusable=False but the click still moves focus away
+            // on some Avalonia versions. Explicitly return focus to the terminal so
+            // the user can keep typing without having to click the terminal again.
+            FocusActiveTerminal();
+        }
     }
 
     private async void RenameTerminalSessionMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -8399,6 +8434,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Don't intercept keys destined for the terminal — it handles all input itself.
+        // Without this guard the tunnel handler (registered with handledEventsToo: true)
+        // fires before ConsoleTerminal.OnKeyDown and marks Enter / Tab / Back /
+        // Ctrl+V as handled, so the control never receives them and the terminal freezes.
+        //
+        // NOTE: We use TopLevel FocusManager instead of e.Source. In a tunnel event
+        // e.Source is the element that originated the route, which can still point to the
+        // previously-focused control during the first frames after the terminal panel opens
+        // (FocusActiveTerminal posts at DispatcherPriority.Input while the tunnel fires
+        // synchronously). Reading the focus manager gives the true current focus owner.
+        if (IsTerminalVisible && ActiveTerminalSession is not null)
+        {
+            var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
+            var isTerminalFocused = focused is not null &&
+                (ReferenceEquals(focused, TerminalHostControl) ||
+                 focused.GetSelfAndVisualAncestors().Any(v => ReferenceEquals(v, TerminalHostControl)));
+
+            if (isTerminalFocused)
+                return;
+        }
+
         if (!IsEditorKeyEvent(e))
             return;
 
@@ -9054,6 +9110,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Don't swallow keys when the terminal is focused. ConsoleTerminal.OnKeyDown
+        // marks Ctrl+letter and VT sequences as Handled=true, so this handler normally
+        // won't see them via the bubble phase — but be explicit as a safety net, and to
+        // stop Escape from stealing focus from the terminal.
+        if (IsTerminalVisible && ActiveTerminalSession is not null)
+        {
+            var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
+            if (focused is not null &&
+                (ReferenceEquals(focused, TerminalHostControl) ||
+                 focused.GetSelfAndVisualAncestors().Any(v => ReferenceEquals(v, TerminalHostControl))))
+                return;
+        }
+
         var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
         var hasShift   = (e.KeyModifiers & KeyModifiers.Shift)   == KeyModifiers.Shift;
 
