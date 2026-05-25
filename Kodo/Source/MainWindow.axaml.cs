@@ -566,6 +566,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // SaveSettings() calls (tab restore, CollectionChanged, ApplyTheme) cannot
     // overwrite the just-loaded settings before the window is fully initialised.
     private bool _suppressSettingsSave;
+    private bool _isDeveloperOptionsVisible;
     private int _tabSize = 4;
     private int _editorFontSize = 14;
     private string _accentColorMode = "kodo";   // "kodo" | "windows" | "custom"
@@ -3594,6 +3595,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
         }
     }
+
+    // ── Developer Options ────────────────────────────────────────────────────
+    // Not persisted — resets to unchecked on every launch intentionally,
+    // since these are diagnostic/power-user actions rather than everyday settings.
+
+    public bool IsDeveloperOptionsVisible
+    {
+        get => _isDeveloperOptionsVisible;
+        set
+        {
+            if (_isDeveloperOptionsVisible == value) return;
+            _isDeveloperOptionsVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Path to the folder that contains crash.log, shown in the button tooltip.</summary>
+    public string CrashLogFolderPath => KodoDiagnostics.LogDirectoryPath;
+
+    /// <summary>Path to the folder that contains kodosettings.json, shown in the button tooltip.</summary>
+    public string SettingsFolderPath =>
+        Path.GetDirectoryName(SettingsFilePath) ?? string.Empty;
 
     public bool IsAutoSaveEnabled
     {
@@ -7189,6 +7212,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenDiscordButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(DiscordServerUrl);
+
+    private async void OpenCrashLogFolderButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = KodoDiagnostics.LogDirectoryPath;
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName        = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            await ShowWarningDialogAsync("Open crash logs folder", ex);
+        }
+    }
+
+    private async void OpenSettingsFolderButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = Path.GetDirectoryName(SettingsFilePath) ?? string.Empty;
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName        = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            await ShowWarningDialogAsync("Open settings folder", ex);
+        }
+    }
 
     private void OpenLatestReleaseButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(LatestReleaseUrl);

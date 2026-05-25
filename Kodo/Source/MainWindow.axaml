@@ -51,10 +51,8 @@
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
-        <Style Selector="Button.marketaction:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
-        </Style>
         <Style Selector="Button.marketaction:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
@@ -2147,6 +2145,7 @@
                                         Content="Skip Tutorial" />
                                 <Button Classes="marketaction"
                                         Click="NextTutorialStepButton_OnClick"
+                                        MinWidth="148"
                                         Content="{Binding TutorialPrimaryButtonText}" />
                             </StackPanel>
 
@@ -3059,6 +3058,42 @@
                                                VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
+                            <Border Height="1"
+                                    Background="{Binding SurfaceBorderBrush}" />
+
+                            <!-- Developer Options -->
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                <TextBlock FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           VerticalAlignment="Center"
+                                           Text="Developer Options" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <CheckBox IsChecked="{Binding IsDeveloperOptionsVisible, Mode=TwoWay}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock VerticalAlignment="Center"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Show developer options" />
+                            </StackPanel>
+                            <StackPanel Spacing="8"
+                                        IsVisible="{Binding IsDeveloperOptionsVisible}">
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Open folders used by Kodo on this machine." />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="chrome"
+                                            Click="OpenCrashLogFolderButton_OnClick"
+                                            ToolTip.Tip="{Binding CrashLogFolderPath}"
+                                            Content="Open Crash Logs Folder" />
+                                    <Button Classes="chrome"
+                                            Click="OpenSettingsFolderButton_OnClick"
+                                            ToolTip.Tip="{Binding SettingsFolderPath}"
+                                            Content="Open Settings Folder" />
+                                </StackPanel>
+                            </StackPanel>
+
                             <Border Height="1"
                                     Background="{Binding SurfaceBorderBrush}" />
 
