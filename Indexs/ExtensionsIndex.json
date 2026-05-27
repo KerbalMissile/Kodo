@@ -46,35 +46,35 @@
     },
     {
       "id": "HTML-kodo-extension",
-      "version": "v1.0.2",
+      "version": "v1.1.0",
       "name": "HTML Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for HTML files.",
-      "fileName": "HTML-Kodo-Extension-v1.0.2.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/HTML-Kodo-Extension-v1.0.2.kox",
+      "fileName": "HTML-Kodo-Extension-v1.1.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/HTML-Kodo-Extension-v1.1.0.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/6/61/HTML5_logo_and_wordmark.svg"
     },
     {
       "id": "CSS-kodo-extension",
-      "version": "v1.0.2",
+      "version": "v1.1.0",
       "name": "CSS Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for CSS files.",
-      "fileName": "CSS-Kodo-Extension-v1.0.2.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/CSS-Kodo-Extension-v1.0.2.kox",
+      "fileName": "CSS-Kodo-Extension-v1.1.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/CSS-Kodo-Extension-v1.1.0.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Official_CSS_Logo.svg"
     },
     {
       "id": "JavaScript-kodo-extension",
-      "version": "v1.1.4",
+      "version": "v1.2.0",
       "name": "JavaScript Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for JavaScript files.",
-      "fileName": "JavaScript-Kodo-Extension-v1.1.4.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JavaScript-Kodo-Extension-v1.1.4.kox",
+      "fileName": "JavaScript-Kodo-Extension-v1.2.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JavaScript-Kodo-Extension-v1.2.0.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/6/6a/JavaScript-logo.png"
     },
     {
@@ -230,17 +230,6 @@
       "fileName": "Batch-Kodo-Extension-v1.0.2.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Batch-Kodo-Extension-v1.0.2.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/en/thumb/7/7c/Batch_file_icon.png/120px-Batch_file_icon.png"
-    },
-    {
-      "id": "gradle-kodo-extension",
-      "version": "v1.0.0",
-      "name": "Gradle Language Support",
-      "type": "language",
-      "author": "Kodo Team",
-      "description": "Syntax highlighting for Gradle files.",
-      "fileName": "Gradle-Kodo-Extension-v1.0.0.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Gradle-Kodo-Extension-v1.0.0.kox",
-      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/gradle-icon.png"
     }
   ]
 }
