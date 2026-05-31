@@ -34,6 +34,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Kodo;
@@ -43,6 +44,8 @@ namespace Kodo;
 // the error/crash dialog UI — all built in code so this file has no AXAML dependency.
 public partial class App : Application
 {
+    // Prevent crash-dialog storms from re-entering the UI thread and starving input.
+    private static int _isCrashDialogOpen;
     // ── Shared colours ───────────────────────────────────────────────────────
     // Both the crash dialog (App.axaml.cs) and the warning dialog (MainWindow.axaml.cs)
     // use the same dark-surface palette so they look consistent regardless of which
@@ -184,13 +187,18 @@ public partial class App : Application
 
     private static void ShowCrashDialog(string source, Exception exception, bool isTerminating)
     {
+        if (Interlocked.CompareExchange(ref _isCrashDialogOpen, 1, 0) != 0)
+            return;
+
         try
         {
             var logPath = KodoDiagnostics.LogFilePath;
 
             if (Dispatcher.UIThread.CheckAccess())
             {
-                ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating).GetAwaiter().GetResult();
+                // Never block the UI thread waiting on ShowDialog().
+                // Blocking here deadlocks input/rendering and makes the crash window appear frozen.
+                _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating);
                 return;
             }
 
@@ -204,6 +212,10 @@ public partial class App : Application
         catch
         {
             // Dispatcher invocation must never crash the app.
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isCrashDialogOpen, 0);
         }
     }
 
