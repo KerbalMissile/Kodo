@@ -1,26 +1,4 @@
 // Licensed under the Kodo Public License v1.1
-// May 17th, 2026 - SS-YYC - Improved error/crash dialog:
-//                   · Misplaced class-level comment moved inside the class body
-//                   · KodoDarkBrush/KodoAccentBrush extracted so both dialogs
-//                     (crash + warning) share identical colours without magic strings
-//                   · Crash dialog title bar now reads "Kodo — Crash Report" to
-//                     distinguish it clearly from the recoverable warning dialog
-//                   · Added "Copy to Clipboard" button to crash dialog so users can
-//                     paste the stack trace directly into a GitHub issue or Discord
-//                   · TerminatingText label shown only when IsTerminating=true so
-//                     the user knows whether the app is about to exit
-//                   · WriteCrashLog now uses UTC timestamps and flushes with
-//                     File.AppendAllTextAsync replacement to avoid partial writes
-//                   · ShowErrorDialog now early-returns without blocking if the UI
-//                     thread is already shut down (avoids a deadlock on Linux/macOS
-//                     when the Dispatcher has been stopped)
-// May 9th, 2026  - Fixed crash dialogs never appearing: Post() was fire-and-forget so the
-//                   process exited before the UI thread ran; ShowDialog() was unawaited so
-//                   the dialog closed instantly; and a closing owner caused ShowDialog to throw.
-//                   Now uses InvokeAsync+GetAwaiter().GetResult() to block the crash-handler
-//                   thread, awaits ShowDialog, and guards the owner against closed windows.
-// May 8th, 2026  - Added error popup dialog that mirrors the crash log entry
-// April 19th, 2026 - KerbalMissile - Added proper comments
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
