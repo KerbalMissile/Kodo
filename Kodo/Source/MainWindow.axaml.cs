@@ -4065,7 +4065,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? "Home"
         : HasDocumentOpen
         ? $"{GetDocumentDisplayName()}{GetDocumentStatusSuffix()}"
-        : "Editor";
+        : "Home";
     public bool IsTerminalSupported => _isTerminalSupported;
     public bool HasActiveTerminal => ActiveTerminalSession is not null;
     public int TerminalSessionCount => TerminalSessions.Count;

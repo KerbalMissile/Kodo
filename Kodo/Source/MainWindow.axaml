@@ -1500,12 +1500,18 @@
                         Padding="16,10"
                         PointerPressed="StatusBar_OnPointerPressed">
                     <Grid ColumnDefinitions="*,Auto">
-                        <!-- File path - takes all remaining space, left-aligned -->
+                        <!-- Left side: file path when a file is open, welcome text otherwise -->
                         <TextBlock Grid.Column="0"
+                                   IsVisible="{Binding HasDocumentOpen}"
                                    Foreground="{Binding MutedTextBrush}"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"
                                    Text="{Binding FilePathText}" />
+                        <TextBlock Grid.Column="0"
+                                   IsVisible="{Binding !HasDocumentOpen}"
+                                   Foreground="{Binding MutedTextBrush}"
+                                   VerticalAlignment="Center"
+                                   Text="Welcome to Kodo!" />
 
                         <!-- All status items right-aligned, reading left→right with pipe separators -->
                         <StackPanel Grid.Column="1"
@@ -1513,7 +1519,7 @@
                                     VerticalAlignment="Center"
                                     Spacing="0">
 
-                            <!-- Language + encoding + trailing separator -->
+                            <!-- Language + encoding + trailing separator (file open only) -->
                             <StackPanel Orientation="Horizontal"
                                         VerticalAlignment="Center"
                                         Spacing="6"
@@ -1557,13 +1563,14 @@
                                            Text="|" />
                             </StackPanel>
 
-                            <!-- Editor stats -->
+                            <!-- Editor stats (file open only) -->
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        VerticalAlignment="Center"
                                        Margin="6,0,0,0"
+                                       IsVisible="{Binding HasDocumentOpen}"
                                        Text="{Binding EditorStatsText}" />
 
-                            <!-- Separator -->
+                            <!-- Separator before find (file open only) -->
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        VerticalAlignment="Center"
                                        Opacity="0.4"
@@ -1571,6 +1578,7 @@
                                        IsVisible="{Binding CanShowFindInFile}"
                                        Text="|" />
 
+                            <!-- Terminal toggle — always visible -->
                             <Button Classes="statusitem"
                                     VerticalAlignment="Center"
                                     Margin="0,0,4,0"
@@ -1580,7 +1588,7 @@
                                            Text="{Binding TerminalStatusBarText}" />
                             </Button>
 
-                            <!-- Find button - far right -->
+                            <!-- Find button - far right (file open only) -->
                             <Button Background="Transparent"
                                     BorderThickness="0"
                                     Foreground="{Binding MutedTextBrush}"
