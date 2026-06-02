@@ -350,7 +350,7 @@
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="Padding" Value="20,18" />
             <Setter Property="FontSize" Value="15" />
-            <Setter Property="FontFamily" Value="Cascadia Code,Consolas,Menlo,Monospace" />
+            <Setter Property="FontFamily" Value="Cascadia Code,Consolas,Menlo,Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,Monospace" />
             <Setter Property="TextWrapping" Value="NoWrap" />
             <Setter Property="AcceptsReturn" Value="True" />
             <Setter Property="AcceptsTab" Value="True" />
@@ -976,7 +976,7 @@
                     <avaloniaEdit:TextEditor x:Name="EditorTextBox"
                                              Background="{Binding EditorBackgroundBrush}"
                                              Foreground="{Binding PrimaryTextBrush}"
-                                             FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                                             FontFamily="Cascadia Code,Consolas,Menlo,Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,Monospace"
                                              FontSize="14"
                                              Padding="8,12,18,18"
                                              KeyboardNavigation.TabNavigation="None"

@@ -536,6 +536,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly InterpolatedStringColorizer _interpolatedStringColorizer = new();
     private readonly HtmlEmbeddedColorizer _htmlEmbeddedColorizer = new();
     private readonly MarkdownColorizer _markdownColorizer = new();
+    private readonly EmojiTypefaceColorizer _emojiTypefaceColorizer = new();
     private EditorTab? _activeEditorTab;
     private int _nextUntitledTabNumber = 1;
     private string? _autoSaveStatusMessage;
@@ -849,6 +850,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_interpolatedStringColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_htmlEmbeddedColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_markdownColorizer);
+        EditorTextBox.TextArea.TextView.LineTransformers.Add(_emojiTypefaceColorizer);
         EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
@@ -10283,6 +10285,77 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
     }
 }
 
+public sealed class EmojiTypefaceColorizer : DocumentColorizingTransformer
+{
+    private static readonly Typeface EmojiTypeface = new(new FontFamily("Segoe UI Emoji"));
+    private static readonly MethodInfo? SetTextRunPropertiesMethod =
+        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
+
+    protected override void ColorizeLine(AvaloniaEdit.Document.DocumentLine line)
+    {
+        var document = CurrentContext.Document;
+        if (document is null || line.Length <= 0)
+            return;
+
+        var text = document.GetText(line.Offset, line.Length);
+        foreach (var (start, end) in EnumerateEmojiRanges(text))
+        {
+            ChangeLinePart(line.Offset + start, line.Offset + end, element =>
+            {
+                var properties = element.TextRunProperties.Clone();
+                properties.SetTypeface(EmojiTypeface);
+                SetTextRunPropertiesMethod?.Invoke(element, [properties]);
+            });
+        }
+    }
+
+    private static IEnumerable<(int Start, int End)> EnumerateEmojiRanges(string text)
+    {
+        var rangeStart = -1;
+        var index = 0;
+
+        while (index < text.Length)
+        {
+            var codePoint = char.ConvertToUtf32(text, index);
+            var length = char.IsSurrogatePair(text, index) ? 2 : 1;
+            var isEmoji = IsEmojiCodePoint(codePoint) ||
+                          codePoint == 0x200D ||
+                          codePoint == 0xFE0F ||
+                          codePoint == 0x20E3 ||
+                          IsRegionalIndicator(codePoint) ||
+                          IsEmojiModifier(codePoint);
+
+            if (isEmoji)
+            {
+                if (rangeStart < 0)
+                    rangeStart = index;
+            }
+            else if (rangeStart >= 0)
+            {
+                yield return (rangeStart, index);
+                rangeStart = -1;
+            }
+
+            index += length;
+        }
+
+        if (rangeStart >= 0)
+            yield return (rangeStart, text.Length);
+    }
+
+    private static bool IsEmojiCodePoint(int codePoint) =>
+        codePoint is >= 0x1F000 and <= 0x1FAFF ||
+        codePoint is >= 0x2600 and <= 0x27BF ||
+        codePoint is >= 0x2300 and <= 0x23FF ||
+        codePoint is >= 0x2B00 and <= 0x2BFF;
+
+    private static bool IsRegionalIndicator(int codePoint) =>
+        codePoint is >= 0x1F1E6 and <= 0x1F1FF;
+
+    private static bool IsEmojiModifier(int codePoint) =>
+        codePoint is >= 0x1F3FB and <= 0x1F3FF;
+}
+
 public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
 {
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
@@ -10902,6 +10975,8 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     private static readonly Regex EmphasisRegex = new(@"(?<!\*)\*(?=\S)(?<content>.+?)(?<=\S)\*(?!\*)|(?<!_)_(?=\S)(?<content2>.+?)(?<=\S)_(?!_)", RegexOptions.Compiled);
     private static readonly Regex StrikethroughRegex = new(@"~~(?=\S)(?<content>.+?)(?<=\S)~~", RegexOptions.Compiled);
     private static readonly Regex HtmlCommentRegex = new(@"<!--.*?-->", RegexOptions.Compiled);
+    private static readonly Regex InlineHtmlTagRegex = new(@"</?[\p{L}_][\p{L}\p{Nd}_:-]*(?:\s+[^>\r\n]*)?/?>", RegexOptions.Compiled);
+    private static readonly Regex InlineHtmlAttributeStringRegex = new(@"\b[\p{L}_:][\p{L}\p{Nd}_:.-]*\s*=\s*(?<value>""[^""]*""|'[^']*')", RegexOptions.Compiled);
     private static readonly Regex HtmlEmbeddedOpenTagRegex =
         new(@"<(?<tag>script|style)\b(?<attrs>[^>]*)>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex HtmlEmbeddedTypeAttributeRegex =
@@ -11081,6 +11156,23 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
                 continue;
 
             ApplyBrush(lineOffset, match.Index, match.Index + match.Length, _commentBrush);
+        }
+
+        foreach (Match tagMatch in InlineHtmlTagRegex.Matches(text))
+        {
+            foreach (Match attrMatch in InlineHtmlAttributeStringRegex.Matches(tagMatch.Value))
+            {
+                var valueGroup = attrMatch.Groups["value"];
+                if (!valueGroup.Success)
+                    continue;
+
+                var start = tagMatch.Index + valueGroup.Index;
+                var end = start + valueGroup.Length;
+                if (!TryReserveRange(protectedRanges, start, end))
+                    continue;
+
+                ApplyBrush(lineOffset, start, end, _stringBrush);
+            }
         }
 
         foreach (Match match in TablePipeRegex.Matches(text))
@@ -12076,7 +12168,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         // Single-line comment // … end-of-line.
         // Use $ as the explicit end-of-line anchor so the whole remainder of the
         // line is coloured with the extension's configured comment colour.
-        if (!string.IsNullOrEmpty(ext.CommentLine))
+        if (!isMarkdown && !string.IsNullOrEmpty(ext.CommentLine))
         {
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
