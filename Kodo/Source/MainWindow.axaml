@@ -1402,12 +1402,22 @@
                                                             Background="Transparent"
                                                             Padding="14,10,36,10">
                                                         <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <Border Width="7"
+                                                                    Height="7"
+                                                                    CornerRadius="4"
+                                                                    VerticalAlignment="Center"
+                                                                    Background="{Binding StatusDotColor}"
+                                                                    ToolTip.Tip="{Binding StatusText}" />
                                                             <TextBlock FontSize="13"
                                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                        Text="{Binding Title}" />
                                                             <TextBlock FontSize="11"
                                                                        Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                        Text="{Binding ShellDisplayName}" />
+                                                            <TextBlock FontSize="11"
+                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                       Opacity="0.6"
+                                                                       Text="{Binding StatusText}" />
                                                         </StackPanel>
                                                     </Button>
                                                     <Button Grid.Row="0"
@@ -2511,6 +2521,22 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                            <StackPanel IsVisible="{Binding IsMarketplaceUnavailableVisible}"
+                                        HorizontalAlignment="Center"
+                                        Spacing="8"
+                                        Margin="0,32,0,0">
+                                <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"
+                                           Text="Marketplace Unavailable" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           FontSize="13"
+                                           HorizontalAlignment="Center"
+                                           TextAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           Text="The Marketplace is currently unavailable. Please wait a few minutes." />
+                            </StackPanel>
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        FontStyle="Italic"
                                        Margin="0,16,0,0"

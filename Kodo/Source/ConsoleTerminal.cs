@@ -109,7 +109,13 @@ public sealed class PseudoConsoleTerminal : Control
 
     // ── Public API ────────────────────────────────────────────────────────────
 
-    public event EventHandler? SessionExited;
+    /// <summary>
+    /// Fired when the shell process exits. The event argument is the process
+    /// handle (<c>_hProcess</c>) that was running when <see cref="Start"/> was
+    /// called. Subscribers use it to verify the exit belongs to the process they
+    /// started, not a stale wake-up from a previous <see cref="Stop"/> call.
+    /// </summary>
+    public event EventHandler<IntPtr>? SessionExited;
 
     /// <summary>Start a shell. Stops any previously running session first.</summary>
     /// <param name="suppressOutputUntilRestored">
@@ -178,11 +184,18 @@ public sealed class PseudoConsoleTerminal : Control
             // Start reading output
             _ = Task.Run(() => ReadOutputLoop(_cts.Token), _cts.Token);
 
-            // Watch for process exit
+            // Watch for process exit. Capture the handle into a local so the
+            // background task holds the exact value that was alive at Start() time.
+            // The UI-thread post passes it as the event argument so the subscriber
+            // can reject stale wake-ups that belong to a since-stopped process.
+            var watchedHandle = _hProcess;
             _ = Task.Run(() =>
             {
-                NativeConPty.WaitForSingleObject(_hProcess, 0xFFFFFFFF);
-                Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, EventArgs.Empty));
+                NativeConPty.WaitForSingleObject(watchedHandle, 0xFFFFFFFF);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    SessionExited?.Invoke(this, watchedHandle);
+                });
             }, _cts.Token);
         }
         catch (Exception ex)
@@ -229,7 +242,7 @@ public sealed class PseudoConsoleTerminal : Control
         if (_writeStream is null || string.IsNullOrEmpty(text)) return;
         var bytes = Encoding.UTF8.GetBytes(text);
         try { _writeStream.Write(bytes, 0, bytes.Length); _writeStream.Flush(); }
-        catch { }
+        catch (Exception ex) { Console.WriteLine($"[ConPTY] SendInput failed: {ex.Message}"); }
     }
 
     public void SendKey(Key key, KeyModifiers mods)
@@ -240,6 +253,15 @@ public sealed class PseudoConsoleTerminal : Control
 
     /// <summary>True while a ConPTY process is running in this control.</summary>
     public bool HasLiveProcess => _hPcon != IntPtr.Zero;
+
+    /// <summary>
+    /// The process handle that was returned by the most recent successful
+    /// <see cref="Start"/> call. Used by the exit handler in MainWindow to
+    /// verify that a <see cref="SessionExited"/> post belongs to the process
+    /// it subscribed for, not a stale wake-up from a previous Stop().
+    /// Zero when no process is running.
+    /// </summary>
+    public IntPtr CurrentProcessHandle => _hProcess;
 
     /// <summary>
     /// Captures the current screen buffer and cursor state so it can be

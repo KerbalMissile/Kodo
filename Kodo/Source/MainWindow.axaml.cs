@@ -628,6 +628,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isFileCorrupted;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
     private TerminalSession? _activeTerminalSession;
+    // Holds the currently subscribed SessionExited handler so it can be
+    // explicitly unsubscribed before a new one is attached on every Start().
+    // Without this, switching sessions accumulates stale handlers that fire
+    // on the wrong session when any future process exits.
+    private EventHandler<IntPtr>? _activeSessionExitedHandler;
     private TerminalShellOption? _selectedTerminalShell;
     private int _nextTerminalNumber = 1;
     private bool _isTerminalVisible;
@@ -1112,6 +1117,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 catch (Exception ex)
                 {
+                    Console.WriteLine($"[Extensions] Failed to load '{Path.GetFileName(koxFile)}': {ex.Message}");
                     extensionLoadErrors.Add($"Failed to load '{Path.GetFileName(koxFile)}': {ex.Message}");
                 }
             }
@@ -1130,6 +1136,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 catch (Exception ex)
                 {
+                    Console.WriteLine($"[Extensions] Failed to load folder extension '{Path.GetFileName(dir)}': {ex.Message}");
                     extensionLoadErrors.Add($"Failed to load folder extension '{Path.GetFileName(dir)}': {ex.Message}");
                 }
             }
@@ -1232,7 +1239,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 RefreshMarketplaceConnectivityState("Marketplace fetch", ex);
             });
-            await ShowWarningDialogAsync("Marketplace fetch", ex);
+            // Fire-and-forget: do NOT await the dialog here. Awaiting ShowDialog
+            // blocks until the user dismisses it, which holds IsRefreshingExtensions=true
+            // and leaves the UI stuck on "Refreshing..." indefinitely.
+            _ = ShowWarningDialogAsync("Marketplace fetch", ex);
         }
 
         // All ObservableCollection mutations and PropertyChanged notifications must
@@ -3276,6 +3286,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(RefreshExtensionsButtonText));
             OnPropertyChanged(nameof(CanUpdateAllExtensions));
+            OnPropertyChanged(nameof(IsMarketplaceUnavailableVisible));
+            OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
         }
     }
 
@@ -3574,7 +3586,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string RefreshExtensionsButtonText => IsRefreshingExtensions ? "Refreshing..." : "Refresh";
 
-    public bool IsMarketplaceEmptyVisible => MarketplaceExtensions.Count == 0;
+    // True when the marketplace tab is empty AND a refresh is in progress (likely a connectivity issue).
+    public bool IsMarketplaceUnavailableVisible => MarketplaceExtensions.Count == 0 && IsRefreshingExtensions;
+    public bool IsMarketplaceEmptyVisible => MarketplaceExtensions.Count == 0 && !IsRefreshingExtensions;
 
     public bool IsMarketplaceConnectivityWarningVisible
     {
@@ -3901,8 +3915,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isTerminalVisible == value) return;
             _isTerminalVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(TerminalStatusBarText));
-            OnPropertyChanged(nameof(ActiveTerminalFooterText));
+            RefreshTerminalStatusBindings();
             SaveSettings();
             if (_isTerminalVisible)
                 FocusActiveTerminal();
@@ -3924,15 +3937,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             // ── Save the outgoing session's screen buffer ─────────────────────
             // ConsoleTerminal hosts exactly one ConPTY at a time. Switching
-            // sessions always kills the outgoing process (Start() calls Stop()
-            // internally), so we save the snapshot and mark it not-running now,
-            // before that happens, so the session knows it needs a cold-start
-            // when switched back to.
+            // sessions stops the outgoing process, but the tab remains
+            // restorable from its saved snapshot, so show it as paused instead
+            // of exited.
             if (_activeTerminalSession is not null)
             {
                 if (TerminalHostControl.HasLiveProcess)
                     _activeTerminalSession.Snapshot = TerminalHostControl.SaveSnapshot();
-                _activeTerminalSession.IsRunning = false;
+                if (_activeTerminalSession.StatusText is not "Exited" && !_activeTerminalSession.StatusText.StartsWith("Failed", StringComparison.Ordinal))
+                    _activeTerminalSession.StatusText = "Paused";
                 _activeTerminalSession.IsSelected = false;
             }
 
@@ -3943,11 +3956,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasActiveTerminal));
-            OnPropertyChanged(nameof(ActiveTerminalStatusText));
-            OnPropertyChanged(nameof(ActiveTerminalWorkingDirectory));
             OnPropertyChanged(nameof(ActiveTerminalShellDisplayName));
-            OnPropertyChanged(nameof(ActiveTerminalFooterText));
-            OnPropertyChanged(nameof(TerminalStatusBarText));
+            RefreshTerminalStatusBindings();
             if (_activeTerminalSession is not null)
             {
                 // Cold-start the incoming session's process. Start() internally calls
@@ -3961,15 +3971,55 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     try
                     {
+                        // Unhook the previous handler BEFORE calling Start(), because
+                        // Start() calls Stop() internally which signals the old process
+                        // to exit. If the old handler is still subscribed when that
+                        // WaitForSingleObject wake-up is posted to the UI thread, it
+                        // will fire after the new OnExited is registered and — if the
+                        // post races past the guard — will close the brand-new session.
+                        if (_activeSessionExitedHandler is not null)
+                        {
+                            TerminalHostControl.SessionExited -= _activeSessionExitedHandler;
+                            _activeSessionExitedHandler = null;
+                        }
+
                         var hasSnapshot = _activeTerminalSession.Snapshot is not null;
                         TerminalHostControl.Start(shell.FileName, shell.Arguments,
                             _activeTerminalSession.WorkingDirectory,
                             suppressOutputUntilRestored: hasSnapshot);
                         _activeTerminalSession.IsRunning = true;
                         _activeTerminalSession.StatusText = "Ready";
+
+                        // Capture the handle that Start() just launched. SessionExited
+                        // fires with this same value as its argument, so we can reject
+                        // any post whose handle doesn't match — meaning it's a stale
+                        // wake-up from a process that Stop() already killed.
+                        var expectedHandle = TerminalHostControl.CurrentProcessHandle;
+
+                        var watchedSession = _activeTerminalSession;
+                        void OnExited(object? s, IntPtr exitedHandle)
+                        {
+                            // Reject stale posts: Stop() inside a subsequent Start() kills
+                            // the old process, which wakes WaitForSingleObject and queues
+                            // a SessionExited post. By the time the UI thread drains it the
+                            // new handler is already subscribed. Comparing handles ensures
+                            // we only act on the exit of the process we actually started.
+                            if (exitedHandle != expectedHandle)
+                                return;
+
+                            TerminalHostControl.SessionExited -= OnExited;
+                            _activeSessionExitedHandler = null;
+                            watchedSession.IsRunning = false;
+
+                            CloseTerminalSession(watchedSession);
+                            RefreshTerminalStatusBindings();
+                        }
+                        _activeSessionExitedHandler = OnExited;
+                        TerminalHostControl.SessionExited += OnExited;
                     }
                     catch (Exception ex)
                     {
+                        Console.WriteLine($"[Terminal] Failed to start shell for '{_activeTerminalSession.Title}': {ex.Message}");
                         _activeTerminalSession.IsRunning = false;
                         _activeTerminalSession.StatusText = $"Failed to start: {ex.Message}";
                     }
@@ -5177,14 +5227,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void TerminalSession_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(TerminalSession.WorkingDirectory) or nameof(TerminalSession.StatusText) or nameof(TerminalSession.WindowHandle))
+        if (e.PropertyName is nameof(TerminalSession.WorkingDirectory) or nameof(TerminalSession.StatusText) or nameof(TerminalSession.IsRunning) or nameof(TerminalSession.WindowHandle))
         {
-            OnPropertyChanged(nameof(ActiveTerminalWorkingDirectory));
-            OnPropertyChanged(nameof(ActiveTerminalStatusText));
-            OnPropertyChanged(nameof(ActiveTerminalFooterText));
-            OnPropertyChanged(nameof(TerminalStatusBarText));
+            RefreshTerminalStatusBindings();
             RefreshTerminalWindows();
         }
+    }
+
+    private void RefreshTerminalStatusBindings()
+    {
+        OnPropertyChanged(nameof(ActiveTerminalWorkingDirectory));
+        OnPropertyChanged(nameof(ActiveTerminalStatusText));
+        OnPropertyChanged(nameof(ActiveTerminalFooterText));
+        OnPropertyChanged(nameof(TerminalStatusBarText));
     }
 
     // ── State management ─────────────────────────────────────────────────────
@@ -5358,8 +5413,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             UpdateDiscordPresence();
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[Discord] Failed to initialise Rich Presence: {ex.Message}");
             ResetDiscordPresenceForReconnect();
             _discordReconnectTimer.Start();
         }
@@ -5390,8 +5446,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _lastDiscordPresenceDetails = details;
             _lastDiscordPresenceState = state;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[Discord] Failed to update Rich Presence: {ex.Message}");
             ResetDiscordPresenceForReconnect();
             _discordReconnectTimer.Start();
         }
@@ -5492,7 +5549,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             settings.TabSize = NormalizeTabSize(settings.TabSize);
             return settings;
         }
-        catch { return new AppSettings(); }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Settings] Failed to load settings from '{SettingsFilePath}': {ex.Message}");
+            return new AppSettings();
+        }
     }
 
     private void SaveSettings(bool immediate = false)
@@ -5575,7 +5636,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 File.WriteAllText(tempPath, JsonSerializer.Serialize(snapshot));
                 File.Move(tempPath, SettingsFilePath, overwrite: true);
             }
-            catch { /* Ignore settings persistence failures. */ }
+            catch (Exception ex) { Console.WriteLine($"[Settings] Failed to save settings to '{SettingsFilePath}': {ex.Message}"); }
         });
     }
 
@@ -6958,22 +7019,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void StartTerminalProcess(TerminalSession session, TerminalShellOption shell)
     {
-        // The actual ConPTY Start() is called by the ActiveTerminalSession setter
-        // (set just after this method returns in CreateTerminalSession). Here we
-        // just wire up the exit event and mark the session as launching so the UI
-        // shows the right status text while the process is starting.
-        TerminalHostControl.SessionExited += OnSessionExited;
-
-        void OnSessionExited(object? s, EventArgs _)
-        {
-            // Unhook so stale lambdas from replaced sessions don't pile up.
-            TerminalHostControl.SessionExited -= OnSessionExited;
-            session.IsRunning = false;
-            session.StatusText = "Exited";
-            OnPropertyChanged(nameof(TerminalStatusBarText));
-            OnPropertyChanged(nameof(ActiveTerminalFooterText));
-        }
-
+        // Mark the session as launching so the UI shows the right status text
+        // while ConPTY is starting. The exit watcher is wired by the
+        // ActiveTerminalSession setter on every Start() call — subscribing here
+        // as well would add a duplicate handler that fires on the wrong session
+        // after switch-away/switch-back cycles.
         session.IsRunning = true;
         session.StatusText = "Launching...";
     }
@@ -7050,9 +7100,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         // Stop the ConPTY process for this session.
         if (ReferenceEquals(session, ActiveTerminalSession))
+        {
+            if (_activeSessionExitedHandler is not null)
+            {
+                TerminalHostControl.SessionExited -= _activeSessionExitedHandler;
+                _activeSessionExitedHandler = null;
+            }
             TerminalHostControl.Stop();
+        }
 
         session.IsRunning = false;
+        session.StatusText = "Closed";
         session.Dispose();
 
         var index = TerminalSessions.IndexOf(session);

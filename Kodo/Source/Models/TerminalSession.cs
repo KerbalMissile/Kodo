@@ -88,6 +88,7 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
 
             _isRunning = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(StatusDotColor));
         }
     }
 
@@ -101,8 +102,23 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
 
             _statusText = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(StatusDotColor));
         }
     }
+
+    /// <summary>
+    /// A colour string suitable for binding to a dot/indicator in the tab strip.
+    /// Green = active and ready, blue = paused/restorable, amber = transitioning,
+    /// red = failed, gray = closed/exited (transient — sessions are removed on exit).
+    /// </summary>
+    public string StatusDotColor => StatusText switch
+    {
+        "Ready"                           => "#22C55E", // green
+        "Paused"                          => "#38BDF8", // blue
+        "Exited" or "Closed"              => "#94A3B8", // gray  (transient; session removed immediately after)
+        var s when s.StartsWith("Failed") => "#EF4444", // red
+        _                                 => "#F59E0B", // amber — Launching…, Starting…, etc.
+    };
 
     public Process? Process
     {
