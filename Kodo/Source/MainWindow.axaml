@@ -1588,7 +1588,7 @@
                                        IsVisible="{Binding CanShowFindInFile}"
                                        Text="|" />
 
-                            <!-- Terminal toggle — always visible -->
+                            <!-- Terminal toggle - always visible -->
                             <Button Classes="statusitem"
                                     VerticalAlignment="Center"
                                     Margin="0,0,4,0"
@@ -2153,7 +2153,7 @@
 
                             </Panel>
 
-                            <!-- Shared nav row — lives outside both IsVisible panels so there
+                            <!-- Shared nav row - lives outside both IsVisible panels so there
                                  is only ever one Next button in the tree. This prevents the
                                  flicker caused by both panels briefly rendering during the
                                  property-changed notification cycle when switching steps. -->
@@ -2662,7 +2662,7 @@
 
                             <StackPanel Spacing="10"
                                         IsVisible="{Binding HasThemeExtensions}">
-                                <TextBlock FontSize="16"
+                                <TextBlock FontSize="14"
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
                                            Text="Installed Theme Extensions" />
@@ -2989,6 +2989,19 @@
                                 <TextBlock VerticalAlignment="Center"
                                            Foreground="{Binding PrimaryTextBrush}"
                                            Text="Enable Discord Rich Presence" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
+                                        IsVisible="{Binding IsDiscordRichPresenceEnabled}">
+                                <CheckBox IsChecked="{Binding IsDiscordImprovedRpcEnabled, Mode=TwoWay}"
+                                          VerticalAlignment="Center" />
+                                <StackPanel Spacing="2">
+                                    <TextBlock VerticalAlignment="Center"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Improved RPC [EXPERIMENTAL]" />
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               FontSize="11"
+                                               Text="Shows language, dirty state, page context, and open tab count." />
+                                </StackPanel>
                             </StackPanel>
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        TextWrapping="Wrap"

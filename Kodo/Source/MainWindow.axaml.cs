@@ -544,6 +544,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isDirty;
     private bool _isSaving;
     private bool _isDiscordRichPresenceEnabled;
+    private bool _isDiscordImprovedRpcEnabled;
     private bool _hasUntitledDocument;
     private bool _isRefreshingExtensions;
     private bool _isUpdatingAllExtensions;
@@ -582,6 +583,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _pendingFullStateRefresh = true;
     private string _lastDiscordPresenceDetails = string.Empty;
     private string _lastDiscordPresenceState = string.Empty;
+    private (string?, string?, int, bool, string?, bool, bool, bool, bool) _lastDiscordPresenceKey;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
     // True when settings.json did not exist on this launch - used to show the tutorial once.
     private bool _isFirstLaunch;
@@ -760,7 +762,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ["yaml"] = "yml",
         ["jsonc"] = "json",
         ["md"] = "md",
-        ["markdown"] = "md"
+        ["markdown"] = "md",
+        // Explicit plain-text markers — map to empty string so no extension is matched
+        ["text"] = "",
+        ["plain"] = "",
+        ["txt"] = "",
+        ["plaintext"] = "",
     };
 
     private static HttpClient CreateHttpClient()
@@ -858,6 +865,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_emojiTypefaceColorizer);
         EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
+        // Replace AvaloniaEdit's default LinkElementGenerator with a stricter one that
+        // trims trailing punctuation (e.g. ')' ')' ']') so prose text ending with those
+        // characters isn't swept into a link span.
+        var defaultLinkGen = EditorTextBox.TextArea.TextView.ElementGenerators.OfType<LinkElementGenerator>().FirstOrDefault();
+        if (defaultLinkGen is not null)
+            EditorTextBox.TextArea.TextView.ElementGenerators.Remove(defaultLinkGen);
+        EditorTextBox.TextArea.TextView.ElementGenerators.Add(new StrictLinkElementGenerator());
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
         FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
@@ -873,6 +887,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
+        _isDiscordImprovedRpcEnabled  = settings.DiscordImprovedRpcEnabled;
         _isDeveloperOptionsVisible = settings.DeveloperOptionsVisible;
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
         _isWordWrapEnabled = settings.WordWrapEnabled;
@@ -1050,7 +1065,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            // ScanInstalledExtensions is pure I/O — run it off the UI thread.
+            // ScanInstalledExtensions is pure I/O - run it off the UI thread.
             // Everything after the scan (collection mutations, PropertyChanged
             // notifications, marketplace fetch) MUST run on the UI thread because
             // Avalonia's binding engine requires it.  We marshal explicitly with
@@ -1246,7 +1261,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         // All ObservableCollection mutations and PropertyChanged notifications must
-        // run on the UI thread — Avalonia's binding engine requires it.
+        // run on the UI thread - Avalonia's binding engine requires it.
         Dictionary<string, string> marketplaceIconMap = [];
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -1285,16 +1300,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     {
                         if (icon.HasValue)
                         {
-                            // Index icon fetched successfully — use it, replacing any kox icon.
+                            // Index icon fetched successfully - use it, replacing any kox icon.
                             ReplaceLoadedExtensionIcon(pair.ext, icon);
                         }
-                        // else: fetch returned nothing (bad URL, corrupt bytes, etc.) —
+                        // else: fetch returned nothing (bad URL, corrupt bytes, etc.) -
                         // leave whatever the kox provided in place.
                     });
                 }
                 catch
                 {
-                    // Network failure — leave the kox icon (or abbreviation) in place.
+                    // Network failure - leave the kox icon (or abbreviation) in place.
                 }
             });
 
@@ -1302,7 +1317,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private async Task FetchMarketplaceIconsAsync(IReadOnlyDictionary<string, string> marketplaceIconMap)
     {
-        // Apply icons whose bytes are already cached synchronously on the UI thread —
+        // Apply icons whose bytes are already cached synchronously on the UI thread -
         // this covers entries that came in via SyncMarketplaceExtensionCollection without
         // a bitmap (e.g. a brand-new item that happened to share a URL with a previously
         // fetched icon) and avoids an unnecessary async round-trip for them.
@@ -1370,7 +1385,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_marketplaceIconBytesCache.TryGetValue(iconUrl, out var bytes))
             return DecodeCachedIconBytes(bytes);
 
-        // Cache miss — fetch under semaphore to avoid duplicate requests.
+        // Cache miss - fetch under semaphore to avoid duplicate requests.
         await _iconFetchSemaphore.WaitAsync();
         try
         {
@@ -2963,7 +2978,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var normalized = token.Trim().TrimStart('.').ToLowerInvariant();
         if (FenceLanguageAliases.TryGetValue(normalized, out var alias))
+        {
+            if (string.IsNullOrEmpty(alias))
+                return null; // explicit plain-text marker — no syntax profile
             normalized = alias;
+        }
 
         var bestMatch = LoadedExtensions
             .Where(extension =>
@@ -3114,7 +3133,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ConfigureRainbowBrackets(LoadedExtension? ext)
     {
-        _rainbowBracketColorizer.UpdateSyntax(ext);
+        // Rainbow brackets have no meaning in plain text or markdown prose.
+        // Markdown fenced code blocks are colourised by _markdownColorizer independently.
+        var isMarkdown = string.Equals(ext?.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase);
+        _rainbowBracketColorizer.UpdateSyntax(isMarkdown ? null : ext);
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
 
@@ -3691,6 +3713,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SaveSettings();
             UpdateDiscordRichPresenceLifecycle();
             OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
+            OnPropertyChanged(nameof(IsDiscordImprovedRpcEnabled));
+        }
+    }
+
+    public bool IsDiscordImprovedRpcEnabled
+    {
+        get => _isDiscordImprovedRpcEnabled;
+        set
+        {
+            if (_isDiscordImprovedRpcEnabled == value) return;
+            _isDiscordImprovedRpcEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+            UpdateDiscordPresence();
+            OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
         }
     }
 
@@ -3962,7 +3999,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 // Cold-start the incoming session's process. Start() internally calls
                 // ResizeCells which allocates a fresh empty cell grid, so we must
-                // restore the snapshot AFTER Start() — not before — otherwise the
+                // restore the snapshot AFTER Start() - not before - otherwise the
                 // newly allocated grid would immediately overwrite the restored buffer.
                 var shell = AvailableTerminalShells.FirstOrDefault(s =>
                     string.Equals(s.Id, _activeTerminalSession.ShellId, StringComparison.OrdinalIgnoreCase))
@@ -3975,8 +4012,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         // Start() calls Stop() internally which signals the old process
                         // to exit. If the old handler is still subscribed when that
                         // WaitForSingleObject wake-up is posted to the UI thread, it
-                        // will fire after the new OnExited is registered and — if the
-                        // post races past the guard — will close the brand-new session.
+                        // will fire after the new OnExited is registered and - if the
+                        // post races past the guard - will close the brand-new session.
                         if (_activeSessionExitedHandler is not null)
                         {
                             TerminalHostControl.SessionExited -= _activeSessionExitedHandler;
@@ -3992,7 +4029,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
                         // Capture the handle that Start() just launched. SessionExited
                         // fires with this same value as its argument, so we can reject
-                        // any post whose handle doesn't match — meaning it's a stale
+                        // any post whose handle doesn't match - meaning it's a stale
                         // wake-up from a process that Stop() already killed.
                         var expectedHandle = TerminalHostControl.CurrentProcessHandle;
 
@@ -4887,7 +4924,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (dow == DayOfWeek.Friday)
         {
-            messages.Add("It's Friday — let's ship something before the weekend!");
+            messages.Add("It's Friday - let's ship something before the weekend!");
             messages.Add("Friday energy. Let's make the most of it.");
         }
         if (dow is DayOfWeek.Saturday or DayOfWeek.Sunday)
@@ -4920,7 +4957,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         if (tod == "afternoon")
         {
-            messages.Add("Afternoon grind — let's go!");
+            messages.Add("Afternoon grind - let's go!");
             messages.Add("Hope the day's treating you well!");
             messages.Add("Halfway through the day, keep it up!");
             messages.Add("Afternoon slump? Not here.");
@@ -5054,7 +5091,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string DiscordRichPresenceStatusText => !IsDiscordRichPresenceEnabled
         ? "Discord Rich Presence is turned off."
-        : "Discord Rich Presence is on when the Discord desktop app is running.";
+        : IsDiscordImprovedRpcEnabled
+            ? "Rich Presence is on (Improved). Shows language, dirty state, page context, and open tab count."
+            : "Discord Rich Presence is on when the Discord desktop app is running.";
 
     public string AutoSaveStatusText =>
         !IsAutoSaveEnabled
@@ -5116,7 +5155,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush SurfaceBorderBrush    { get; private set; } = Brush.Parse("#2B2B2B");
     public IBrush AccentBrush           { get; private set; } = Brush.Parse("#8C00FF");
 
-    // Black or white — whichever contrasts better against the current AccentBrush.
+    // Black or white - whichever contrasts better against the current AccentBrush.
     // Used wherever text or icons sit directly on an AccentBrush background so that
     // dark accent colours (e.g. black, navy) don't make content invisible.
     public IBrush AccentForegroundBrush { get; private set; } = Brushes.White;
@@ -5425,12 +5464,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_discordRpcClient is null || !IsDiscordRichPresenceEnabled) return;
 
+        // Guard against string allocation on every 75 ms tick by comparing the
+        // primitive inputs that drive the presence strings first. Only when
+        // something actually changed do we build strings and call SetPresence.
+        var currentKey = GetDiscordPresenceKey();
+        if (currentKey == _lastDiscordPresenceKey) return;
+        _lastDiscordPresenceKey = currentKey;
+
         try
         {
             var details = GetDiscordPresenceDetails();
-            var state = GetDiscordPresenceState();
-            if (details == _lastDiscordPresenceDetails && state == _lastDiscordPresenceState)
-                return;
+            var state   = GetDiscordPresenceState();
 
             _discordRpcClient.SetPresence(new DiscordRichPresenceModel
             {
@@ -5444,7 +5488,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Timestamps = new DiscordRPC.Timestamps(_sessionStart)
             });
             _lastDiscordPresenceDetails = details;
-            _lastDiscordPresenceState = state;
+            _lastDiscordPresenceState   = state;
         }
         catch (Exception ex)
         {
@@ -5454,18 +5498,81 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private string GetDiscordPresenceDetails()
+    // Cheap tuple key built from the primitive fields that drive presence strings.
+    // Avoids allocating display strings on every 75 ms refresh tick.
+    private (string? filePath, string? folderPath, int tabCount, bool dirty,
+             string? language, bool settings, bool extensions, bool home,
+             bool improved) GetDiscordPresenceKey() =>
+        (_currentFilePath, _currentFolderPath, OpenTabs.Count, _isDirty,
+         CurrentLanguageExtension?.Name, _isSettingsPageVisible, _isExtensionsPageVisible,
+         _isHomePageVisible, _isDiscordImprovedRpcEnabled);
+
+    private string GetDiscordPresenceDetails() =>
+        _isDiscordImprovedRpcEnabled
+            ? GetDiscordPresenceDetailsImproved()
+            : GetDiscordPresenceDetailsClassic();
+
+    private string GetDiscordPresenceState() =>
+        _isDiscordImprovedRpcEnabled
+            ? GetDiscordPresenceStateImproved()
+            : GetDiscordPresenceStateClassic();
+
+    // ── Classic presence (original behaviour) ────────────────────────────────
+
+    private string GetDiscordPresenceDetailsClassic()
     {
         if (HasDocumentOpen) return $"Editing {GetDocumentDisplayName()}";
         return IsFolderOpen ? "Browsing project files" : "Idle in Kodo";
     }
 
-    private string GetDiscordPresenceState()
+    private string GetDiscordPresenceStateClassic()
     {
         if (HasFileOpen)          return GetDiscordWorkspaceLabel();
         if (_hasUntitledDocument) return GetDiscordWorkspaceLabel("Editing an Unsaved file");
         if (IsFolderOpen)         return GetDiscordWorkspaceLabel();
         return "Waiting for a file";
+    }
+
+    // ── Improved presence (experimental) ─────────────────────────────────────
+
+    private string GetDiscordPresenceDetailsImproved()
+    {
+        if (_isSettingsPageVisible)   return "Tweaking settings";
+        if (_isExtensionsPageVisible) return "Browsing extensions";
+        if (_isHomePageVisible)       return "On the home screen";
+        if (_isTutorialPageVisible)   return "Following the tutorial";
+        if (_isWhatsNewPageVisible)   return "Reading what's new";
+
+        if (HasDocumentOpen)
+        {
+            var fileName = GetDocumentDisplayName();
+            var lang     = CurrentLanguageExtension?.Name;
+            var dirty    = _isDirty ? " \u25cf" : string.Empty;
+            return string.IsNullOrWhiteSpace(lang)
+                ? $"Editing {fileName}{dirty}"
+                : $"Editing {fileName}{dirty}  \u00b7  {lang}";
+        }
+
+        return IsFolderOpen ? "Browsing project files" : "Idle in Kodo";
+    }
+
+    private string GetDiscordPresenceStateImproved()
+    {
+        if (HasFileOpen)          return GetDiscordWorkspaceLabelImproved();
+        if (_hasUntitledDocument) return GetDiscordWorkspaceLabelImproved("Editing an unsaved file");
+        if (IsFolderOpen)         return GetDiscordWorkspaceLabelImproved();
+        return "Waiting for a file";
+    }
+
+    private string GetDiscordWorkspaceLabelImproved(string fallback = "Working in editor")
+    {
+        if (!IsFolderOpen) return fallback;
+        var folderName = Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar));
+        if (string.IsNullOrWhiteSpace(folderName)) return fallback;
+        var tabCount = OpenTabs.Count;
+        return tabCount > 1
+            ? $"Workspace: {folderName}  ({tabCount} files open)"
+            : $"Workspace: {folderName}";
     }
 
     private string GetDiscordWorkspaceLabel(string fallback = "Working in editor")
@@ -5490,7 +5597,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _discordRpcClient = null;
             _lastDiscordPresenceDetails = string.Empty;
-            _lastDiscordPresenceState = string.Empty;
+            _lastDiscordPresenceState   = string.Empty;
+            _lastDiscordPresenceKey     = default;
         }
     }
 
@@ -5589,6 +5697,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ThemeName                              = CurrentThemeName,
             AutoSaveEnabled                        = IsAutoSaveEnabled,
             DiscordRichPresenceEnabled             = IsDiscordRichPresenceEnabled,
+            DiscordImprovedRpcEnabled              = IsDiscordImprovedRpcEnabled,
             DeveloperOptionsVisible                = IsDeveloperOptionsVisible,
             StatusBarFilePathVisible               = IsStatusBarFilePathVisible,
             WordWrapEnabled                        = IsWordWrapEnabled,
@@ -6972,7 +7081,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         else
             IsTerminalVisible = !IsTerminalVisible;
 
-        // Do NOT auto-spawn a shell when the panel opens — the user must click
+        // Do NOT auto-spawn a shell when the panel opens - the user must click
         // "Create terminal" or use Ctrl+Shift+` to start one explicitly.
         if (IsTerminalVisible && ActiveTerminalSession is not null)
             FocusActiveTerminal();
@@ -7021,7 +7130,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         // Mark the session as launching so the UI shows the right status text
         // while ConPTY is starting. The exit watcher is wired by the
-        // ActiveTerminalSession setter on every Start() call — subscribing here
+        // ActiveTerminalSession setter on every Start() call - subscribing here
         // as well would add a duplicate handler that fires on the wrong session
         // after switch-away/switch-back cycles.
         session.IsRunning = true;
@@ -7061,7 +7170,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshTerminalWindows()
     {
-        // ConsoleTerminal is a native Avalonia control — it handles its own
+        // ConsoleTerminal is a native Avalonia control - it handles its own
         // layout and rendering. Showing / hiding is driven by IsVisible bindings on
         // the host Grid in AXAML, so there is nothing to manually synchronise here.
         // The method is kept so call-sites that still reference it compile cleanly.
@@ -8671,7 +8780,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // Don't intercept keys destined for the terminal — it handles all input itself.
+        // Don't intercept keys destined for the terminal - it handles all input itself.
         // Without this guard the tunnel handler (registered with handledEventsToo: true)
         // fires before ConsoleTerminal.OnKeyDown and marks Enter / Tab / Back /
         // Ctrl+V as handled, so the control never receives them and the terminal freezes.
@@ -9282,9 +9391,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? "Kodo cannot reach the internet right now. Marketplace installs and updates may fail until your connection comes back."
                 : "No Wi-Fi or internet connection detected. Marketplace installs and downloads may fail until you are back online.";
         }
-        else if (!hasWirelessConnection && exception is not null && IsConnectivityFailure(exception))
+        else if (exception is not null && IsConnectivityFailure(exception))
         {
-            message = "No Wi-Fi connection detected. If you are expecting wireless access, reconnect first. Marketplace downloads can fail while the app is offline or the network is unstable.";
+            message = hasWirelessConnection
+                ? "Kodo could not reach the marketplace. The connection may be unstable or the server temporarily unavailable - try again shortly."
+                : "No Wi-Fi connection detected. If you are expecting wireless access, reconnect first. Marketplace downloads can fail while the app is offline or the network is unstable.";
         }
 
         if (!string.IsNullOrWhiteSpace(operation) && !string.IsNullOrWhiteSpace(message))
@@ -9349,7 +9460,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         // Don't swallow keys when the terminal is focused. ConsoleTerminal.OnKeyDown
         // marks Ctrl+letter and VT sequences as Handled=true, so this handler normally
-        // won't see them via the bubble phase — but be explicit as a safety net, and to
+        // won't see them via the bubble phase - but be explicit as a safety net, and to
         // stop Escape from stealing focus from the terminal.
         if (IsTerminalVisible && ActiveTerminalSession is not null)
         {
@@ -9642,8 +9753,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                                || context.StartsWith("Auto-save", StringComparison.OrdinalIgnoreCase);
  
             var subtitleMessage = isFileOperation
-                ? "Kodo could not complete this file operation. Your in-editor content is still intact — try saving again or use Save As to choose a different location."
-                : "Kodo ran into a problem with this operation. No data was lost — you can try again.";
+                ? "Kodo could not complete this file operation. Your in-editor content is still intact - try saving again or use Save As to choose a different location."
+                : "Kodo ran into a problem with this operation. No data was lost - you can try again.";
  
             // --- Header ---
             var titleText = new TextBlock
@@ -9664,7 +9775,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Margin       = new Thickness(0, 4, 0, 0),
             };
  
-            // Context badge (e.g. "File save", "Extension install — MyLang")
+            // Context badge (e.g. "File save", "Extension install - MyLang")
             var contextBadge = new Border
             {
                 Background      = ButtonBrush,
@@ -9691,7 +9802,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 TextWrapping = TextWrapping.Wrap,
             };
  
-            // Human-readable error message — shown above the raw stack trace so the
+            // Human-readable error message - shown above the raw stack trace so the
             // user gets an immediate plain-English explanation before seeing the detail.
             var errorMessageText = new TextBlock
             {
@@ -9703,7 +9814,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 TextWrapping = TextWrapping.Wrap,
             };
  
-            // Collapsible stack trace — SelectableTextBlock so users can copy it.
+            // Collapsible stack trace - SelectableTextBlock so users can copy it.
             var exceptionText = new SelectableTextBlock
             {
                 Text         = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, "Warning", context),
@@ -9790,7 +9901,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             dialog = new Window
             {
                 // Em-dash consistent with the crash dialog title.
-                Title  = "Kodo — Error",
+                Title  = "Kodo - Error",
                 Width  = 520,
                 SizeToContent = SizeToContent.Height,
                 MinWidth  = 380,
@@ -9833,6 +9944,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private bool ShouldSuppressWarningDialog(string context, Exception exception)
     {
+        // Marketplace connectivity failures (timeout, network unreachable) are routine
+        // background events - the in-UI connectivity banner already surfaces them.
+        // Popping a dialog for a CDN timeout is noise; suppress silently.
+        if (context.StartsWith("Marketplace fetch", StringComparison.OrdinalIgnoreCase) &&
+            IsConnectivityFailure(exception))
+        {
+            return true;
+        }
+
         var key = $"{context}|{exception.GetType().FullName}|{exception.Message}";
         var now = DateTime.UtcNow;
         if (_warningDialogCooldowns.TryGetValue(key, out var lastShownUtc) &&
@@ -9850,6 +9970,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public string ThemeName { get; set; } = "Dark";
         public bool AutoSaveEnabled { get; set; }
         public bool DiscordRichPresenceEnabled { get; set; }
+        public bool DiscordImprovedRpcEnabled  { get; set; }
         public bool DeveloperOptionsVisible { get; set; }
         public bool StatusBarFilePathVisible { get; set; } = true;
         public bool WordWrapEnabled { get; set; }
@@ -11166,11 +11287,8 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             {
                 ApplyBrush(lineOffset, linkReferenceDefinitionMatch.Groups["title"].Index, linkReferenceDefinitionMatch.Groups["title"].Index + linkReferenceDefinitionMatch.Groups["title"].Length, _stringBrush);
             }
-            foreach (var ch in new[] { '[', ']', ':' })
-            {
-                foreach (var index in AllIndexesOf(text, ch))
-                    ApplyBrush(lineOffset, index, index + 1, _punctuationBrush);
-            }
+            foreach (var index in AllIndexesOf(text, ':'))
+                ApplyBrush(lineOffset, index, index + 1, _punctuationBrush);
             return;
         }
 
@@ -11269,14 +11387,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             if (refIdGroup.Success)
                 ApplyBrush(lineOffset, refIdGroup.Index, refIdGroup.Index + refIdGroup.Length, _stringBrush);
 
-            foreach (var ch in new[] { '[', ']', '(', ')' })
-            {
-                foreach (var index in AllIndexesOf(match.Value, ch))
-                {
-                    var absolute = match.Index + index;
-                    ApplyBrush(lineOffset, absolute, absolute + 1, _punctuationBrush);
-                }
-            }
+
         }
 
         foreach (Match match in InlineCodeRegex.Matches(text))
@@ -11333,7 +11444,10 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
         if (fence.Profile is null)
         {
-            ApplyBrush(lineOffset, 0, text.Length, _variableBrush);
+            // Unknown/plain language (e.g. ```text, ```plain, unlabelled fence):
+            // paint the whole line white so no syntax rules bleed in from the
+            // KodoHighlightingDefinition or any other transformer.
+            ApplyBrush(lineOffset, 0, text.Length, Brushes.White);
             return;
         }
 
@@ -12162,10 +12276,10 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 Regex = new Regex(@"~~", RegexOptions.Compiled),
                 Color = operatorColor
             });
-            // Link/image bracket and paren delimiters
+            // Link/image opening bracket only — closing ] ) are left as default text colour
             codeRuleSet.Rules.Add(new HighlightingRule
             {
-                Regex = new Regex(@"!?\[|\]\(|\)", RegexOptions.Compiled),
+                Regex = new Regex(@"!?\[", RegexOptions.Compiled),
                 Color = punctuationColor
             });
             // Table pipe separators
@@ -12212,6 +12326,19 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         // with keywordColor rather than commentColor (which handles blockquotes via >).
         if (isMarkdown)
         {
+            // Fenced code blocks (``` or ~~~) — added first so they take priority over
+            // all inline rules. The emptyRuleSet means no bold/italic/link rules fire
+            // inside the fence body, matching what the MarkdownColorizer handles itself.
+            mainRuleSet.Spans.Add(new HighlightingSpan
+            {
+                StartExpression        = new Regex(@"^(?:`{3,}|~{3,})[^\r\n]*$", RegexOptions.Compiled | RegexOptions.Multiline),
+                EndExpression          = new Regex(@"^(?:`{3,}|~{3,})\s*$",      RegexOptions.Compiled | RegexOptions.Multiline),
+                SpanColor              = new HighlightingColor { Foreground = new SimpleHighlightingBrush(Color.Parse("#F4F4F4")) },
+                SpanColorIncludesStart = true,
+                SpanColorIncludesEnd   = true,
+                RuleSet                = emptyRuleSet
+            });
+
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
                 StartExpression        = new Regex(@"^#{1,6}(?=\s)", RegexOptions.Compiled | RegexOptions.Multiline),
@@ -12459,5 +12586,42 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             else break;
         }
         return columns;
+    }
+}
+
+// Replaces AvaloniaEdit's default LinkElementGenerator with one that:
+// 1. Only matches genuine http:// / https:// URLs (not bare words or www. paths)
+// 2. Trims trailing punctuation so ')' etc. at the end of a URL stay white
+public sealed class StrictLinkElementGenerator : LinkElementGenerator
+{
+    private static readonly char[] TrailingPunctuation = [')', ']', '}', '.', ',', ':', ';', '!', '?', '\'', '"'];
+    private static readonly Regex StrictUrlRegex = new(
+        @"https?://[^\s<>""'\[\](){}\|\\^`]+",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public StrictLinkElementGenerator()
+    {
+        RequireControlModifierForClick = false;
+    }
+
+    public override VisualLineElement? ConstructElement(int offset)
+    {
+        var line = CurrentContext.VisualLine;
+        var document = CurrentContext.Document;
+        var lineText = document.GetText(line.FirstDocumentLine.Offset, line.FirstDocumentLine.Length);
+        var relativeOffset = offset - line.FirstDocumentLine.Offset;
+
+        var match = StrictUrlRegex.Match(lineText, relativeOffset);
+        if (!match.Success || match.Index != relativeOffset)
+            return null;
+
+        var url = match.Value.TrimEnd(TrailingPunctuation);
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return null;
+
+        var linkText = new VisualLineLinkText(line, url.Length);
+        linkText.NavigateUri = uri;
+        linkText.RequireControlModifierForClick = RequireControlModifierForClick;
+        return linkText;
     }
 }

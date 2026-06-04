@@ -174,7 +174,7 @@ public sealed class PseudoConsoleTerminal : Control
                 out _hProcess, out _hThread);
 
             // If the caller is about to restore a snapshot, suppress output for
-            // 500 ms — long enough for the shell's full startup sequence (including
+            // 500 ms - long enough for the shell's full startup sequence (including
             // the CSI 2 J screen-clear that PowerShell/cmd/bash all send while
             // drawing their first prompt) to pass without wiping the snapshot.
             _suppressOutputUntilTick = suppressOutputUntilRestored
@@ -318,7 +318,7 @@ public sealed class PseudoConsoleTerminal : Control
 
             // The suppression window set in Start() keeps the shell's startup
             // sequence (including its CSI 2 J screen-clear) from wiping the
-            // snapshot. No need to clear it here — it will expire on its own
+            // snapshot. No need to clear it here - it will expire on its own
             // after 500 ms, at which point the shell's redrawn prompt takes over.
         }
         // Redraw immediately with the restored content.
@@ -332,7 +332,7 @@ public sealed class PseudoConsoleTerminal : Control
         // Handle everything ourselves before calling base so that window-level
         // tunnel handlers (editor shortcuts, etc.) cannot swallow terminal keys.
 
-        // 1. Special keys (arrows, F-keys, Home/End, …) — these never produce a
+        // 1. Special keys (arrows, F-keys, Home/End, …) - these never produce a
         //    TextInput event, so we must intercept them here.
         var seq = KeyToVt(e.Key, e.KeyModifiers);
         if (seq is not null)
@@ -374,7 +374,7 @@ public sealed class PseudoConsoleTerminal : Control
         }
 
         // 4. Everything else (plain printable chars, Shift+letter, AltGr combos)
-        //    arrives via OnTextInput — nothing to do here except let base run.
+        //    arrives via OnTextInput - nothing to do here except let base run.
         base.OnKeyDown(e);
     }
 
@@ -405,7 +405,7 @@ public sealed class PseudoConsoleTerminal : Control
         Focus();
     }
 
-    // Cached typefaces — reusing the same object avoids per-call font lookup overhead
+    // Cached typefaces - reusing the same object avoids per-call font lookup overhead
     // and ensures consistent glyph metrics across all cells in a frame.
     private static readonly Typeface TypefaceNormal = new(FontFamily, FontStyle.Normal, FontWeight.Regular);
     private static readonly Typeface TypefaceBold   = new(FontFamily, FontStyle.Normal, FontWeight.Bold);
@@ -514,7 +514,7 @@ public sealed class PseudoConsoleTerminal : Control
                     // block, but discard bytes until the suppression window expires.
                     // This covers the shell's full startup sequence including the
                     // CSI 2 J screen-clear that most shells emit while drawing their
-                    // first prompt — which would otherwise wipe the restored snapshot.
+                    // first prompt - which would otherwise wipe the restored snapshot.
                     if (Environment.TickCount64 >= _suppressOutputUntilTick)
                         foreach (var ch in text) ProcessChar(ch);
                 }
@@ -538,9 +538,9 @@ public sealed class PseudoConsoleTerminal : Control
                     case '\n':   LineFeed(); break;
                     case '\b':   if (_cursorCol > 0) _cursorCol--; break;
                     case '\t':   _cursorCol = Math.Min(_cols - 1, (_cursorCol / 8 + 1) * 8); break;
-                    case '\a':   break; // bell — ignore
-                    case '\x0E': break; // SO (shift-out) — ignore, no alternate charset
-                    case '\x0F': break; // SI (shift-in)  — ignore
+                    case '\a':   break; // bell - ignore
+                    case '\x0E': break; // SO (shift-out) - ignore, no alternate charset
+                    case '\x0F': break; // SI (shift-in)  - ignore
                     default:
                         if (ch >= ' ')
                         {
@@ -625,7 +625,7 @@ public sealed class PseudoConsoleTerminal : Control
             case 'J': EraseDisplay(P0(0)); break;
             case 'K': EraseLine(P0(0)); break;
 
-            // SGR — colours and attributes
+            // SGR - colours and attributes
             case 'm': ApplySgr(nums); break;
 
             // Cursor visibility
@@ -639,7 +639,7 @@ public sealed class PseudoConsoleTerminal : Control
             // Insert / delete / erase chars
             case '@': InsertChars(P(0)); break;
             case 'P': DeleteChars(P(0)); break;
-            // CSI <n> X — Erase Character: blank n cells at cursor without moving it.
+            // CSI <n> X - Erase Character: blank n cells at cursor without moving it.
             // PSReadLine uses this to clear the tail of a longer previous command when
             // a shorter history entry replaces it (e.g. after pressing Up arrow).
             case 'X': EraseChars(P(0)); break;
@@ -753,7 +753,7 @@ public sealed class PseudoConsoleTerminal : Control
         }
     }
 
-    // CSI <n> X — blank n cells starting at the cursor without moving the cursor.
+    // CSI <n> X - blank n cells starting at the cursor without moving the cursor.
     // Cursor stays put; cells beyond the line end are not affected.
     private void EraseChars(int n)
     {
@@ -865,11 +865,11 @@ public sealed class PseudoConsoleTerminal : Control
     // that should come through as TextInput (e.g. Alt+E → é on some keyboard layouts).
     private static string? AltKeyChar(Key key) => key switch
     {
-        Key.B => "b",   // Alt+B — move word back
-        Key.F => "f",   // Alt+F — move word forward
-        Key.D => "d",   // Alt+D — delete word forward
-        Key.Back => "\x7f", // Alt+Backspace — delete word back (ESC DEL)
-        Key.OemPeriod => ".", // Alt+. — insert last argument
+        Key.B => "b",   // Alt+B - move word back
+        Key.F => "f",   // Alt+F - move word forward
+        Key.D => "d",   // Alt+D - delete word forward
+        Key.Back => "\x7f", // Alt+Backspace - delete word back (ESC DEL)
+        Key.OemPeriod => ".", // Alt+. - insert last argument
         _ => null
     };
 

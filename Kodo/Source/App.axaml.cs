@@ -19,7 +19,7 @@ namespace Kodo;
 
 // One of the main entry points for the application, responsible for initializing and
 // starting the app. Handles global unhandled-exception wiring, crash logging, and
-// the error/crash dialog UI — all built in code so this file has no AXAML dependency.
+// the error/crash dialog UI - all built in code so this file has no AXAML dependency.
 public partial class App : Application
 {
     // Prevent crash-dialog storms from re-entering the UI thread and starving input.
@@ -262,7 +262,7 @@ public partial class App : Application
             Margin      = new Thickness(0, 4, 0, 0),
         };
 
-        // Terminating warning — only shown when IsTerminating is true so the user
+        // Terminating warning - only shown when IsTerminating is true so the user
         // knows the app is about to exit regardless of what they click.
         var terminatingBanner = new Border
         {
@@ -395,7 +395,7 @@ public partial class App : Application
         var dialog = new Window
         {
             // "Crash Report" distinguishes this from the recoverable warning dialog.
-            Title  = "Kodo — Crash Report",
+            Title  = "Kodo - Crash Report",
             Width  = 560,
             SizeToContent = SizeToContent.Height,
             MinWidth  = 400,
