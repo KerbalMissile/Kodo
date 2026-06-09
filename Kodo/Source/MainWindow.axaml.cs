@@ -5370,7 +5370,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshNonCaretState()
     {
-        Title = HasDocumentOpen ? $"{GetDocumentDisplayName()} - Kodo" : "Kodo";
+        Title = BuildWindowTitle();
         OnPropertyChanged(nameof(HasDocumentOpen));
         OnPropertyChanged(nameof(IsDocumentViewVisible));
         OnPropertyChanged(nameof(HasImagePreview));
@@ -7023,6 +7023,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private string GetDocumentDisplayName() =>
         HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
+
+    // Builds the OS-level window title with context-aware page and file state.
+    // Mirrors the logic of the improved Discord RPC but kept simpler:
+    // page views are labelled plainly, and dirty files get a ● prefix.
+    private string BuildWindowTitle()
+    {
+        if (_isSettingsPageVisible)   return "Settings";
+        if (_isExtensionsPageVisible) return "Extensions";
+        if (_isTutorialPageVisible)   return "Tutorial";
+        if (_isHomePageVisible)       return "Kodo";
+
+        if (HasDocumentOpen)
+        {
+            var dirty = _isDirty ? "● " : string.Empty;
+            var file  = GetDocumentDisplayName();
+            if (IsFolderOpen)
+            {
+                var workspace = Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar));
+                if (!string.IsNullOrWhiteSpace(workspace))
+                    return $"{dirty}{file} — {workspace}";
+            }
+            return $"{dirty}{file}";
+        }
+
+        return "Kodo";
+    }
 
     // Writes content into the TextEditor document without triggering dirty tracking
     private void SetEditorContent(string content)
