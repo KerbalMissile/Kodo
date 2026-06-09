@@ -511,18 +511,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion ?? "v0.0.0";
+    public string CopyrightText => $"© {DateTime.Now.Year} KerbalMissile and SS-YYC. Licensed under KPL-v1.1.";
     private const string DefaultMarketplaceIndexUrl = "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Indexs/ExtensionsIndex.json";
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases/latest";
     private const string ReleasesApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases";
     private const string ReleasesPageUrl = "https://github.com/KerbalMissile/Kodo/releases";
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
+    private const string WebsiteUrl = "https://kerbalmissile.github.io/Kodo-Website/";
 
     private string? _currentFilePath;
     // Encoding detected (or chosen) for the currently open file. Defaults to UTF-8.
     private System.Text.Encoding _currentFileEncoding = System.Text.Encoding.UTF8;
     private string? _currentFolderPath;
     private DiscordRpcClient? _discordRpcClient;
-    private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private readonly DispatcherTimer _autoSaveStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private readonly DispatcherTimer _discordReconnectTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
@@ -595,6 +597,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private ReleaseInfo? _latestRelease;
     private LoadedExtension? _currentLanguageExtension;
     private Bitmap? _currentImagePreview;
+    private double _imageZoomLevel = 1.0;
+    private const double ImageZoomMin = 0.1;
+    private const double ImageZoomMax = 10.0;
+    private const double ImageZoomStep = 0.25;
     private FileSystemWatcher? _extensionsFolderWatcher;
     private FileSystemWatcher? _projectExtensionsFolderWatcher;
     private readonly DispatcherTimer _extensionsRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
@@ -628,6 +634,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _userName = string.Empty;
     private bool _isFindPanelVisible;
     private bool _isFileCorrupted;
+    private bool _isPointerOverEditorLink;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
     private TerminalSession? _activeTerminalSession;
     // Holds the currently subscribed SessionExited handler so it can be
@@ -819,8 +826,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(HasImagePreview));
             OnPropertyChanged(nameof(IsImagePreviewVisible));
             OnPropertyChanged(nameof(IsTextEditorVisible));
+            OnPropertyChanged(nameof(ImageZoomedWidth));
+            OnPropertyChanged(nameof(ImageZoomedHeight));
+            OnPropertyChanged(nameof(ImageZoomPercent));
         }
     }
+
+    public double ImageZoomLevel
+    {
+        get => _imageZoomLevel;
+        private set
+        {
+            var clamped = Math.Clamp(value, ImageZoomMin, ImageZoomMax);
+            if (Math.Abs(_imageZoomLevel - clamped) < 0.001) return;
+            _imageZoomLevel = clamped;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ImageZoomPercent));
+            OnPropertyChanged(nameof(ImageZoomedWidth));
+            OnPropertyChanged(nameof(ImageZoomedHeight));
+        }
+    }
+
+    public string ImageZoomPercent => $"{(int)Math.Round(_imageZoomLevel * 100)}%";
+
+    public double ImageZoomedWidth =>
+        CurrentImagePreview is not null ? CurrentImagePreview.PixelSize.Width * _imageZoomLevel : 0;
+
+    public double ImageZoomedHeight =>
+        CurrentImagePreview is not null ? CurrentImagePreview.PixelSize.Height * _imageZoomLevel : 0;
 
     public EditorTab? ActiveEditorTab
     {
@@ -872,6 +905,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (defaultLinkGen is not null)
             EditorTextBox.TextArea.TextView.ElementGenerators.Remove(defaultLinkGen);
         EditorTextBox.TextArea.TextView.ElementGenerators.Add(new StrictLinkElementGenerator());
+        // Show a "Ctrl+click to open" tooltip whenever the pointer hovers over a URL in the editor.
+        // We hit-test the document position under the pointer and scan the line text with the same
+        // regex used by StrictLinkElementGenerator, so the tooltip only appears over actual links.
+        EditorTextBox.TextArea.TextView.PointerMoved += EditorTextView_OnPointerMoved;
+        EditorTextBox.TextArea.TextView.PointerExited += EditorTextView_OnPointerExited;
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
         FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
@@ -882,6 +920,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
         EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
         AddHandler(InputElement.KeyDownEvent, MainWindow_EditorKeyIntercept_OnKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
+        // Register Ctrl+wheel zoom on the image scroll viewer in the tunnel phase so we
+        // intercept before ScrollViewer processes the event. Without tunnel registration
+        // the ScrollViewer consumes the wheel event for scrolling before our handler runs,
+        // meaning Ctrl+wheel appears to stop working once the image overflows its container.
+        ImageScrollViewer.AddHandler(
+            InputElement.PointerWheelChangedEvent,
+            ImageScrollViewer_OnPointerWheelChanged,
+            RoutingStrategies.Tunnel);
         _isFirstLaunch = !File.Exists(SettingsFilePath);
         var settings = LoadSettings();
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
@@ -2859,6 +2905,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void UpdateCurrentDocumentPresentation()
     {
         var imagePreview = TryLoadImagePreview(_currentFilePath);
+        if (!ReferenceEquals(CurrentImagePreview, imagePreview))
+            ImageZoomLevel = 1.0;
         CurrentImagePreview = imagePreview;
 
         if (imagePreview is not null)
@@ -5504,7 +5552,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
              string? language, bool settings, bool extensions, bool home,
              bool improved) GetDiscordPresenceKey() =>
         (_currentFilePath, _currentFolderPath, OpenTabs.Count, _isDirty,
-         CurrentLanguageExtension?.Name, _isSettingsPageVisible, _isExtensionsPageVisible,
+         GetDiscordLanguageLabel(), _isSettingsPageVisible, _isExtensionsPageVisible,
          _isHomePageVisible, _isDiscordImprovedRpcEnabled);
 
     private string GetDiscordPresenceDetails() =>
@@ -5546,7 +5594,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (HasDocumentOpen)
         {
             var fileName = GetDocumentDisplayName();
-            var lang     = CurrentLanguageExtension?.Name;
+            var lang     = GetDiscordLanguageLabel();
             var dirty    = _isDirty ? " \u25cf" : string.Empty;
             return string.IsNullOrWhiteSpace(lang)
                 ? $"Editing {fileName}{dirty}"
@@ -5554,6 +5602,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         return IsFolderOpen ? "Browsing project files" : "Idle in Kodo";
+    }
+
+    private string? GetDiscordLanguageLabel()
+    {
+        var extension = CurrentLanguageExtension;
+        if (extension is null)
+            return null;
+
+        var name = extension.Name
+            .Replace("Language Support", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("Support", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Trim();
+        if (!string.IsNullOrWhiteSpace(name))
+            return name;
+
+        return extension.Id
+            .Replace("-kodo-extension", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("-language-support", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("-", " ", StringComparison.OrdinalIgnoreCase)
+            .Trim();
     }
 
     private string GetDiscordPresenceStateImproved()
@@ -6892,6 +6960,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(HasRecentFiles));
     }
 
+    private void ZoomInButton_OnClick(object? sender, RoutedEventArgs e)  => ZoomImageIn();
+    private void ZoomOutButton_OnClick(object? sender, RoutedEventArgs e) => ZoomImageOut();
+    private void ZoomResetButton_OnClick(object? sender, RoutedEventArgs e) => ZoomImageReset();
+
+    // ── Image zoom helpers ───────────────────────────────────────────────────
+
+    private void ZoomImageIn()  => ImageZoomLevel = SnapToNiceZoom(_imageZoomLevel + ImageZoomStep);
+    private void ZoomImageOut() => ImageZoomLevel = SnapToNiceZoom(_imageZoomLevel - ImageZoomStep);
+    private void ZoomImageReset() => ImageZoomLevel = 1.0;
+
+    // Snaps zoom to a clean percentage (0.25, 0.5, 0.75, 1.0, 1.25 …) to
+    // avoid floating-point drift making levels like 0.9999999 appear.
+    private static double SnapToNiceZoom(double zoom)
+    {
+        var snapped = Math.Round(zoom / ImageZoomStep) * ImageZoomStep;
+        return Math.Clamp(snapped, ImageZoomMin, ImageZoomMax);
+    }
+
+    private void ImageScrollViewer_OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    {
+        if (!HasImagePreview) return;
+        var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
+        if (!hasControl) return;
+
+        // Ctrl+wheel → zoom. Mark handled so the ScrollViewer does NOT also scroll.
+        if (e.Delta.Y > 0)
+            ZoomImageIn();
+        else if (e.Delta.Y < 0)
+            ZoomImageOut();
+
+        e.Handled = true;
+    }
+
     // ── Autosave helpers ─────────────────────────────────────────────────────
 
     private void RestartAutoSaveTimerIfNeeded()
@@ -7495,6 +7596,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenDiscordButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(DiscordServerUrl);
+
+    private void OpenWebsiteButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrl(WebsiteUrl);
 
     private async void OpenCrashLogFolderButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -8682,6 +8786,70 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await UninstallExtensionAsync(extension);
     }
 
+    // Shows a "Ctrl+click to open link" tooltip when the pointer hovers over a URL,
+    // and switches the cursor to a Hand. Only fires tooltip/cursor changes on state
+    // transitions (not → over link, over link → not) so Avalonia's tooltip system
+    // is not disturbed on every pixel of movement.
+    private void EditorTextView_OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        var textView = EditorTextBox.TextArea.TextView;
+        var nowOverLink = IsPointerOverLink(e.GetPosition(textView), textView);
+
+        if (nowOverLink == _isPointerOverEditorLink)
+            return; // no state change — leave tooltip and cursor alone
+
+        _isPointerOverEditorLink = nowOverLink;
+
+        if (nowOverLink)
+        {
+            ToolTip.SetTip(textView, "Ctrl+click to open link");
+            ToolTip.SetShowDelay(textView, 400);
+            textView.Cursor = new Cursor(StandardCursorType.Hand);
+        }
+        else
+        {
+            ToolTip.SetTip(textView, null);
+            textView.Cursor = new Cursor(StandardCursorType.Ibeam);
+        }
+    }
+
+    private void EditorTextView_OnPointerExited(object? sender, PointerEventArgs e)
+    {
+        if (!_isPointerOverEditorLink) return;
+        _isPointerOverEditorLink = false;
+        var textView = EditorTextBox.TextArea.TextView;
+        ToolTip.SetTip(textView, null);
+        textView.Cursor = new Cursor(StandardCursorType.Ibeam);
+    }
+
+    // Returns true if the given pointer position (relative to the TextView, not
+    // scroll-adjusted) falls within any URL span on the visible line.
+    private bool IsPointerOverLink(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
+    {
+        var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
+        if (pos is null) return false;
+
+        try
+        {
+            var line = EditorTextBox.Document.GetLineByNumber(pos.Value.Line);
+            var lineText = EditorTextBox.Document.GetText(line.Offset, line.Length);
+            var colOffset = pos.Value.Column - 1; // Column is 1-based
+
+            foreach (Match m in StrictLinkElementGenerator.UrlRegex.Matches(lineText))
+            {
+                var trimmedLength = m.Value.TrimEnd(')', ']', '}', '.', ',', ':', ';', '!', '?', '\'', '"').Length;
+                if (colOffset >= m.Index && colOffset < m.Index + trimmedLength)
+                    return true;
+            }
+        }
+        catch
+        {
+            // Document may be null or line out of range during rapid edits — treat as no link
+        }
+
+        return false;
+    }
+
     // TextEditor fires EventHandler (not RoutedEventHandler) - signature must match exactly
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
@@ -9602,6 +9770,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     ToggleTerminalPanel();
                 e.Handled = true;
                 break;
+
+            // Image zoom: Ctrl++ / Ctrl+= / Ctrl+NumpadAdd  →  zoom in
+            //             Ctrl+-  / Ctrl+NumpadSubtract      →  zoom out
+            //             Ctrl+0  / Ctrl+Numpad0             →  reset to 100 %
+            case Key.OemPlus:
+            case Key.Add:
+                if (HasImagePreview)
+                {
+                    ZoomImageIn();
+                    e.Handled = true;
+                }
+                break;
+
+            case Key.OemMinus:
+            case Key.Subtract:
+                if (HasImagePreview)
+                {
+                    ZoomImageOut();
+                    e.Handled = true;
+                }
+                break;
+
+            case Key.D0:
+            case Key.NumPad0:
+                if (HasImagePreview)
+                {
+                    ZoomImageReset();
+                    e.Handled = true;
+                }
+                break;
         }
     }
 
@@ -10082,6 +10280,27 @@ public sealed class RecentFileItem
             return LastOpened.ToString("MMM d");
         }
     }
+
+    public string LastOpenedLongText
+    {
+        get
+        {
+            var diff = DateTime.Now - LastOpened;
+            if (diff.TotalMinutes < 1)  return "just now";
+            if (diff.TotalMinutes < 2)  return "1 minute ago";
+            if (diff.TotalHours   < 1)  return $"{(int)diff.TotalMinutes} minutes ago";
+            if (diff.TotalHours   < 2)  return "1 hour ago";
+            if (diff.TotalDays    < 1)  return $"{(int)diff.TotalHours} hours ago";
+            if (diff.TotalDays    < 2)  return "yesterday";
+            if (diff.TotalDays    < 7)  return $"{(int)diff.TotalDays} days ago";
+            if (diff.TotalDays    < 14) return "1 week ago";
+            if (diff.TotalDays    < 30) return $"{(int)(diff.TotalDays / 7)} weeks ago";
+            if (diff.TotalDays    < 60) return "1 month ago";
+            if (diff.TotalDays    < 365) return $"{(int)(diff.TotalDays / 30)} months ago";
+            if (diff.TotalDays    < 730) return "1 year ago";
+            return $"{(int)(diff.TotalDays / 365)} years ago";
+        }
+    }
 }
 
 public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
@@ -10535,6 +10754,9 @@ public sealed class EmojiTypefaceColorizer : DocumentColorizingTransformer
         codePoint is >= 0x1F3FB and <= 0x1F3FF;
 }
 
+// ── Syntax highlighting ──────────────────────────────────────────────────────
+// Builds an AvaloniaEdit IHighlightingDefinition at runtime from the data
+// declared in a LoadedExtension (keywords, types, comment markers, color tokens).
 public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
 {
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
@@ -12592,6 +12814,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 // Replaces AvaloniaEdit's default LinkElementGenerator with one that:
 // 1. Only matches genuine http:// / https:// URLs (not bare words or www. paths)
 // 2. Trims trailing punctuation so ')' etc. at the end of a URL stay white
+// 3. Requires Ctrl+click to open (RequireControlModifierForClick = true)
 public sealed class StrictLinkElementGenerator : LinkElementGenerator
 {
     private static readonly char[] TrailingPunctuation = [')', ']', '}', '.', ',', ':', ';', '!', '?', '\'', '"'];
@@ -12599,9 +12822,13 @@ public sealed class StrictLinkElementGenerator : LinkElementGenerator
         @"https?://[^\s<>""'\[\](){}\|\\^`]+",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Exposed so the hover-tooltip handler can reuse the same regex without
+    // duplicating the pattern.
+    internal static Regex UrlRegex => StrictUrlRegex;
+
     public StrictLinkElementGenerator()
     {
-        RequireControlModifierForClick = false;
+        RequireControlModifierForClick = true;
     }
 
     public override VisualLineElement? ConstructElement(int offset)

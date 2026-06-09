@@ -1,4 +1,4 @@
-<!-- Licensed under the Kodo Public License v1.0 -->
+<!-- Licensed under the Kodo Public License v1.1 -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -580,7 +580,8 @@
                                                 <Button Classes="openeditor"
                                                         Tag="{Binding}"
                                                         Click="OpenEditorTabButton_OnClick"
-                                                        IsVisible="{Binding !IsSelected}">
+                                                        IsVisible="{Binding !IsSelected}"
+                                                        ToolTip.Tip="{Binding FullPath}">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <TextBlock FontSize="12"
                                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
@@ -593,7 +594,8 @@
                                                         Tag="{Binding}"
                                                         Click="OpenEditorTabButton_OnClick"
                                                         IsVisible="{Binding IsSelected}"
-                                                        Background="{Binding #RootWindow.ButtonHoverBrush}">
+                                                        Background="{Binding #RootWindow.ButtonHoverBrush}"
+                                                        ToolTip.Tip="{Binding FullPath}">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <TextBlock FontSize="12"
                                                                    Foreground="{Binding #RootWindow.AccentBrush}"
@@ -792,6 +794,7 @@
                                 Click="OpenMarketplaceFromBannerButton_OnClick"
                                 VerticalAlignment="Center"
                                 Margin="0,0,8,0"
+                                ToolTip.Tip="Go to the Extensions Marketplace"
                                 Content="Open Marketplace" />
                         <Button Grid.Column="2"
                                 Background="Transparent"
@@ -952,7 +955,8 @@
                                                     Click="CloseEditorTabButton_OnClick"
                                                     Margin="0,0,6,0"
                                                     HorizontalAlignment="Right"
-                                                    VerticalAlignment="Center">
+                                                    VerticalAlignment="Center"
+                                                    ToolTip.Tip="Close tab">
                                                 <TextBlock FontSize="11" Text="&#x2715;"
                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}" />
                                             </Button>
@@ -1002,25 +1006,73 @@
                         </avaloniaEdit:TextEditor.ContextMenu>
                     </avaloniaEdit:TextEditor>
                     <Grid IsVisible="{Binding IsImagePreviewVisible}"
-                          Margin="24"
                           HorizontalAlignment="Stretch"
-                          VerticalAlignment="Stretch">
-                        <Border Background="{Binding CardBrush}"
+                          VerticalAlignment="Stretch"
+                          RowDefinitions="*,Auto">
+                        <!-- Scrollable / zoomable image area -->
+                        <ScrollViewer x:Name="ImageScrollViewer"
+                                      Grid.Row="0"
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Auto">
+                            <Image Source="{Binding CurrentImagePreview}"
+                                   Width="{Binding ImageZoomedWidth}"
+                                   Height="{Binding ImageZoomedHeight}"
+                                   Stretch="Fill"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Margin="24" />
+                        </ScrollViewer>
+                        <!-- Zoom toolbar -->
+                        <Border Grid.Row="1"
+                                Background="{Binding TopBarBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="14"
-                                Padding="18"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                MaxWidth="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Grid}}"
-                                MaxHeight="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Grid}}">
-                            <Viewbox Stretch="Uniform"
-                                     StretchDirection="DownOnly">
-                                <Image Source="{Binding CurrentImagePreview}"
-                                       Stretch="Uniform"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center" />
-                            </Viewbox>
+                                BorderThickness="0,1,0,0"
+                                Padding="10,6">
+                            <StackPanel Orientation="Horizontal"
+                                        HorizontalAlignment="Center"
+                                        Spacing="4">
+                                <Button Classes="chrome"
+                                        Width="30" Height="28"
+                                        FontSize="14"
+                                        Padding="0"
+                                        HorizontalContentAlignment="Center"
+                                        VerticalContentAlignment="Center"
+                                        ToolTip.Tip="Zoom Out (Ctrl+−)"
+                                        Click="ZoomOutButton_OnClick">
+                                    <TextBlock Text="−"
+                                               FontSize="16"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Button>
+                                <Button Classes="chrome"
+                                        MinWidth="56" Height="28"
+                                        Padding="8,0"
+                                        HorizontalContentAlignment="Center"
+                                        VerticalContentAlignment="Center"
+                                        ToolTip.Tip="Reset Zoom (Ctrl+0)"
+                                        Click="ZoomResetButton_OnClick">
+                                    <TextBlock Text="{Binding ImageZoomPercent}"
+                                               FontSize="12"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Button>
+                                <Button Classes="chrome"
+                                        Width="30" Height="28"
+                                        FontSize="14"
+                                        Padding="0"
+                                        HorizontalContentAlignment="Center"
+                                        VerticalContentAlignment="Center"
+                                        ToolTip.Tip="Zoom In (Ctrl++)"
+                                        Click="ZoomInButton_OnClick">
+                                    <TextBlock Text="+"
+                                               FontSize="16"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Button>
+                            </StackPanel>
                         </Border>
                     </Grid>
 
@@ -1195,6 +1247,7 @@
                                                 VerticalAlignment="Center"
                                                 FontSize="12"
                                                 Padding="8,4"
+                                                ToolTip.Tip="Clear the list of recently opened files"
                                                 Content="Clear" />
                                     </Grid>
                                     <StackPanel IsVisible="{Binding !HasRecentFiles}"
@@ -1219,6 +1272,20 @@
                                                         Tag="{Binding}"
                                                         Click="RecentFileButton_OnClick"
                                                         Margin="0,0,0,4">
+                                                    <ToolTip.Tip>
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock Text="{Binding DisplayName}"
+                                                                       FontWeight="SemiBold"
+                                                                       FontSize="12" />
+                                                            <TextBlock Text="{Binding Path}"
+                                                                       FontSize="11"
+                                                                       Opacity="0.7" />
+                                                            <TextBlock FontSize="11"
+                                                                       Opacity="0.7">
+                                                                <Run Text="Last opened " /><Run Text="{Binding LastOpenedLongText}" />
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                    </ToolTip.Tip>
                                                     <Grid ColumnDefinitions="*,Auto,Auto" MinWidth="400">
                                                         <!-- Filename -->
                                                         <TextBlock Grid.Column="0"
@@ -1473,6 +1540,7 @@
                                 <Button Classes="chrome"
                                         Click="NewTerminalButton_OnClick"
                                         HorizontalAlignment="Center"
+                                        ToolTip.Tip="New terminal (Ctrl+Shift+`)"
                                         Content="Create terminal" />
                             </StackPanel>
                         </Border>
@@ -1523,82 +1591,93 @@
                                    VerticalAlignment="Center"
                                    Text="Welcome to Kodo!" />
 
-                        <!-- All status items right-aligned, reading left→right with pipe separators -->
+                        <!-- All status items right-aligned, reading left→right with pipe separators.
+                             Every "|" carries Margin="8,0" so each item sits symmetrically centred
+                             between its neighbours. Content elements carry no extra left/right margin. -->
                         <StackPanel Grid.Column="1"
                                     Orientation="Horizontal"
                                     VerticalAlignment="Center"
                                     Spacing="0">
 
-                            <!-- Language + encoding + trailing separator (file open only) -->
-                            <StackPanel Orientation="Horizontal"
-                                        VerticalAlignment="Center"
-                                        Spacing="6"
-                                        IsVisible="{Binding HasDocumentOpen}">
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           VerticalAlignment="Center"
-                                           Text="{Binding LanguageDisplayText}" />
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           VerticalAlignment="Center"
-                                           Opacity="0.4"
-                                           IsVisible="{Binding HasFileOpen}"
-                                           Text="|" />
-                                <Button Classes="statusitem"
-                                        IsVisible="{Binding HasFileOpen}"
-                                        VerticalAlignment="Center"
-                                        VerticalContentAlignment="Center"
-                                        Margin="4,0,0,0"
-                                        Click="EncodingStatusBarButton_OnClick">
-                                    <TextBlock FontSize="12"
-                                               Text="{Binding EncodingDisplayText}" />
-                                </Button>
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           VerticalAlignment="Center"
-                                           Opacity="0.4"
-                                           Margin="6,0,0,0"
-                                           Text="|" />
-                            </StackPanel>
-
-                            <!-- Word count (text files only) -->
-                            <StackPanel Orientation="Horizontal"
-                                        VerticalAlignment="Center"
-                                        Spacing="6"
-                                        IsVisible="{Binding IsWordCountVisible}">
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           VerticalAlignment="Center"
-                                           Margin="6,0,0,0"
-                                           Text="{Binding WordCountText}" />
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           VerticalAlignment="Center"
-                                           Opacity="0.4"
-                                           Text="|" />
-                            </StackPanel>
-
-                            <!-- Editor stats (file open only) -->
+                            <!-- Language (document open only) -->
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        VerticalAlignment="Center"
-                                       Margin="6,0,0,0"
                                        IsVisible="{Binding HasDocumentOpen}"
-                                       Text="{Binding EditorStatsText}" />
+                                       Text="{Binding LanguageDisplayText}" />
 
-                            <!-- Separator before find (file open only) -->
+                            <!-- | (between Language and Encoding, file open only) -->
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        VerticalAlignment="Center"
                                        Opacity="0.4"
-                                       Margin="12,0"
-                                       IsVisible="{Binding CanShowFindInFile}"
+                                       Margin="8,0"
+                                       IsVisible="{Binding HasFileOpen}"
+                                       Text="|" />
+
+                            <!-- Encoding button (file open only) -->
+                            <Button Classes="statusitem"
+                                    IsVisible="{Binding HasFileOpen}"
+                                    VerticalAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    ToolTip.Tip="File encoding"
+                                    Click="EncodingStatusBarButton_OnClick">
+                                <TextBlock FontSize="12"
+                                           Text="{Binding EncodingDisplayText}" />
+                            </Button>
+
+                            <!-- | (after Encoding, file open only) -->
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       VerticalAlignment="Center"
+                                       Opacity="0.4"
+                                       Margin="8,0"
+                                       IsVisible="{Binding HasFileOpen}"
+                                       Text="|" />
+
+                            <!-- Word count (text files only) -->
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding IsWordCountVisible}"
+                                       Text="{Binding WordCountText}" />
+
+                            <!-- | (after Word count, text files only) -->
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       VerticalAlignment="Center"
+                                       Opacity="0.4"
+                                       Margin="8,0"
+                                       IsVisible="{Binding IsWordCountVisible}"
+                                       Text="|" />
+
+                            <!-- Editor stats (document open only) -->
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding HasDocumentOpen}"
+                                       Text="{Binding EditorStatsText}" />
+
+                            <!-- | (after Editor stats, document open only) -->
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       VerticalAlignment="Center"
+                                       Opacity="0.4"
+                                       Margin="8,0"
+                                       IsVisible="{Binding HasDocumentOpen}"
                                        Text="|" />
 
                             <!-- Terminal toggle - always visible -->
                             <Button Classes="statusitem"
                                     VerticalAlignment="Center"
-                                    Margin="0,0,4,0"
                                     Click="ToggleTerminalButton_OnClick"
                                     ToolTip.Tip="Toggle terminal (Ctrl+` or Ctrl+J)">
                                 <TextBlock FontSize="12"
                                            Text="{Binding TerminalStatusBarText}" />
                             </Button>
 
-                            <!-- Find button - far right (file open only) -->
+                            <!-- | (before Find, text files only) -->
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       VerticalAlignment="Center"
+                                       Opacity="0.4"
+                                       Margin="8,0"
+                                       IsVisible="{Binding CanShowFindInFile}"
+                                       Text="|" />
+
+                            <!-- Find button - far right (text files only) -->
                             <Button Background="Transparent"
                                     BorderThickness="0"
                                     Foreground="{Binding MutedTextBrush}"
@@ -2334,6 +2413,7 @@
                                     Click="UpdateAllMarketplaceExtensionsButton_OnClick"
                                     IsVisible="{Binding IsMarketplaceTabSelected}"
                                     IsEnabled="{Binding CanUpdateAllExtensions}"
+                                    ToolTip.Tip="Update all installed extensions to their latest versions"
                                     Content="{Binding UpdateAllExtensionsButtonText}" />
                         </Grid>
 
@@ -3099,18 +3179,24 @@
                                         Text="Help" />
                             </StackPanel>
 
-                            <Button Classes="chrome"
-                                Click="OpenTutorialButton_OnClick"
-                                HorizontalAlignment="Left"
-                                Content="Open Tutorial" />
-                            <Button Classes="chrome"
-                                    Click="OpenDiscordButton_OnClick"
-                                    HorizontalAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                    <TextBlock Text="Join the Discord Server"
-                                               VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Classes="chrome"
+                                        Click="OpenTutorialButton_OnClick"
+                                        ToolTip.Tip="Launch the built-in Kodo tutorial"
+                                        Content="Open Tutorial" />
+                                <Button Classes="chrome"
+                                        Click="OpenDiscordButton_OnClick"
+                                        ToolTip.Tip="Join the Kodo community on Discord">
+                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <TextBlock Text="Join the Discord Server"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="chrome"
+                                        Click="OpenWebsiteButton_OnClick"
+                                        ToolTip.Tip="Open the Kodo website in your browser"
+                                        Content="Visit Website" />
+                            </StackPanel>
                             <Border Height="1"
                                     Background="{Binding SurfaceBorderBrush}" />
 
@@ -3198,7 +3284,7 @@
                             </Grid>
 
                             <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       Text="© 2026 KerbalMissile and SS-YYC. Licensed under KPL-v1.1." />
+                                       Text="{Binding CopyrightText}" />
 
                             <Border IsVisible="{Binding IsNewerVersionAvailable}"
                                     Background="{Binding AccentBrush}"
@@ -3220,6 +3306,7 @@
                                             Classes="chrome"
                                             Click="OpenReleasesPageButton_OnClick"
                                             VerticalAlignment="Center"
+                                            ToolTip.Tip="Download the latest version of Kodo"
                                             Content="Download" />
                                 </Grid>
                             </Border>
@@ -3261,6 +3348,7 @@
                                                 Classes="chrome"
                                                 Click="ToggleWhatsNewExpandedButton_OnClick"
                                                 MinWidth="164"
+                                                ToolTip.Tip="Show or hide release notes"
                                                 HorizontalContentAlignment="Center">
                                             <StackPanel Orientation="Horizontal"
                                                         Spacing="8"
@@ -3307,9 +3395,11 @@
                                                     <Button Classes="chrome"
                                                             Click="RefreshLatestReleaseButton_OnClick"
                                                             IsEnabled="{Binding !IsRefreshingLatestRelease}"
+                                                            ToolTip.Tip="Check for newer release information"
                                                             Content="{Binding RefreshLatestReleaseButtonText}" />
                                                     <Button Classes="chrome"
                                                             Click="OpenLatestReleaseButton_OnClick"
+                                                            ToolTip.Tip="Open this release on GitHub in your browser"
                                                             Content="View on GitHub" />
                                                 </StackPanel>
                                             </Grid>
