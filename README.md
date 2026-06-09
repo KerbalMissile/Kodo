@@ -30,6 +30,7 @@ Released under the [Kodo Public License v1.1](LICENSE.md).
 | | |
 |---|---|
 | 🧩 **Extension Marketplace** | Install syntax highlighting and themes via `.kox` files |
+| 🧑‍💻 **Integrated Terminal** | Run code from within Kodo, no extra terminal needed |
 | 🎨 **Themes** | Built-in Dark, Light, and High Contrast modes + custom extension themes |
 | 📁 **Folder Support** | Open and browse entire project folders in the file explorer |
 | 💾 **Autosave** | Configurable autosave so you never lose work |
@@ -38,7 +39,6 @@ Released under the [Kodo Public License v1.1](LICENSE.md).
 | 🎮 **Discord Rich Presence** | Show what you're working on in Discord |
 | ⌨️ **Smart Editing** | Auto-closing brackets, auto-indent, and find-in-file |
 | 🖼️ **Image Preview** | View image files directly in the editor |
-| 🧑‍💻 **Integrated Terminal** | Run code from within Kodo, no extra terminal needed |
 
 **Coming soon:** real-time collaborative editing · downloadable compilers ·  and much more!
 
