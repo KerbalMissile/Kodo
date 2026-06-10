@@ -128,9 +128,48 @@ internal static class KodoDiagnostics
         }
     }
 
+    // Namespaces that are known to throw internally as part of normal operation.
+    // First-chance exceptions originating entirely within these are suppressed.
+    private static readonly string[] SuppressedNamespacePrefixes =
+    [
+        "DiscordRPC.",
+        "Avalonia.",
+        "AvaloniaEdit.",
+        "SkiaSharp.",
+        "Svg.",
+    ];
+
+    private static bool IsFromSuppressedNamespace(Exception exception)
+    {
+        // new StackTrace(exception) returns empty frames for first-chance exceptions
+        // because the CLR hasn't unwound the stack yet. Parse the string form instead,
+        // which is populated by the time FirstChanceException fires.
+        var trace = exception.StackTrace ?? string.Empty;
+
+        // If any line contains "Kodo." the exception touched our code - always log it.
+        if (trace.Contains("Kodo.", StringComparison.Ordinal))
+            return false;
+
+        // No Kodo frames: suppress if the first "at " line belongs to a known
+        // third-party namespace.
+        var firstAt = trace.AsSpan();
+        var atIdx = firstAt.IndexOf("   at ", StringComparison.Ordinal);
+        if (atIdx < 0) return false;
+
+        var afterAt = firstAt[(atIdx + 6)..]; // skip "   at "
+        foreach (var prefix in SuppressedNamespacePrefixes)
+            if (afterAt.StartsWith(prefix, StringComparison.Ordinal))
+                return true;
+
+        return false;
+    }
+
     public static bool TryWriteFirstChanceLog(string source, Exception exception)
     {
         if (exception is OperationCanceledException)
+            return false;
+
+        if (IsFromSuppressedNamespace(exception))
             return false;
 
         var fingerprint = $"{source}|{exception.GetType().FullName}|{exception.Message}|{exception.StackTrace}";
