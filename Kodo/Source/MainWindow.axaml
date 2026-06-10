@@ -3411,9 +3411,29 @@
 
                                             <ScrollViewer MaxHeight="300"
                                                           VerticalScrollBarVisibility="Auto">
-                                                <SelectableTextBlock Foreground="{Binding MutedTextBrush}"
-                                                                     TextWrapping="Wrap"
-                                                                     Text="{Binding LatestReleaseNotes}" />
+                                                <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="kodo:FormattedParagraph">
+                                                            <WrapPanel Margin="{Binding TopMargin}">
+                                                                <ItemsControl ItemsSource="{Binding Runs}">
+                                                                    <ItemsControl.ItemsPanel>
+                                                                        <ItemsPanelTemplate>
+                                                                            <WrapPanel />
+                                                                        </ItemsPanelTemplate>
+                                                                    </ItemsControl.ItemsPanel>
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate x:DataType="kodo:FormattedRun">
+                                                                            <TextBlock Text="{Binding Text}"
+                                                                                       TextWrapping="Wrap"
+                                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                                       FontWeight="{Binding IsBold, Converter={x:Static kodo:BoolToFontWeightConverter.Instance}}" />
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </WrapPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
                                             </ScrollViewer>
 
                                             <StackPanel Spacing="10"
@@ -3452,6 +3472,154 @@
                         </StackPanel>
                     </Border>
                 </Grid>
+                </ScrollViewer>
+            </Grid>
+            <!-- ── Update What's New splash ─────────────────────────────────────────
+                 Shown once per version upgrade (not on first launch).
+                 Overlays the entire content area; top bar and sidebar remain interactive. -->
+            <Grid IsVisible="{Binding IsUpdateSplashVisible}"
+                  IsHitTestVisible="{Binding IsUpdateSplashVisible}"
+                  Background="{Binding EditorBackgroundBrush}"
+                  RowDefinitions="Auto,*">
+
+                <!-- Header bar matching other page headers -->
+                <Border Grid.Row="0"
+                        Background="{Binding TopBarBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="24,18">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="4">
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Border Width="3" Height="32" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                <TextBlock FontSize="28"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           VerticalAlignment="Center"
+                                           Text="What's New" />
+                            </StackPanel>
+                            <TextBlock FontSize="13"
+                                       Foreground="{Binding MutedTextBrush}"
+                                       Text="{Binding LatestReleaseDisplayName}" />
+                        </StackPanel>
+
+                        <Button Grid.Column="1"
+                                Classes="chrome"
+                                Click="DismissUpdateSplashButton_OnClick"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Dismiss and go to the editor"
+                                Content="Got it!" />
+                    </Grid>
+                </Border>
+
+                <!-- Body -->
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <Grid Margin="24">
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="18"
+                                Padding="28"
+                                MaxWidth="660"
+                                Width="660"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Top">
+                            <StackPanel Spacing="20">
+
+                                <!-- Accent top rule -->
+                                <Border Height="3"
+                                        HorizontalAlignment="Stretch"
+                                        Background="{Binding AccentBrush}"
+                                        Opacity="0.85" />
+
+                                <!-- Release title + tag -->
+                                <StackPanel Spacing="4">
+                                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                        <Border Width="3" Height="26" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                        <TextBlock FontSize="22"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding LatestReleaseDisplayName}" />
+                                    </StackPanel>
+                                    <TextBlock FontSize="13"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Text="{Binding LatestReleaseTag}" />
+                                </StackPanel>
+
+                                <!-- Release notes body -->
+                                <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="kodo:FormattedParagraph">
+                                            <WrapPanel Margin="{Binding TopMargin}">
+                                                <ItemsControl ItemsSource="{Binding Runs}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="kodo:FormattedRun">
+                                                            <TextBlock Text="{Binding Text}"
+                                                                       TextWrapping="Wrap"
+                                                                       LineHeight="22"
+                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                       FontWeight="{Binding IsBold, Converter={x:Static kodo:BoolToFontWeightConverter.Instance}}" />
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </WrapPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Changelog links -->
+                                <StackPanel Spacing="10"
+                                            IsVisible="{Binding HasLatestReleaseLinks}">
+                                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                        <Border Width="3" Height="20" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                        <TextBlock FontSize="15"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Text="Links" />
+                                    </StackPanel>
+                                    <ItemsControl ItemsSource="{Binding LatestReleaseLinks}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="kodo:ReleaseLinkItem">
+                                                <Button Classes="chrome"
+                                                        Tag="{Binding Url}"
+                                                        Click="OpenReleaseLinkButton_OnClick"
+                                                        HorizontalAlignment="Left"
+                                                        HorizontalContentAlignment="Left"
+                                                        Margin="0,0,0,6">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="Full Changelog"
+                                                                   TextWrapping="Wrap" />
+                                                        <TextBlock FontSize="12"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   Text="{Binding Url}"
+                                                                   TextWrapping="Wrap" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- Dismiss -->
+                                <Button Classes="chrome"
+                                        Click="DismissUpdateSplashButton_OnClick"
+                                        HorizontalAlignment="Left"
+                                        ToolTip.Tip="Close this screen and open the editor"
+                                        Content="Got it!" />
+
+                            </StackPanel>
+                        </Border>
+                    </Grid>
                 </ScrollViewer>
             </Grid>
             </Panel>

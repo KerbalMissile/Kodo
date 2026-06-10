@@ -46,6 +46,7 @@ public partial class App : Application
     // the framework has finished starting up.
     public override void Initialize()
     {
+        AppDomain.CurrentDomain.FirstChanceException += CurrentDomain_OnFirstChanceException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
         TaskScheduler.UnobservedTaskException       += TaskScheduler_OnUnobservedTaskException;
         Dispatcher.UIThread.UnhandledException      += DispatcherUiThread_OnUnhandledException;
@@ -122,6 +123,14 @@ public partial class App : Application
 
     // ── Global exception handlers ────────────────────────────────────────────
 
+    private static void CurrentDomain_OnFirstChanceException(object? sender, System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs e)
+    {
+        if (e.Exception is not Exception exception)
+            return;
+
+        KodoDiagnostics.TryWriteFirstChanceLog("AppDomain.FirstChanceException", exception);
+    }
+
     private static void CurrentDomain_OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         if (e.ExceptionObject is not Exception exception) return;
@@ -168,37 +177,68 @@ public partial class App : Application
         if (Interlocked.CompareExchange(ref _isCrashDialogOpen, 1, 0) != 0)
             return;
 
+        // Reset the guard immediately - we use fire-and-forget below, so the
+        // guard would never be cleared in the finally block on the background
+        // thread, permanently preventing any future dialog.
+        Interlocked.Exchange(ref _isCrashDialogOpen, 0);
+
         try
         {
             var logPath = KodoDiagnostics.LogFilePath;
 
             if (Dispatcher.UIThread.CheckAccess())
             {
-                // Never block the UI thread waiting on ShowDialog().
-                // Blocking here deadlocks input/rendering and makes the crash window appear frozen.
+                // Already on the UI thread - fire and forget.
                 _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating);
                 return;
             }
 
-            Dispatcher.UIThread
-                .InvokeAsync(
-                    () => ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
-                    DispatcherPriority.MaxValue)
-                .GetAwaiter()
-                .GetResult();
+            // WHY Post() instead of InvokeAsync().GetAwaiter().GetResult():
+            //
+            // AppDomain.UnhandledException fires on a thread-pool thread after the
+            // UI thread has already faulted. Calling GetResult() here blocks the
+            // thread-pool thread waiting for the UI thread to drain its queue - but
+            // if the UI thread is dead, that queue is never drained and the entire
+            // process freezes at the OS level. The freeze is permanent: no window,
+            // no crash log flush, nothing. Task Manager shows 0 % CPU forever.
+            //
+            // Instead, we Post() the dialog (non-blocking) and, for terminating
+            // crashes, pump the dispatcher on this thread long enough for the dialog
+            // to appear and for the user to dismiss it. The 30-second ceiling keeps
+            // the process from hanging if the UI thread never recovers.
+            if (isTerminating)
+            {
+                // Non-blocking post - returns immediately even if the UI thread is busy.
+                Dispatcher.UIThread.Post(
+                    () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
+                    DispatcherPriority.MaxValue);
+
+                // Give the UI thread up to 30 s to show and dismiss the dialog
+                // before the CLR tears the process down. We sleep in short bursts
+                // so we don't spin-waste CPU, and we exit the loop the moment the
+                // dialog reports it has been dismissed.
+                for (var i = 0; i < 300 && _isCrashDialogOpen == 0; i++)
+                    Thread.Sleep(100);
+            }
+            else
+            {
+                // Recoverable crash - just post; don't block the caller's thread at all.
+                Dispatcher.UIThread.Post(
+                    () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
+                    DispatcherPriority.MaxValue);
+            }
         }
         catch
         {
             // Dispatcher invocation must never crash the app.
         }
-        finally
-        {
-            Interlocked.Exchange(ref _isCrashDialogOpen, 0);
-        }
     }
 
     private static async Task ShowCrashDialogOnUiThreadAsync(string source, Exception exception, string logPath, bool isTerminating)
     {
+        // Signal "dialog is open" so the spin-wait loop in ShowCrashDialog
+        // (terminating path) knows to keep the process alive.
+        Interlocked.Exchange(ref _isCrashDialogOpen, 1);
         try
         {
             // Only use the main window as owner when it is still open and visible.
@@ -229,6 +269,11 @@ public partial class App : Application
         catch
         {
             // The crash dialog itself must never crash the app.
+        }
+        finally
+        {
+            // Signal "dialog dismissed" so the spin-wait loop exits.
+            Interlocked.Exchange(ref _isCrashDialogOpen, 0);
         }
     }
 

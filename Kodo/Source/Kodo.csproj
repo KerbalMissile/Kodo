@@ -6,8 +6,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationIcon>..\Assets\kodo_logo.ico</ApplicationIcon>
-    <Version>1.0.4-DEV</Version>
-    <InformationalVersion>v1.0.4-DEV</InformationalVersion>
+    <Version>1.0.4</Version>
+    <InformationalVersion>v1.0.4</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

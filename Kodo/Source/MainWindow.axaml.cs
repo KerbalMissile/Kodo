@@ -336,6 +336,22 @@ public class ReleaseLinkItem
     public string Url { get; init; } = string.Empty;
 }
 
+// One inline run (bold or normal) within a release-notes paragraph.
+public sealed class FormattedRun
+{
+    public string Text   { get; init; } = string.Empty;
+    public bool   IsBold { get; init; }
+}
+
+// One paragraph (or bullet item) in the release notes.
+// Runs are rendered inline (WrapPanel) so bold/normal text flows together.
+public sealed class FormattedParagraph
+{
+    public IReadOnlyList<FormattedRun> Runs      { get; init; } = [];
+    // Extra top margin so paragraphs breathe; bullet items get slightly less.
+    public Thickness TopMargin { get; init; } = new Thickness(0, 6, 0, 0);
+}
+
 public sealed class TerminalShellOption
 {
     public string Id { get; init; } = string.Empty;
@@ -557,6 +573,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _tutorialOpenedFromSettings;
     private bool _isWhatsNewPageVisible;
     private bool _isWhatsNewExpanded;
+    private bool _isUpdateSplashVisible;
+    // The version string that was running the last time the user launched Kodo.
+    // When it differs from CurrentAppVersion we show the update splash once.
+    private string _lastSeenVersion = string.Empty;
     private bool _isHomePageVisible;
     private bool _isFileExplorerVisible;
     private bool _isFileTreeExpanded;
@@ -952,6 +972,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _userHemisphere     = settings.UserHemisphere is >= 0 and <= 2 ? settings.UserHemisphere : 0;
         _userTimezoneOffset = settings.UserTimezoneOffset ?? string.Empty;
         _userName           = settings.UserName ?? string.Empty;
+        _lastSeenVersion    = settings.LastSeenVersion ?? string.Empty;
         _isTerminalVisible = false; // always start hidden; user opens it manually
         _startupOpenTabPaths.AddRange(settings.OpenTabPaths
             .Where(path => File.Exists(path))
@@ -3274,6 +3295,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsUpdateSplashVisible
+    {
+        get => _isUpdateSplashVisible;
+        private set
+        {
+            if (_isUpdateSplashVisible == value) return;
+            _isUpdateSplashVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
     // Base width 240 + extra pixels per character beyond 2 in the longest icon label.
     // 2-char labels ("Py","JS") → 240px; 3-char ("C++","F#") → 252px; 4-char ("Java") → 264px.
     public double ExplorerPanelWidth
@@ -3456,6 +3488,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(LatestReleaseDisplayName));
             OnPropertyChanged(nameof(LatestReleaseTag));
             OnPropertyChanged(nameof(LatestReleaseNotes));
+            OnPropertyChanged(nameof(LatestReleaseFormatted));
             OnPropertyChanged(nameof(LatestReleasePreview));
             OnPropertyChanged(nameof(LatestReleaseUrl));
             OnPropertyChanged(nameof(LatestReleaseLinks));
@@ -3490,6 +3523,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var t = tag.TrimStart('v');
         var dash = t.IndexOf('-');
         return dash >= 0 ? t[..dash] : t;
+    }
+
+    private static bool IsCurrentNewerThanLastSeen(string lastSeen)
+    {
+        if (string.IsNullOrWhiteSpace(lastSeen)) return false;
+
+        if (!Version.TryParse(StripPreRelease(lastSeen),          out var seen))    return false;
+        if (!Version.TryParse(StripPreRelease(CurrentAppVersion), out var current)) return false;
+
+        if (current != seen) return current > seen;
+
+        // Same numeric version - current is "newer" only if its suffix has higher priority
+        // (e.g. upgrading from v1.2.0-BETA to v1.2.0 stable should still show the splash).
+        return VersionPriority(CurrentAppVersion) > VersionPriority(lastSeen);
     }
 
     // Core version check - dismissal has no effect here.
@@ -3543,6 +3590,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string LatestReleaseNotes => string.IsNullOrWhiteSpace(LatestRelease?.Notes)
         ? "No release notes available."
         : ConvertMarkdownToDisplayText(LatestRelease.Notes);
+
+    // Structured version of the release notes: a list of paragraphs, each containing
+    // inline runs that carry bold/normal weight. Used by the formatted notes template
+    // in both the Settings What's New card and the update splash screen.
+    public IReadOnlyList<FormattedParagraph> LatestReleaseFormatted =>
+        string.IsNullOrWhiteSpace(LatestRelease?.Notes)
+            ? [new FormattedParagraph { Runs = [new FormattedRun { Text = "No release notes available." }] }]
+            : ParseMarkdownParagraphs(LatestRelease.Notes);
 
     public string LatestReleasePreview
     {
@@ -3611,6 +3666,126 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly Regex MdTableTrailingPipeRegex = new(@"(?m)\|\s*$",                   RegexOptions.Compiled);
     private static readonly Regex MdTablePipeRegex         = new(@"\|",                           RegexOptions.Compiled);
     private static readonly Regex MdExcessNewlinesRegex    = new(@"\n{3,}",                       RegexOptions.Compiled);
+
+    // Matches **bold** and __bold__ spans for inline run splitting.
+    private static readonly Regex MdInlineBoldRegex = new(@"\*\*(.+?)\*\*|__(.+?)__", RegexOptions.Compiled | RegexOptions.Singleline);
+
+    // Parses raw GitHub markdown into a flat list of FormattedParagraphs.
+    // Each paragraph carries a list of FormattedRuns (bold / normal) so the
+    // AXAML template can render them inline with correct FontWeight.
+    // Handles: bullet lines (* / - / +), numbered lists, headings (as bold),
+    // horizontal rules (skipped), code fences (stripped), and inline **bold**.
+    private static IReadOnlyList<FormattedParagraph> ParseMarkdownParagraphs(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+            return [];
+
+        var raw = markdown.Replace("\r\n", "\n").Replace('\r', '\n');
+
+        // Strip code fences entirely.
+        raw = MdCodeFenceRegex.Replace(raw, string.Empty);
+        raw = raw.Replace("```", string.Empty);
+
+        var paragraphs = new List<FormattedParagraph>();
+
+        foreach (var rawLine in raw.Split('\n'))
+        {
+            var line = rawLine.TrimEnd();
+
+            // Skip horizontal rules and separator lines.
+            if (MdHrRegex.IsMatch(line)) continue;
+
+            // Blank line → skip (spacing is handled by TopMargin).
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            var isBullet   = false;
+            var isOrdered  = false;
+            string? orderedPrefix = null;
+
+            // Bullet list item.
+            var bulletMatch = MdBulletRegex.Match(line);
+            if (bulletMatch.Success)
+            {
+                isBullet = true;
+                line = line[bulletMatch.Length..];
+            }
+            else
+            {
+                // Ordered list item.
+                var orderedMatch = MdOrderedListRegex.Match(line);
+                if (orderedMatch.Success)
+                {
+                    isOrdered     = true;
+                    orderedPrefix = orderedMatch.Groups[1].Value + ".";
+                    line          = line[orderedMatch.Length..];
+                }
+                else
+                {
+                    // Heading → strip markers, treat content as bold paragraph.
+                    var headingMatch = MdHeadingRegex.Match(line);
+                    if (headingMatch.Success)
+                        line = line[headingMatch.Length..].Trim();
+                }
+            }
+
+            // Strip blockquote markers.
+            line = MdBlockquoteRegex.Replace(line, string.Empty);
+
+            // Strip images, resolve links to display text only.
+            line = MdImageRegex.Replace(line, "$1");
+            line = MdLinkRegex.Replace(line, "$1");
+
+            // Strip inline code backticks (keep the text).
+            line = MdInlineCodeRegex.Replace(line, "$1");
+
+            // Strip strikethrough.
+            line = MdStrikethroughRegex.Replace(line, "$1");
+
+            // Strip italic (single * or _) without consuming bold markers.
+            line = MdItalicRegex.Replace(line, "$1");
+            line = MdItalicUnderscoreRegex.Replace(line, "$1");
+
+            line = line.Trim();
+            if (string.IsNullOrEmpty(line)) continue;
+
+            // Split the line into bold/normal runs.
+            var runs = new List<FormattedRun>();
+
+            if (isBullet)
+                runs.Add(new FormattedRun { Text = "• ", IsBold = false });
+            else if (isOrdered && orderedPrefix is not null)
+                runs.Add(new FormattedRun { Text = orderedPrefix + " ", IsBold = false });
+
+            var pos = 0;
+            foreach (Match m in MdInlineBoldRegex.Matches(line))
+            {
+                // Normal text before this bold span.
+                if (m.Index > pos)
+                    runs.Add(new FormattedRun { Text = line[pos..m.Index], IsBold = false });
+
+                // The bold text itself (group 1 = **, group 2 = __).
+                var boldText = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value;
+                if (!string.IsNullOrEmpty(boldText))
+                    runs.Add(new FormattedRun { Text = boldText, IsBold = true });
+
+                pos = m.Index + m.Length;
+            }
+
+            // Trailing normal text after the last bold span.
+            if (pos < line.Length)
+                runs.Add(new FormattedRun { Text = line[pos..], IsBold = false });
+
+            if (runs.Count == 0) continue;
+
+            paragraphs.Add(new FormattedParagraph
+            {
+                Runs      = runs,
+                TopMargin = isBullet || isOrdered ? new Thickness(0, 2, 0, 0) : new Thickness(0, 6, 0, 0),
+            });
+        }
+
+        return paragraphs;
+    }
 
     private static IReadOnlyList<ReleaseLinkItem> ExtractReleaseLinks(string markdown)
     {
@@ -5783,6 +5958,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             UserHemisphere                          = _userHemisphere,
             UserTimezoneOffset                      = _userTimezoneOffset,
             UserName                                = _userName,
+            LastSeenVersion                         = CurrentAppVersion,
             OpenTabPaths = OpenTabs
                 .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
                 .Select(tab => tab.Path)
@@ -6662,6 +6838,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = RefreshExtensionsDataAsync();
         _ = RefreshLatestReleaseAsync();
 
+        // Show the What's New splash once per upgrade. Uses the same version parser
+        // as IsNewerVersionAvailable so v-prefixes, -BETA, and -DEV suffixes are all
+        // handled correctly. DEV builds suppress the splash (same as the update banner).
+        // Not shown on a true first launch (the tutorial takes priority instead).
+        if (!_isFirstLaunch && !IsDevBuild && IsCurrentNewerThanLastSeen(_lastSeenVersion))
+            IsUpdateSplashVisible = true;
+
         if (_isFirstLaunch && !_hasCompletedTutorial)
             await ShowTutorialAsync();
     }
@@ -7408,6 +7591,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isTutorialPageVisible   = newTutorial;
         _isWhatsNewPageVisible   = newWhatsNew;
 
+        // Any deliberate navigation dismisses the update splash.
+        if (_isUpdateSplashVisible)
+            IsUpdateSplashVisible = false;
+
         OnPropertyChanged(nameof(IsHomePageVisible));
         OnPropertyChanged(nameof(IsSettingsPageVisible));
         OnPropertyChanged(nameof(IsExtensionsPageVisible));
@@ -7577,6 +7764,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsWhatsNewExpanded = true;
         _ = RefreshLatestReleaseAsync();
     }
+
+    private void DismissUpdateSplashButton_OnClick(object? sender, RoutedEventArgs e) =>
+        IsUpdateSplashVisible = false;
 
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -10218,6 +10408,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public int     UserHemisphere     { get; set; }
         public string? UserTimezoneOffset { get; set; }
         public string? UserName         { get; set; }
+        public string? LastSeenVersion  { get; set; }
     }
 
     private sealed record ExtensionScanResult(
@@ -12877,4 +13068,18 @@ public sealed class StrictLinkElementGenerator : LinkElementGenerator
         linkText.RequireControlModifierForClick = RequireControlModifierForClick;
         return linkText;
     }
+}
+
+// Converts bool → FontWeight for the release-notes inline run template.
+// True  → SemiBold (bold spans from **…** or __…__)
+// False → Regular  (normal text)
+public sealed class BoolToFontWeightConverter : Avalonia.Data.Converters.IValueConverter
+{
+    public static readonly BoolToFontWeightConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        value is true ? FontWeight.SemiBold : FontWeight.Regular;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        throw new NotSupportedException();
 }

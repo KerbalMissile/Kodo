@@ -27,6 +27,26 @@ class Program
         // extension-driven workflows on .NET.
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
+        // Last-resort handler: catches crashes that happen before or during
+        // Avalonia startup (e.g. static constructors, AXAML load failures).
+        // App.axaml.cs registers its own AppDomain handler inside Initialize(),
+        // but that runs after BuildAvaloniaApp(), so anything that throws before
+        // that point would be completely silent without this guard.
+        AppDomain.CurrentDomain.UnhandledException += static (_, e) =>
+        {
+            if (e.ExceptionObject is not Exception ex) return;
+            try
+            {
+                KodoDiagnostics.WriteDiagnosticLog(
+                    "Program.Main.UnhandledException",
+                    ex,
+                    isTerminating: e.IsTerminating,
+                    severity: "Crash",
+                    operation: "Startup");
+            }
+            catch { /* cannot crash the crash handler */ }
+        };
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
