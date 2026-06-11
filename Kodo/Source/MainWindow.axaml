@@ -1186,7 +1186,7 @@
                                                Foreground="{Binding PrimaryTextBrush}"
                                                Text="{Binding WelcomeMessage}" />
                                 </Viewbox>
-                                <!-- One-in-a-million tagline: "Code fast. Stay light" -->
+                                <!-- Rare tagline variant -->
                                 <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
                                          HorizontalAlignment="Left"
                                          IsVisible="{Binding IsTaglineGreeting}">
@@ -1203,11 +1203,11 @@
                                 <StackPanel Spacing="12">
                                     <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <Border Width="3" Height="30" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                        <TextBlock FontSize="26"
+                                        <TextBlock FontSize="24"
                                                    FontWeight="SemiBold"
                                                    Foreground="{Binding PrimaryTextBrush}"
                                                    VerticalAlignment="Center"
-                                                   Text="Get Started!" />
+                                                   Text="Get Started" />
                                     </StackPanel>
                                     <TextBlock Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
@@ -1236,11 +1236,11 @@
                                 <StackPanel Spacing="12">
                                     <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <Border Width="3" Height="30" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                        <TextBlock FontSize="26"
+                                        <TextBlock FontSize="24"
                                                    FontWeight="SemiBold"
                                                    Foreground="{Binding PrimaryTextBrush}"
                                                    VerticalAlignment="Center"
-                                                   Text="Visit the Marketplace!" />
+                                                   Text="Visit the Marketplace" />
                                     </StackPanel>
                                     <TextBlock Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
@@ -1262,7 +1262,7 @@
                                     <Grid ColumnDefinitions="*,Auto">
                                         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                             <Border Width="3" Height="26" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                            <TextBlock FontSize="22"
+                                            <TextBlock FontSize="24"
                                                        FontWeight="SemiBold"
                                                        Foreground="{Binding PrimaryTextBrush}"
                                                        VerticalAlignment="Center"
@@ -2028,7 +2028,7 @@
                                                     </Button>
                                                 </WrapPanel>
 
-                                                <!-- Extension themes — wraps freely so all cards are visible -->
+                                                <!-- Extension themes - wraps freely so all cards are visible -->
                                                 <StackPanel Spacing="8" IsVisible="{Binding HasThemeExtensions}">
                                                     <TextBlock FontSize="11"
                                                                FontWeight="SemiBold"
@@ -2045,7 +2045,7 @@
                                                             <DataTemplate x:DataType="kodo:ThemeExtensionGroup">
                                                                 <StackPanel Spacing="6">
 
-                                                                    <!-- Collapsible header — only shown for multi-theme groups -->
+                                                                    <!-- Collapsible header - only shown for multi-theme groups -->
                                                                     <Button Classes="chrome groupheader"
                                                                             Click="ThemeGroupHeader_OnClick"
                                                                             IsVisible="{Binding IsMultiTheme}">
@@ -2850,7 +2850,7 @@
                                         <DataTemplate x:DataType="kodo:ThemeExtensionGroup">
                                             <StackPanel Spacing="6">
 
-                                                <!-- Collapsible header — only shown for multi-theme groups -->
+                                                <!-- Collapsible header - only shown for multi-theme groups -->
                                                 <Button Classes="chrome groupheader"
                                                         Click="ThemeGroupHeader_OnClick"
                                                         IsVisible="{Binding IsMultiTheme}">
@@ -3348,6 +3348,10 @@
                                         Click="OpenWebsiteButton_OnClick"
                                         ToolTip.Tip="Open the Kodo website in your browser"
                                         Content="Visit Website" />
+                                <Button Classes="chrome"
+                                        Click="ViewShortcutsButton_OnClick"
+                                        ToolTip.Tip="View all available keyboard shortcuts"
+                                        Content="View Shortcuts" />
                             </StackPanel>
                             <Border Height="1"
                                     Background="{Binding SurfaceBorderBrush}" />

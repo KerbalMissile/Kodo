@@ -841,7 +841,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ["jsonc"] = "json",
         ["md"] = "md",
         ["markdown"] = "md",
-        // Explicit plain-text markers — map to empty string so no extension is matched
+        // Explicit plain-text markers - map to empty string so no extension is matched
         ["text"] = "",
         ["plain"] = "",
         ["txt"] = "",
@@ -3111,7 +3111,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (FenceLanguageAliases.TryGetValue(normalized, out var alias))
         {
             if (string.IsNullOrEmpty(alias))
-                return null; // explicit plain-text marker — no syntax profile
+                return null; // explicit plain-text marker - no syntax profile
             normalized = alias;
         }
 
@@ -6632,7 +6632,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void AccentThemeButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        // "Theme" mode uses the theme-supplied accent — same underlying mode as "kodo".
+        // "Theme" mode uses the theme-supplied accent - same underlying mode as "kodo".
         AccentColorMode = "kodo";
         ApplyAccentOverride();
         SaveSettings();
@@ -7332,7 +7332,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 var workspace = Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar));
                 if (!string.IsNullOrWhiteSpace(workspace))
-                    return $"{dirty}{file} — {workspace}";
+                    return $"{dirty}{file} - {workspace}";
             }
             return $"{dirty}{file}";
         }
@@ -7922,6 +7922,137 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenWebsiteButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(WebsiteUrl);
+
+    private void ViewShortcutsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        // Shortcut rows: (gesture, description)
+        var shortcuts = new (string Gesture, string Description)[]
+        {
+            // Navigation
+            ("Ctrl+N",           "New file"),
+            ("Ctrl+O",           "Open file"),
+            ("Ctrl+K",           "Open / close folder"),
+            ("Ctrl+S",           "Save"),
+            ("Ctrl+Shift+S",     "Save as"),
+            ("Ctrl+W",           "Close tab"),
+            ("Ctrl+H",           "Go to Home"),
+            ("Ctrl+,",           "Open Settings"),
+            ("Ctrl+E",           "Open Extensions / Marketplace"),
+            ("Ctrl+Shift+E",     "Go to Editor"),
+            // Editor
+            ("Ctrl+F",           "Find in file"),
+            ("Ctrl+B",           "Toggle file explorer"),
+            ("Ctrl+X / C / V",   "Cut / Copy / Paste"),
+            // Terminal
+            ("Ctrl+`  or  Ctrl+J", "Toggle terminal panel"),
+            ("Ctrl+Shift+`",     "New terminal session"),
+            // Image viewer
+            ("Ctrl++",           "Zoom in"),
+            ("Ctrl+-",           "Zoom out"),
+            ("Ctrl+0",           "Reset zoom"),
+            // Misc
+            ("Escape",           "Close Settings / Extensions / Tutorial"),
+        };
+
+        // ── Header ──────────────────────────────────────────────────────────
+        var titleText = new TextBlock
+        {
+            Text         = "Keyboard Shortcuts",
+            FontSize     = 16,
+            FontWeight   = FontWeight.SemiBold,
+            Foreground   = PrimaryTextBrush,
+            TextWrapping = TextWrapping.Wrap,
+        };
+
+        // ── Shortcut grid ────────────────────────────────────────────────────
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,24,*"),
+            RowDefinitions    = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", shortcuts.Length))),
+        };
+
+        for (var i = 0; i < shortcuts.Length; i++)
+        {
+            var (gesture, description) = shortcuts[i];
+
+            var gestureBorder = new Border
+            {
+                Background      = CardBrush,
+                BorderBrush     = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(5),
+                Padding         = new Thickness(8, 3),
+                Margin          = new Thickness(0, 0, 0, 6),
+                Child           = new TextBlock
+                {
+                    Text       = gesture,
+                    FontSize   = 12,
+                    FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                    Foreground = PrimaryTextBrush,
+                },
+            };
+
+            var descText = new TextBlock
+            {
+                Text       = description,
+                FontSize   = 13,
+                Foreground = MutedTextBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin     = new Thickness(0, 0, 0, 6),
+            };
+
+            Grid.SetRow(gestureBorder, i);
+            Grid.SetColumn(gestureBorder, 0);
+            Grid.SetRow(descText, i);
+            Grid.SetColumn(descText, 2);
+            grid.Children.Add(gestureBorder);
+            grid.Children.Add(descText);
+        }
+
+        var scroll = new ScrollViewer
+        {
+            Content                       = grid,
+            VerticalScrollBarVisibility   = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            MaxHeight                     = 460,
+        };
+
+        // ── Dismiss button ───────────────────────────────────────────────────
+        var dismissButton = new Button
+        {
+            Content             = "Close",
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Padding             = new Thickness(20, 8),
+            Background          = AccentBrush,
+            Foreground          = AccentForegroundBrush,
+            BorderThickness     = new Thickness(0),
+            CornerRadius        = new CornerRadius(8),
+        };
+
+        var content = new StackPanel
+        {
+            Spacing  = 16,
+            Margin   = new Thickness(20),
+            Children = { titleText, scroll, dismissButton },
+        };
+
+        Window? dialog = null;
+        dialog = new Window
+        {
+            Title                 = "Kodo - Keyboard Shortcuts",
+            Width                 = 460,
+            SizeToContent         = SizeToContent.Height,
+            MinWidth              = 340,
+            MaxHeight             = 620,
+            CanResize             = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background            = CardBrush,
+            Content               = content,
+        };
+
+        dismissButton.Click += (_, _) => dialog!.Close();
+        _ = dialog.ShowDialog(this);
+    }
 
     private async void OpenCrashLogFolderButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -9125,7 +9256,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var nowOverLink = IsPointerOverLink(e.GetPosition(textView), textView);
 
         if (nowOverLink == _isPointerOverEditorLink)
-            return; // no state change — leave tooltip and cursor alone
+            return; // no state change - leave tooltip and cursor alone
 
         _isPointerOverEditorLink = nowOverLink;
 
@@ -9173,7 +9304,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch
         {
-            // Document may be null or line out of range during rapid edits — treat as no link
+            // Document may be null or line out of range during rapid edits - treat as no link
         }
 
         return false;
@@ -10471,15 +10602,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private bool ShouldSuppressWarningDialog(string context, Exception exception)
     {
-        // Marketplace connectivity failures (timeout, network unreachable) are routine
-        // background events - the in-UI connectivity banner already surfaces them.
-        // Popping a dialog for a CDN timeout is noise; suppress silently.
-        if (context.StartsWith("Marketplace fetch", StringComparison.OrdinalIgnoreCase) &&
-            IsConnectivityFailure(exception))
-        {
-            return true;
-        }
-
         var key = $"{context}|{exception.GetType().FullName}|{exception.Message}";
         var now = DateTime.UtcNow;
         if (_warningDialogCooldowns.TryGetValue(key, out var lastShownUtc) &&
@@ -12828,7 +12950,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 Regex = new Regex(@"~~", RegexOptions.Compiled),
                 Color = operatorColor
             });
-            // Link/image opening bracket only — closing ] ) are left as default text colour
+            // Link/image opening bracket only - closing ] ) are left as default text colour
             codeRuleSet.Rules.Add(new HighlightingRule
             {
                 Regex = new Regex(@"!?\[", RegexOptions.Compiled),
@@ -12878,7 +13000,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         // with keywordColor rather than commentColor (which handles blockquotes via >).
         if (isMarkdown)
         {
-            // Fenced code blocks (``` or ~~~) — added first so they take priority over
+            // Fenced code blocks (``` or ~~~) - added first so they take priority over
             // all inline rules. The emptyRuleSet means no bold/italic/link rules fire
             // inside the fence body, matching what the MarkdownColorizer handles itself.
             mainRuleSet.Spans.Add(new HighlightingSpan
