@@ -322,6 +322,51 @@ public class ExtensionThemeDefinition
     public string PreviewBorder { get; init; } = "#4A4A4A";
 }
 
+/// <summary>
+/// A named group of one or more theme cards from a single extension.
+/// Groups with more than one theme are shown as a collapsible section
+/// under Installed Theme Extensions.
+/// </summary>
+public class ThemeExtensionGroup : INotifyPropertyChanged
+{
+    private bool _isExpanded;
+
+    public string GroupName { get; }
+    public IReadOnlyList<LoadedExtension> Themes { get; }
+
+    /// <summary>True when this extension packs more than one theme.</summary>
+    public bool IsMultiTheme => Themes.Count > 1;
+
+    /// <summary>
+    /// Controls whether the card row is visible.
+    /// Single-theme groups are always expanded (no collapse chrome shown).
+    /// </summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (_isExpanded == value) return;
+            _isExpanded = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExpanded)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ChevronGlyph)));
+        }
+    }
+
+    /// <summary>▶ when collapsed, ▼ when expanded.</summary>
+    public string ChevronGlyph => _isExpanded ? "▾" : "▸";
+
+    public ThemeExtensionGroup(string groupName, IReadOnlyList<LoadedExtension> themes)
+    {
+        GroupName = groupName;
+        Themes    = themes;
+        // Multi-theme groups start collapsed; single-theme groups are always open.
+        _isExpanded = !IsMultiTheme;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
 public class ReleaseInfo
 {
     public string Name { get; init; } = string.Empty;
@@ -528,7 +573,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion ?? "v0.0.0";
     public string CopyrightText => $"© {DateTime.Now.Year} KerbalMissile and SS-YYC. Licensed under KPL-v1.1.";
-    private const string DefaultMarketplaceIndexUrl = "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Indexs/ExtensionsIndex.json";
+    // GitHub Contents API endpoint for the extension index.  This has much more
+    // generous rate limits for unauthenticated requests than raw.githubusercontent.com
+    // (which started enforcing strict anonymous limits in May 2025).
+    // The Accept header below makes GitHub return the raw file bytes directly,
+    // so the response body is plain JSON with no base64 unwrapping needed.
+    private const string DefaultMarketplaceIndexUrl = "https://api.github.com/repos/KerbalMissile/Kodo/contents/Indexs/ExtensionsIndex.json";
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases/latest";
     private const string ReleasesApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases";
     private const string ReleasesPageUrl = "https://github.com/KerbalMissile/Kodo/releases";
@@ -598,6 +648,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _customAccentHex = "#8C00FF";
     // The accent colour supplied by the active theme; restored when switching back to "kodo" mode.
     private string _themeAccentHex = "#8C00FF";
+    private bool   _hasThemeAccent  = false;
     private string _currentThemeName = "Dark";
     private string _requestedThemeName = "Dark";
     private string _editorStatsText = "0 lines";
@@ -1264,6 +1315,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsNoExtensionsVisible));
         OnPropertyChanged(nameof(ThemeExtensions));
         OnPropertyChanged(nameof(HasThemeExtensions));
+        OnPropertyChanged(nameof(GroupedThemeExtensions));
+        OnPropertyChanged(nameof(HasGroupedThemeExtensions));
         RefreshExtensionTheme();
         SyncMarketplaceInstallStates();
     }
@@ -1277,9 +1330,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            // Request the index with no-cache so GitHub's CDN always serves the
-            // latest committed version rather than a stale cached copy.
+            // Request the index via the GitHub Contents API.  The raw+json Accept header
+            // instructs GitHub to return the file bytes directly (plain JSON), so no
+            // base64 unwrapping is required.  Cache-Control: no-cache ensures GitHub
+            // serves the latest committed version rather than a CDN-cached copy.
             using var indexRequest = new HttpRequestMessage(HttpMethod.Get, DefaultMarketplaceIndexUrl);
+            indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
             indexRequest.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
             using var indexResponse = await MarketplaceHttpClient.SendAsync(indexRequest);
             indexResponse.EnsureSuccessStatusCode();
@@ -1458,7 +1514,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out bytes))
             {
-                bytes = await MarketplaceHttpClient.GetByteArrayAsync(iconUrl);
+                // Per-request timeout so a single stalled icon fetch cannot hold
+                // up the entire FetchMarketplaceIconsAsync Task.WhenAll for the
+                // full 30-second HttpClient.Timeout.  10 s is ample for a CDN
+                // asset; failures are swallowed by the caller's catch block and
+                // the extension falls back to its abbreviation placeholder.
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                bytes = await MarketplaceHttpClient.GetByteArrayAsync(iconUrl, cts.Token);
                 _marketplaceIconBytesCache[iconUrl] = bytes;
             }
         }
@@ -3378,6 +3440,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasThemeExtensions => ThemeExtensions.Any();
 
+    /// <summary>
+    /// ThemeExtensions grouped by extension name.  Multi-theme extensions
+    /// (e.g. "Dark Themes" with 4 cards) become a single collapsible group;
+    /// single-theme extensions appear as a group of one (always expanded,
+    /// no collapse chrome).  Bind the Settings and tutorial theme lists to
+    /// this instead of <see cref="ThemeExtensions"/>.
+    /// </summary>
+    public IEnumerable<ThemeExtensionGroup> GroupedThemeExtensions =>
+        ThemeExtensions
+            .GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ThemeExtensionGroup(g.Key, g.ToList()));
+
+    public bool HasGroupedThemeExtensions => ThemeExtensions.Any();
+
     public bool IsRefreshingExtensions
     {
         get => _isRefreshingExtensions;
@@ -5257,8 +5333,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // which are read from settings before DataContext is set.
     private string[]? _welcomeMessagesCache;
 
-    // Evaluated once per launch: true one in a million times, showing the "Code fast. Stay light" tagline.
-    private readonly bool _isTaglineGreeting = Random.Shared.Next(1_500) == 0;
+    // Evaluated once per launch: true one in a thousand times, showing the "Code fast. Stay light" tagline.
+    private readonly bool _isTaglineGreeting = Random.Shared.Next(1_000) == 0;
     public bool IsTaglineGreeting => _isTaglineGreeting;
 
     public string WelcomeMessage
@@ -5421,11 +5497,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsAccentKodo));
             OnPropertyChanged(nameof(IsAccentWindows));
             OnPropertyChanged(nameof(IsAccentCustom));
+            OnPropertyChanged(nameof(IsAccentTheme));
         }
     }
-    public bool IsAccentKodo    => _accentColorMode == "kodo";
+    public bool IsAccentKodo    => _accentColorMode == "kodo" && !_hasThemeAccent;
     public bool IsAccentWindows => _accentColorMode == "windows";
     public bool IsAccentCustom  => _accentColorMode == "custom";
+    // True when the active theme supplies a preset accent colour.
+    // When true the "Theme" blob is shown and "Kodo" (the default purple) is
+    // still available as a separate option.
+    public bool HasThemeAccent  => _hasThemeAccent;
+    // The "Theme" blob is active whenever the user is in "kodo" mode (i.e. using
+    // the theme-supplied accent rather than Windows or a custom pick).
+    public bool IsAccentTheme   => _accentColorMode == "kodo" && _hasThemeAccent;
+    // Solid-colour preview brush for the Theme blob, always reflects the
+    // accent supplied by the currently active extension theme.
+    public IBrush ThemeAccentPreviewBrush { get; private set; } = Brush.Parse("#8C00FF");
 
     public string CustomAccentHex
     {
@@ -6038,6 +6125,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
             AccentBrush           = GetCachedBrush(extensionTheme.Accent);
             _themeAccentHex       = extensionTheme.Accent;
+            _hasThemeAccent       = true;
+            ThemeAccentPreviewBrush = GetCachedBrush(extensionTheme.Accent);
         }
         else
         {
@@ -6076,6 +6165,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 AccentBrush           = GetCachedBrush("#8C00FF");
                 _themeAccentHex       = "#8C00FF";
             }
+            _hasThemeAccent         = false;
+            ThemeAccentPreviewBrush = GetCachedBrush("#8C00FF");
         }
 
         // Apply the accent override (kodo / windows / custom) silently.
@@ -6129,6 +6220,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
             AccentBrush           = GetCachedBrush(extensionTheme.Accent);
             _themeAccentHex       = extensionTheme.Accent;
+            _hasThemeAccent       = true;
+            ThemeAccentPreviewBrush = GetCachedBrush(extensionTheme.Accent);
         }
         else
         {
@@ -6167,6 +6260,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 AccentBrush           = GetCachedBrush("#8C00FF");
                 _themeAccentHex       = "#8C00FF";
             }
+            _hasThemeAccent         = false;
+            ThemeAccentPreviewBrush = GetCachedBrush("#8C00FF");
         }
 
         OnPropertyChanged(nameof(WindowBackgroundBrush));
@@ -6179,6 +6274,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(PrimaryTextBrush));
         OnPropertyChanged(nameof(MutedTextBrush));
         OnPropertyChanged(nameof(SurfaceBorderBrush));
+        OnPropertyChanged(nameof(HasThemeAccent));
+        OnPropertyChanged(nameof(IsAccentKodo));
+        OnPropertyChanged(nameof(IsAccentTheme));
+        OnPropertyChanged(nameof(ThemeAccentPreviewBrush));
         // Always run ApplyAccentOverride: it updates both AccentBrush (for all
         // three modes) and WindowsAccentPreviewBrush (so the blob stays live
         // even when "kodo" or "custom" mode is active).
@@ -6526,6 +6625,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void AccentKodoButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        AccentColorMode = "kodo";
+        ApplyAccentOverride();
+        SaveSettings();
+    }
+
+    private void AccentThemeButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        // "Theme" mode uses the theme-supplied accent — same underlying mode as "kodo".
         AccentColorMode = "kodo";
         ApplyAccentOverride();
         SaveSettings();
@@ -7907,6 +8014,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (sender is Control { Tag: string themeName })
             ApplyTheme(themeName);
+    }
+
+    private void ThemeGroupHeader_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: ThemeExtensionGroup group })
+            group.IsExpanded = !group.IsExpanded;
     }
 
     // Convenience handlers used by the tutorial setup step's theme buttons.

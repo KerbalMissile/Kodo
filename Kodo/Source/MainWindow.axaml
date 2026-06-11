@@ -39,6 +39,34 @@
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
         </Style>
 
+        <!-- Group header variant: full-row hit-testable via Border-backed template -->
+        <Style Selector="Button.chrome.groupheader">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="PART_Border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Name="PART_ContentPresenter"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button.chrome.groupheader:pointerover /template/ Border#PART_Border">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+        </Style>
+
         <Style Selector="Button.marketaction">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
@@ -1944,6 +1972,7 @@
                                                                VerticalAlignment="Center"
                                                                Text="THEME" />
                                                 </StackPanel>
+                                                <!-- Built-in themes row -->
                                                 <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="10">
                                                     <Button Classes="chrome"
                                                             Click="ThemeButton_OnClick"
@@ -1997,71 +2026,120 @@
                                                             </StackPanel>
                                                         </StackPanel>
                                                     </Button>
-                                                    <!-- Extension themes -->
-                                                    <ItemsControl ItemsSource="{Binding ThemeExtensions}"
-                                                                  IsVisible="{Binding HasThemeExtensions}">
+                                                </WrapPanel>
+
+                                                <!-- Extension themes — wraps freely so all cards are visible -->
+                                                <StackPanel Spacing="8" IsVisible="{Binding HasThemeExtensions}">
+                                                    <TextBlock FontSize="11"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding MutedTextBrush}"
+                                                               Text="INSTALLED THEME EXTENSIONS" />
+                                                    <!-- One group per extension; multi-theme packs are collapsible -->
+                                                    <ItemsControl ItemsSource="{Binding GroupedThemeExtensions}">
                                                         <ItemsControl.ItemsPanel>
                                                             <ItemsPanelTemplate>
-                                                                <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="10" />
+                                                                <StackPanel Spacing="6" />
                                                             </ItemsPanelTemplate>
                                                         </ItemsControl.ItemsPanel>
                                                         <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="kodo:LoadedExtension">
-                                                                <Button Classes="chrome"
-                                                                        Click="ThemeButton_OnClick"
-                                                                        Tag="{Binding ThemeCardThemeId}"
-                                                                        Width="170">
-                                                                    <ToolTip.Tip>
-                                                                        <StackPanel Spacing="2">
-                                                                            <TextBlock Text="{Binding ThemeCardDisplayName}"
-                                                                                       FontWeight="SemiBold"
-                                                                                       FontSize="12" />
-                                                                            <TextBlock Text="{Binding SourcePath}"
-                                                                                       FontSize="11"
-                                                                                       Opacity="0.7" />
-                                                                        </StackPanel>
-                                                                    </ToolTip.Tip>
-                                                                    <StackPanel Spacing="8">
-                                                                        <Panel>
-                                                                            <Border Height="72"
-                                                                                    CornerRadius="10"
-                                                                                    Background="{Binding ThemeCardPreviewBackground}"
-                                                                                    BorderBrush="{Binding ThemeCardPreviewBorder}"
-                                                                                    BorderThickness="1">
-                                                                                <Border Width="32"
-                                                                                        Height="8"
-                                                                                        Margin="10"
-                                                                                        HorizontalAlignment="Left"
-                                                                                        VerticalAlignment="Top"
-                                                                                        CornerRadius="999"
-                                                                                        Background="{Binding ThemeCardAccent}" />
-                                                                            </Border>
-                                                                            <Border Height="72"
-                                                                                    CornerRadius="10"
-                                                                                    BorderThickness="2"
-                                                                                    BorderBrush="{Binding #RootWindow.AccentBrush}"
-                                                                                    IsVisible="{Binding IsActiveTheme}" />
-                                                                        </Panel>
-                                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                                                            <DataTemplate x:DataType="kodo:ThemeExtensionGroup">
+                                                                <StackPanel Spacing="6">
+
+                                                                    <!-- Collapsible header — only shown for multi-theme groups -->
+                                                                    <Button Classes="chrome groupheader"
+                                                                            Click="ThemeGroupHeader_OnClick"
+                                                                            IsVisible="{Binding IsMultiTheme}">
+                                                                        <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6">
                                                                             <TextBlock Grid.Column="0"
-                                                                                       HorizontalAlignment="Center"
+                                                                                       FontSize="12"
+                                                                                       FontWeight="SemiBold"
                                                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                                       Text="{Binding ThemeCardDisplayName}"
-                                                                                       TextWrapping="Wrap"
-                                                                                       TextAlignment="Center" />
+                                                                                       VerticalAlignment="Center"
+                                                                                       Text="{Binding GroupName}" />
                                                                             <TextBlock Grid.Column="1"
                                                                                        FontSize="11"
-                                                                                       Foreground="{Binding #RootWindow.AccentBrush}"
+                                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                                        VerticalAlignment="Center"
-                                                                                       Text="●"
-                                                                                       IsVisible="{Binding IsActiveTheme}" />
+                                                                                       Text="{Binding Themes.Count, StringFormat='{}{0} themes'}" />
+                                                                            <Border Grid.Column="2" Background="Transparent" />
+                                                                            <TextBlock Grid.Column="3"
+                                                                                       FontSize="13"
+                                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                                       VerticalAlignment="Center"
+                                                                                       Text="{Binding ChevronGlyph}" />
                                                                         </Grid>
-                                                                    </StackPanel>
-                                                                </Button>
+                                                                    </Button>
+
+                                                                    <!-- Theme cards row -->
+                                                                    <ItemsControl ItemsSource="{Binding Themes}"
+                                                                                  IsVisible="{Binding IsExpanded}">
+                                                                        <ItemsControl.ItemsPanel>
+                                                                            <ItemsPanelTemplate>
+                                                                                <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="10" />
+                                                                            </ItemsPanelTemplate>
+                                                                        </ItemsControl.ItemsPanel>
+                                                                        <ItemsControl.ItemTemplate>
+                                                                                <DataTemplate x:DataType="kodo:LoadedExtension">
+                                                                                    <Button Classes="chrome"
+                                                                                            Click="ThemeButton_OnClick"
+                                                                                            Tag="{Binding ThemeCardThemeId}"
+                                                                                            Width="170">
+                                                                                        <ToolTip.Tip>
+                                                                                            <StackPanel Spacing="2">
+                                                                                                <TextBlock Text="{Binding ThemeCardDisplayName}"
+                                                                                                           FontWeight="SemiBold"
+                                                                                                           FontSize="12" />
+                                                                                                <TextBlock Text="{Binding SourcePath}"
+                                                                                                           FontSize="11"
+                                                                                                           Opacity="0.7" />
+                                                                                            </StackPanel>
+                                                                                        </ToolTip.Tip>
+                                                                                        <StackPanel Spacing="8">
+                                                                                            <Panel>
+                                                                                                <Border Height="72"
+                                                                                                        CornerRadius="10"
+                                                                                                        Background="{Binding ThemeCardPreviewBackground}"
+                                                                                                        BorderBrush="{Binding ThemeCardPreviewBorder}"
+                                                                                                        BorderThickness="1">
+                                                                                                    <Border Width="32"
+                                                                                                            Height="8"
+                                                                                                            Margin="10"
+                                                                                                            HorizontalAlignment="Left"
+                                                                                                            VerticalAlignment="Top"
+                                                                                                            CornerRadius="999"
+                                                                                                            Background="{Binding ThemeCardAccent}" />
+                                                                                                </Border>
+                                                                                                <Border Height="72"
+                                                                                                        CornerRadius="10"
+                                                                                                        BorderThickness="2"
+                                                                                                        BorderBrush="{Binding #RootWindow.AccentBrush}"
+                                                                                                        IsVisible="{Binding IsActiveTheme}" />
+                                                                                            </Panel>
+                                                                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                                                                                                <TextBlock Grid.Column="0"
+                                                                                                           HorizontalAlignment="Center"
+                                                                                                           Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                                                           Text="{Binding ThemeCardDisplayName}"
+                                                                                                           TextWrapping="Wrap"
+                                                                                                           TextAlignment="Center" />
+                                                                                                <TextBlock Grid.Column="1"
+                                                                                                           FontSize="11"
+                                                                                                           Foreground="{Binding #RootWindow.AccentBrush}"
+                                                                                                           VerticalAlignment="Center"
+                                                                                                           Text="●"
+                                                                                                           IsVisible="{Binding IsActiveTheme}" />
+                                                                                            </Grid>
+                                                                                        </StackPanel>
+                                                                                    </Button>
+                                                                                </DataTemplate>
+                                                                            </ItemsControl.ItemTemplate>
+                                                                        </ItemsControl>
+
+                                                                </StackPanel>
                                                             </DataTemplate>
                                                         </ItemsControl.ItemTemplate>
                                                     </ItemsControl>
-                                                </WrapPanel>
+                                                </StackPanel>
                                             </StackPanel>
 
                                             <!-- Accent Colour -->
@@ -2075,6 +2153,21 @@
                                                                Text="ACCENT COLOUR" />
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Button Classes="chrome"
+                                                            Click="AccentThemeButton_OnClick"
+                                                            Width="120"
+                                                            IsVisible="{Binding HasThemeAccent}"
+                                                            ToolTip.Tip="Use the accent colour preset by the active theme">
+                                                        <StackPanel Spacing="6">
+                                                            <Border Height="28" CornerRadius="8" Background="{Binding ThemeAccentPreviewBrush}" />
+                                                            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Theme" />
+                                                                <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                                           VerticalAlignment="Center" Text="●"
+                                                                           IsVisible="{Binding IsAccentTheme}" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Button>
                                                     <Button Classes="chrome"
                                                             Click="AccentKodoButton_OnClick"
                                                             Width="120"
@@ -2741,69 +2834,112 @@
                             </Grid>
 
                             <StackPanel Spacing="10"
-                                        IsVisible="{Binding HasThemeExtensions}">
+                                        IsVisible="{Binding HasGroupedThemeExtensions}">
                                 <TextBlock FontSize="14"
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
                                            Text="Installed Theme Extensions" />
-                                <ItemsControl ItemsSource="{Binding ThemeExtensions}">
+                                <!-- One group per extension; multi-theme packs are collapsible -->
+                                <ItemsControl ItemsSource="{Binding GroupedThemeExtensions}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
-                                            <StackPanel Orientation="Horizontal" Spacing="10" />
+                                            <StackPanel Spacing="6" />
                                         </ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="kodo:LoadedExtension">
-                                            <Button Classes="chrome"
-                                                    Click="ThemeButton_OnClick"
-                                                    Tag="{Binding ThemeCardThemeId}"
-                                                    Width="170">
-                                                <ToolTip.Tip>
-                                                    <StackPanel Spacing="2">
-                                                        <TextBlock Text="{Binding ThemeCardDisplayName}"
-                                                                   FontWeight="SemiBold"
-                                                                   FontSize="12" />
-                                                        <TextBlock Text="{Binding SourcePath}"
-                                                                   FontSize="11"
-                                                                   Opacity="0.7" />
-                                                    </StackPanel>
-                                                </ToolTip.Tip>
-                                                <StackPanel Spacing="8">
-                                                    <Panel>
-                                                        <Border Height="96"
-                                                                CornerRadius="12"
-                                                                Background="{Binding ThemeCardPreviewBackground}"
-                                                                BorderBrush="{Binding ThemeCardPreviewBorder}"
-                                                                BorderThickness="1">
-                                                            <Border Width="42"
-                                                                    Height="10"
-                                                                    Margin="12"
-                                                                    HorizontalAlignment="Left"
-                                                                    VerticalAlignment="Top"
-                                                                    CornerRadius="999"
-                                                                    Background="{Binding ThemeCardAccent}" />
-                                                        </Border>
-                                                        <Border Height="96"
-                                                                CornerRadius="12"
-                                                                BorderThickness="2"
-                                                                BorderBrush="{Binding #RootWindow.AccentBrush}"
-                                                                IsVisible="{Binding IsActiveTheme}" />
-                                                    </Panel>
-                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                                        <DataTemplate x:DataType="kodo:ThemeExtensionGroup">
+                                            <StackPanel Spacing="6">
+
+                                                <!-- Collapsible header — only shown for multi-theme groups -->
+                                                <Button Classes="chrome groupheader"
+                                                        Click="ThemeGroupHeader_OnClick"
+                                                        IsVisible="{Binding IsMultiTheme}">
+                                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6">
                                                         <TextBlock Grid.Column="0"
-                                                                   HorizontalAlignment="Center"
+                                                                   FontSize="13"
+                                                                   FontWeight="SemiBold"
                                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                   Text="{Binding ThemeCardDisplayName}"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Grid.Column="1"
-                                                                   FontSize="11"
-                                                                   Foreground="{Binding #RootWindow.AccentBrush}"
                                                                    VerticalAlignment="Center"
-                                                                   Text="●"
-                                                                   IsVisible="{Binding IsActiveTheme}" />
+                                                                   Text="{Binding GroupName}" />
+                                                        <TextBlock Grid.Column="1"
+                                                                   FontSize="12"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Themes.Count, StringFormat='{}{0} themes'}" />
+                                                        <Border Grid.Column="2" Background="Transparent" />
+                                                        <TextBlock Grid.Column="3"
+                                                                   FontSize="14"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding ChevronGlyph}" />
                                                     </Grid>
-                                                </StackPanel>
-                                            </Button>
+                                                </Button>
+
+                                                <!-- Theme cards row -->
+                                                <ItemsControl ItemsSource="{Binding Themes}"
+                                                              IsVisible="{Binding IsExpanded}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="10" />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="kodo:LoadedExtension">
+                                                            <Button Classes="chrome"
+                                                                    Click="ThemeButton_OnClick"
+                                                                    Tag="{Binding ThemeCardThemeId}"
+                                                                    Width="170">
+                                                                <ToolTip.Tip>
+                                                                    <StackPanel Spacing="2">
+                                                                        <TextBlock Text="{Binding ThemeCardDisplayName}"
+                                                                                   FontWeight="SemiBold"
+                                                                                   FontSize="12" />
+                                                                        <TextBlock Text="{Binding SourcePath}"
+                                                                                   FontSize="11"
+                                                                                   Opacity="0.7" />
+                                                                    </StackPanel>
+                                                                </ToolTip.Tip>
+                                                                <StackPanel Spacing="8">
+                                                                    <Panel>
+                                                                        <Border Height="96"
+                                                                                CornerRadius="12"
+                                                                                Background="{Binding ThemeCardPreviewBackground}"
+                                                                                BorderBrush="{Binding ThemeCardPreviewBorder}"
+                                                                                BorderThickness="1">
+                                                                            <Border Width="42"
+                                                                                    Height="10"
+                                                                                    Margin="12"
+                                                                                    HorizontalAlignment="Left"
+                                                                                    VerticalAlignment="Top"
+                                                                                    CornerRadius="999"
+                                                                                    Background="{Binding ThemeCardAccent}" />
+                                                                        </Border>
+                                                                        <Border Height="96"
+                                                                                CornerRadius="12"
+                                                                                BorderThickness="2"
+                                                                                BorderBrush="{Binding #RootWindow.AccentBrush}"
+                                                                                IsVisible="{Binding IsActiveTheme}" />
+                                                                    </Panel>
+                                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                                                                        <TextBlock Grid.Column="0"
+                                                                                   HorizontalAlignment="Center"
+                                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                                   Text="{Binding ThemeCardDisplayName}"
+                                                                                   TextTrimming="CharacterEllipsis" />
+                                                                        <TextBlock Grid.Column="1"
+                                                                                   FontSize="11"
+                                                                                   Foreground="{Binding #RootWindow.AccentBrush}"
+                                                                                   VerticalAlignment="Center"
+                                                                                   Text="●"
+                                                                                   IsVisible="{Binding IsActiveTheme}" />
+                                                                    </Grid>
+                                                                </StackPanel>
+                                                            </Button>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                            </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
@@ -2826,6 +2962,22 @@
                             </StackPanel>
 
                             <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Classes="chrome"
+                                        Click="AccentThemeButton_OnClick"
+                                        Width="120"
+                                        IsVisible="{Binding HasThemeAccent}"
+                                        ToolTip.Tip="Use the accent colour preset by the active theme">
+                                    <StackPanel Spacing="6">
+                                        <Border Height="28" CornerRadius="8" Background="{Binding ThemeAccentPreviewBrush}" />
+                                        <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                            <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Theme" />
+                                            <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                       VerticalAlignment="Center" Text="●"
+                                                       IsVisible="{Binding IsAccentTheme}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Button>
+
                                 <Button Classes="chrome"
                                         Click="AccentKodoButton_OnClick"
                                         Width="120"
