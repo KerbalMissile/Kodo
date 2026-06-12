@@ -112,13 +112,13 @@
     },
     {
       "id": "xaml-kodo-extension",
-      "version": "v1.0.3",
+      "version": "v1.0.4",
       "name": "XAML Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for XAML and Avalonia XAML files.",
-      "fileName": "XAML-Kodo-Extension-v1.0.3.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/XAML-Kodo-Extension-v1.0.3.kox",
+      "fileName": "XAML-Kodo-Extension-v1.0.4.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/XAML-Kodo-Extension-v1.0.4.kox",
       "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/xaml-icon.png"
     },
     {
