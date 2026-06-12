@@ -23,6 +23,28 @@
       "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/high-contrast-icon.png"
     },
     {
+      "id": "dark-themes",
+      "version": "v1.0.0",
+      "name": "Dark Themes",
+      "type": "theme",
+      "author": "Kodo Team",
+      "description": "A collection of dark themes with distinct accent colours.",
+      "fileName": "Dark-Themes-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Dark-Themes-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/high-contrast-icon.png"
+    },
+    {
+      "id": "light-themes",
+      "version": "v1.0.0",
+      "name": "Light Themes",
+      "type": "theme",
+      "author": "Kodo Team",
+      "description": "A collection of light themes with distinct accent colours.",
+      "fileName": "Light-Themes-v1.0.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Light-Themes-v1.0.0.kox",
+      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/high-contrast-icon.png"
+    },
+    {
       "id": "cpp-kodo-extension",
       "version": "v1.1.0",
       "name": "C++ Language Support",
