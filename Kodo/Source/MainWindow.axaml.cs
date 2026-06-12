@@ -1011,8 +1011,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
         _hasCompletedTutorial = settings.HasCompletedTutorial;
-        _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom"
+        _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom" or "theme"
             ? settings.AccentColorMode : "kodo";
+        // Migration: before "theme" was a distinct mode, "kodo" with a theme active
+        // meant "follow the theme accent". Detect this case and upgrade the saved value
+        // so existing users don't silently lose their theme accent preference.
+        // (The theme hasn't loaded yet here, so we defer the check to after ApplyThemeBrushes.)
         _customAccentHex = string.IsNullOrWhiteSpace(settings.CustomAccentHex)
             ? "#8C00FF" : settings.CustomAccentHex;
         _tabSize = NormalizeTabSize(settings.TabSize);
@@ -1049,6 +1053,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SetupExtensionFolderWatchers();
         LoadExtensions();
         ApplyThemeBrushes(_requestedThemeName);
+
+        // Migration: if the user saved "kodo" mode but a theme is active (legacy behaviour
+        // where "kodo" followed the theme accent), silently upgrade to "theme" mode so
+        // the Kodo purple option remains independently selectable going forward.
+        if (_accentColorMode == "kodo" && _hasThemeAccent)
+            _accentColorMode = "theme";
 
         DataContext = this;
         IsHomePageVisible = true;
@@ -5500,16 +5510,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsAccentTheme));
         }
     }
-    public bool IsAccentKodo    => _accentColorMode == "kodo" && !_hasThemeAccent;
+    public bool IsAccentKodo    => _accentColorMode == "kodo";
     public bool IsAccentWindows => _accentColorMode == "windows";
     public bool IsAccentCustom  => _accentColorMode == "custom";
     // True when the active theme supplies a preset accent colour.
-    // When true the "Theme" blob is shown and "Kodo" (the default purple) is
-    // still available as a separate option.
+    // When true the "Theme" blob is shown alongside "Kodo", "Windows", and "Custom".
     public bool HasThemeAccent  => _hasThemeAccent;
-    // The "Theme" blob is active whenever the user is in "kodo" mode (i.e. using
-    // the theme-supplied accent rather than Windows or a custom pick).
-    public bool IsAccentTheme   => _accentColorMode == "kodo" && _hasThemeAccent;
+    // The "Theme" blob is active when the user has explicitly chosen to follow
+    // the theme-supplied accent (mode == "theme").
+    public bool IsAccentTheme   => _accentColorMode == "theme";
     // Solid-colour preview brush for the Theme blob, always reflects the
     // accent supplied by the currently active extension theme.
     public IBrush ThemeAccentPreviewBrush { get; private set; } = Brush.Parse("#8C00FF");
@@ -6185,9 +6194,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var resolvedAccent = _accentColorMode switch
         {
+            "theme"   => _themeAccentHex,
             "windows" => windowsHex,
             "custom"  => _customAccentHex,
-            _         => _themeAccentHex,  // "kodo" - use the theme's own accent
+            _         => "#8C00FF"   // "kodo" - always the fixed Kodo purple
         };
         try { AccentBrush = GetCachedBrush(resolvedAccent); }
         catch { AccentBrush = GetCachedBrush("#8C00FF"); }
@@ -6297,10 +6307,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
         OnPropertyChanged(nameof(WindowsAccentPreviewBrush));
 
-        // In "kodo" mode, restore the theme's own accent colour.
+        // In "kodo" mode, always use the fixed Kodo purple regardless of any active theme.
         if (_accentColorMode == "kodo")
         {
-            try { AccentBrush = GetCachedBrush(_themeAccentHex); }
+            try { AccentBrush = GetCachedBrush("#8C00FF"); }
             catch { AccentBrush = GetCachedBrush("#8C00FF"); }
             AccentForegroundBrush = GetAccentForeground(AccentBrush);
             OnPropertyChanged(nameof(AccentBrush));
@@ -6311,6 +6321,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var hex = _accentColorMode switch
         {
+            "theme"   => _themeAccentHex,
             "windows" => windowsHex,
             "custom"  => _customAccentHex,
             _         => "#8C00FF"
@@ -6632,8 +6643,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void AccentThemeButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        // "Theme" mode uses the theme-supplied accent - same underlying mode as "kodo".
-        AccentColorMode = "kodo";
+        AccentColorMode = "theme";
         ApplyAccentOverride();
         SaveSettings();
     }

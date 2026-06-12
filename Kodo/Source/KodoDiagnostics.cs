@@ -150,16 +150,26 @@ internal static class KodoDiagnostics
         if (trace.Contains("Kodo.", StringComparison.Ordinal))
             return false;
 
-        // No Kodo frames: suppress if the first "at " line belongs to a known
-        // third-party namespace.
-        var firstAt = trace.AsSpan();
-        var atIdx = firstAt.IndexOf("   at ", StringComparison.Ordinal);
-        if (atIdx < 0) return false;
+        // No Kodo frames: suppress if ANY "at " line belongs to a known third-party
+        // namespace. Walking all frames (not just the first) catches cases where BCL
+        // frames (e.g. System.IO.Pipes) appear at the top but the exception originates
+        // from a suppressed library (e.g. DiscordRPC calling into named pipes).
+        var span = trace.AsSpan();
+        int searchFrom = 0;
+        while (true)
+        {
+            var atIdx = span[searchFrom..].IndexOf("   at ", StringComparison.Ordinal);
+            if (atIdx < 0) break;
 
-        var afterAt = firstAt[(atIdx + 6)..]; // skip "   at "
-        foreach (var prefix in SuppressedNamespacePrefixes)
-            if (afterAt.StartsWith(prefix, StringComparison.Ordinal))
-                return true;
+            var afterAt = span[(searchFrom + atIdx + 6)..]; // skip "   at "
+            foreach (var prefix in SuppressedNamespacePrefixes)
+            {
+                if (afterAt.StartsWith(prefix, StringComparison.Ordinal))
+                    return true;
+            }
+
+            searchFrom += atIdx + 6;
+        }
 
         return false;
     }
