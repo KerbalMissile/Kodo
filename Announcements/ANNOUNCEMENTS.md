@@ -1,11 +1,11 @@
-## Marketplace bugs fixed!
+## Woah, we have news now?
 > 2026-06-12
-v1.0.4 is out, and the marketplace bug should be fixed now! If you still get an error, it's likely unrelated, but still let us know about it!
+Was this unexpected or what?
 
 ---	
 
-## New Item 2
+## We even have a new home screen!
 > 2026-06-12
-Test
+New layout, coming soon!
 
 ---
