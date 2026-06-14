@@ -430,14 +430,20 @@
                 <!-- Main buttons spread down from top -->
                 <StackPanel Margin="0,10,0,0" Spacing="0" HorizontalAlignment="Stretch">
                     <Button Classes="activity" Click="HomeButton_OnClick" ToolTip.Tip="Home (Ctrl+H)">
-                        <TextBlock FontSize="18" Text="&#x2302;"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   TextAlignment="Center" />
+                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                      Data="M11.47 3.84a.75.75 0 0 1 1.06 0l8.69 8.69a.75.75 0 1 1-1.06 1.06L20 13.44V20.5a1.5 1.5 0 0 1-1.5 1.5h-4a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-2.25a.75.75 0 0 0-.75.75v4.5a.75.75 0 0 1-.75.75h-4A1.5 1.5 0 0 1 4 20.5v-7.06l-.19.19a.75.75 0 0 1-1.06-1.06l8.72-8.73Z" />
+                            </Canvas>
+                        </Viewbox>
                     </Button>
                     <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor (Ctrl+Shift+E)">
-                        <TextBlock FontSize="18" Text="&#x2630;"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   TextAlignment="Center" />
+                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                      Data="M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0 0 16.5 9h-1.875a1.875 1.875 0 0 1-1.875-1.875V5.25A3.75 3.75 0 0 0 9 1.5H5.625ZM7.5 15a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 7.5 15Zm.75-6.75h3a.75.75 0 0 1 0 1.5h-3a.75.75 0 0 1 0-1.5Z M12.971 1.816A5.23 5.23 0 0 1 14.25 5.25v1.875c0 .207.168.375.375.375H16.5a5.23 5.23 0 0 1 3.434 1.279 9.768 9.768 0 0 0-6.963-6.963Z" />
+                            </Canvas>
+                        </Viewbox>
                     </Button>
                     <Border Height="2"
                             Width="28"
@@ -447,30 +453,42 @@
                             HorizontalAlignment="Center"
                             Margin="0,2,0,2" />
                     <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="New File (Ctrl+N)">
-                        <TextBlock FontSize="18" Text="&#xFF0B;"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   TextAlignment="Center" />
+                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                      Data="M6.75 3A2.25 2.25 0 0 0 4.5 5.25v13.5A2.25 2.25 0 0 0 6.75 21h10.5A2.25 2.25 0 0 0 19.5 18.75V8.56a2.25 2.25 0 0 0-.659-1.591l-3.81-3.81A2.25 2.25 0 0 0 13.44 2.5H6.75Zm6 11.25a.75.75 0 0 0-1.5 0v1.5h-1.5a.75.75 0 0 0 0 1.5h1.5v1.5a.75.75 0 0 0 1.5 0v-1.5h1.5a.75.75 0 0 0 0-1.5h-1.5v-1.5Z" />
+                            </Canvas>
+                        </Viewbox>
                     </Button>
                     <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File (Ctrl+O)">
-                        <TextBlock FontSize="18" Text="&#x2197;"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   TextAlignment="Center" />
+                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                      Data="M11.47 1.72a.75.75 0 0 1 1.06 0l3 3a.75.75 0 0 1-1.06 1.06l-1.72-1.72V7.5h-1.5V4.06L9.53 5.78a.75.75 0 0 1-1.06-1.06l3-3ZM11.25 7.5V15a.75.75 0 0 0 1.5 0V7.5h3.75a3 3 0 0 1 3 3v6.75a3 3 0 0 1-3 3H6.75a3 3 0 0 1-3-3V10.5a3 3 0 0 1 3-3h4.5Z" />
+                            </Canvas>
+                        </Viewbox>
                     </Button>
                     <Button Classes="activity"
                             Click="OpenFolderButton_OnClick"
                             ToolTip.Tip="Open Folder (Ctrl+K)"
                             IsVisible="{Binding !IsFolderOpen}">
-                        <TextBlock FontSize="18" Text="&#x1F4C1;&#xFE0E;"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   TextAlignment="Center" />
+                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                      Data="M3.75 5.25A2.25 2.25 0 0 1 6 3h3.879c.597 0 1.17.237 1.591.659l1.061 1.06c.14.141.331.22.53.22H18a2.25 2.25 0 0 1 2.25 2.25v.75A.75.75 0 0 1 19.5 8.75h-15A2.25 2.25 0 0 0 2.25 11v7.5A2.25 2.25 0 0 0 4.5 20.75H18A2.25 2.25 0 0 0 20.25 18.5V11A2.25 2.25 0 0 0 18 8.75h-5.189a2.25 2.25 0 0 1-1.591-.659l-1.06-1.06A.75.75 0 0 0 9.629 6H6A.75.75 0 0 0 5.25 6.75V8A.75.75 0 0 1 4.5 8.75H3.75A.75.75 0 0 1 3 8V5.25Z" />
+                            </Canvas>
+                        </Viewbox>
                     </Button>
                     <Button Classes="activity"
                             Click="CloseFolderButton_OnClick"
                             ToolTip.Tip="Close Folder (Ctrl+K)"
                             IsVisible="{Binding IsFolderOpen}">
-                        <TextBlock FontSize="18" Text="&#x1F4C2;&#xFE0E;"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   TextAlignment="Center" />
+                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                      Data="M2.25 6A2.25 2.25 0 0 1 4.5 3.75h4.379c.597 0 1.17.237 1.591.659l1.06 1.06c.141.141.332.22.531.22H19.5A2.25 2.25 0 0 1 21.75 8v.75H2.25V6Zm0 3.75v8.25A2.25 2.25 0 0 0 4.5 20.25h15a2.25 2.25 0 0 0 2.25-2.25V9.75H2.25Z" />
+                            </Canvas>
+                        </Viewbox>
                     </Button>
                     <Button Classes="activity" Click="ExtensionsButton_OnClick" ToolTip.Tip="Extensions (Ctrl+E)">
                         <Viewbox Width="20" Height="20"
@@ -1132,227 +1150,604 @@
                     </Grid>
                 </Grid>
 
+                <!-- ═══════════════════════════════════════════════════════════════════
+                     HOME SCREEN  (shown when no file is open)
+                     Layout: full-bleed header band → two-column body
+                       Left column  (~55%): Get Started · Marketplace · Recently Edited
+                       Right column (~45%): News panel (reserved, content added later)
+                ═══════════════════════════════════════════════════════════════════ -->
                 <Border Grid.Row="2"
                         Background="{Binding EditorBackgroundBrush}"
                         IsVisible="{Binding IsEmptyStateVisible}">
-                    <Grid RowDefinitions="4,*">
-                        <!-- Top accent bar - pinned, never scrolls -->
-                        <Border Grid.Row="0"
-                                Background="{Binding AccentBrush}"
-                                Opacity="0.85"
-                                HorizontalAlignment="Stretch" />
-                    <ScrollViewer Grid.Row="1"
-                                  VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled">
-                    <Grid>
-                        <Grid Grid.Row="0" Margin="48"
-                              HorizontalAlignment="Stretch"
-                              VerticalAlignment="Center">
-                        <StackPanel
-                                    Width="480"
-                                    Spacing="22"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center">
+                    <Grid RowDefinitions="Auto,*">
 
-                            <!-- Welcome Back header + version pill -->
-                            <StackPanel Spacing="2" Margin="4,0,4,4">
-                                <Grid ColumnDefinitions="Auto,*,Auto">
-                                    <TextBlock Grid.Column="0"
-                                               FontSize="13"
-                                               FontWeight="Medium"
-                                               Foreground="{Binding AccentBrush}"
-                                               VerticalAlignment="Center"
-                                               Text="KODO" />
-                                    <Border Grid.Column="2"
+                        <!-- ── Header band ── -->
+                        <Border Grid.Row="0"
+                                Background="{Binding TopBarBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="0,0,0,1"
+                                Padding="36,22,36,22">
+                            <Grid ColumnDefinitions="*,Auto">
+
+                                <!-- Left: wordmark + greeting -->
+                                <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center">
+                                    <!-- "KODO" label with accent bar -->
+                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <Border Width="3" Height="14" CornerRadius="2"
+                                                Background="{Binding AccentBrush}"
+                                                VerticalAlignment="Center" />
+                                        <TextBlock FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding AccentBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Text="KODO" />
+                                    </StackPanel>
+                                    <!-- Greeting line - standard (~999,999 in a million) -->
+                                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                             HorizontalAlignment="Left"
+                                             IsVisible="{Binding !IsTaglineGreeting}">
+                                        <TextBlock FontSize="28"
+                                                   FontWeight="Bold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="{Binding WelcomeMessage}" />
+                                    </Viewbox>
+                                    <!-- Greeting line - rare tagline variant -->
+                                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                             HorizontalAlignment="Left"
+                                             IsVisible="{Binding IsTaglineGreeting}">
+                                        <TextBlock FontSize="28"
+                                                   FontWeight="Bold"
+                                                   xml:space="preserve"><Run Foreground="{Binding PrimaryTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light.</Run></TextBlock>
+                                    </Viewbox>
+
+                                    <!-- Keyboard shortcut chips: quick visual reference for the three core actions -->
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                                        <!-- New File chip -->
+                                        <Border Background="{Binding ButtonBrush}"
+                                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="8,3">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <TextBlock FontSize="11"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Text="New file" />
+                                                <Border Background="{Binding CardBrush}"
+                                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="5,1">
+                                                    <TextBlock FontSize="10"
+                                                               FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                                                               Foreground="{Binding MutedTextBrush}"
+                                                               Text="Ctrl+N" />
+                                                </Border>
+                                            </StackPanel>
+                                        </Border>
+                                        <!-- Open File chip -->
+                                        <Border Background="{Binding ButtonBrush}"
+                                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="8,3">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <TextBlock FontSize="11"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Text="Open file" />
+                                                <Border Background="{Binding CardBrush}"
+                                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="5,1">
+                                                    <TextBlock FontSize="10"
+                                                               FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                                                               Foreground="{Binding MutedTextBrush}"
+                                                               Text="Ctrl+O" />
+                                                </Border>
+                                            </StackPanel>
+                                        </Border>
+                                        <!-- Open Folder chip -->
+                                        <Border Background="{Binding ButtonBrush}"
+                                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="8,3">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <TextBlock FontSize="11"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Text="Open folder" />
+                                                <Border Background="{Binding CardBrush}"
+                                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="5,1">
+                                                    <TextBlock FontSize="10"
+                                                               FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                                                               Foreground="{Binding MutedTextBrush}"
+                                                               Text="Ctrl+K" />
+                                                </Border>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- Right: version pill -->
+                                <Border Grid.Column="1"
+                                        Background="{Binding CardBrush}"
+                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="14"
+                                        Padding="12,5"
+                                        VerticalAlignment="Center">
+                                    <TextBlock FontSize="12"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Text="{Binding CurrentAppVersionDisplay}" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <!-- ── Two-column body ── -->
+                        <ScrollViewer Grid.Row="1"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <Grid ColumnDefinitions="*,340"
+                                  Margin="32,28,32,36"
+                                  ColumnSpacing="20"
+                                  VerticalAlignment="Top">
+
+                                <!-- ════════════════════
+                                     LEFT COLUMN
+                                ════════════════════ -->
+                                <StackPanel Grid.Column="0" Spacing="16">
+
+                                    <!-- ─ Get Started card ─ -->
+                                    <Border Padding="24"
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="12"
-                                            Padding="10,3"
-                                            VerticalAlignment="Center">
-                                        <TextBlock FontSize="11"
-                                                   Foreground="{Binding MutedTextBrush}"
-                                                   Text="{Binding CurrentAppVersionDisplay}" />
-                                    </Border>
-                                </Grid>
-                                <!-- Viewbox shrinks the text when it would overflow the
-                                     480 px card, but never upscales it (DownOnly). -->
-                                <!-- Standard greeting (~999,999 in a million) -->
-                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
-                                         HorizontalAlignment="Left"
-                                         IsVisible="{Binding !IsTaglineGreeting}">
-                                    <TextBlock FontSize="32"
-                                               FontWeight="Bold"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               Text="{Binding WelcomeMessage}" />
-                                </Viewbox>
-                                <!-- Rare tagline variant -->
-                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
-                                         HorizontalAlignment="Left"
-                                         IsVisible="{Binding IsTaglineGreeting}">
-                                    <TextBlock FontSize="32"
-                                               FontWeight="Bold"
-                                               xml:space="preserve"><Run Foreground="{Binding PrimaryTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light.</Run></TextBlock>
-                                </Viewbox>
-                            </StackPanel>
-                            <Border Padding="26"
-                                    Background="{Binding CardBrush}"
-                                    BorderBrush="{Binding SurfaceBorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="18">
-                                <StackPanel Spacing="12">
-                                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                        <Border Width="3" Height="30" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                        <TextBlock FontSize="24"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   VerticalAlignment="Center"
-                                                   Text="Get Started" />
-                                    </StackPanel>
-                                    <TextBlock Foreground="{Binding MutedTextBrush}"
-                                               TextWrapping="Wrap"
-                                               Text="Open a file or folder to get started, or create something new." />
-                                    <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <Button Classes="chrome"
-                                                Click="NewFileButton_OnClick"
-                                                ToolTip.Tip="New File (Ctrl+N)"
-                                                Content="New File" />
-                                        <Button Classes="chrome"
-                                                Click="OpenFileButton_OnClick"
-                                                ToolTip.Tip="Open File (Ctrl+O)"
-                                                Content="Open File" />
-                                        <Button Classes="chrome"
-                                                Click="OpenFolderButton_OnClick"
-                                                ToolTip.Tip="Open Folder (Ctrl+K)"
-                                                Content="Open Folder" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                            <Border Padding="26"
-                                    Background="{Binding CardBrush}"
-                                    BorderBrush="{Binding SurfaceBorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="18">
-                                <StackPanel Spacing="12">
-                                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                        <Border Width="3" Height="30" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                        <TextBlock FontSize="24"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   VerticalAlignment="Center"
-                                                   Text="Visit the Marketplace" />
-                                    </StackPanel>
-                                    <TextBlock Foreground="{Binding MutedTextBrush}"
-                                               TextWrapping="Wrap"
-                                               Text="Visit the Marketplace to explore extensions, syntax highlighting, and themes." />
-                                    <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <Button Classes="chrome"
-                                                Click="OpenMarketplaceButton_OnClick"
-                                                ToolTip.Tip="Browse extensions in the marketplace (Ctrl+E)"
-                                                Content="Visit Marketplace" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                            <Border Padding="22"
-                                    Background="{Binding CardBrush}"
-                                    BorderBrush="{Binding SurfaceBorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="18">
-                                <StackPanel Spacing="12">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                            <Border Width="3" Height="26" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                            <TextBlock FontSize="24"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="{Binding PrimaryTextBrush}"
-                                                       VerticalAlignment="Center"
-                                                       Text="Recently Edited" />
-                                        </StackPanel>
-                                        <Button Grid.Column="1"
-                                                Classes="chrome"
-                                                Click="ClearRecentFilesButton_OnClick"
-                                                IsVisible="{Binding HasRecentFiles}"
-                                                VerticalAlignment="Center"
-                                                FontSize="12"
-                                                Padding="8,4"
-                                                ToolTip.Tip="Clear the list of recently opened files"
-                                                Content="Clear" />
-                                    </Grid>
-                                    <StackPanel IsVisible="{Binding !HasRecentFiles}"
-                                                HorizontalAlignment="Center"
-                                                Spacing="8"
-                                                Margin="0,8,0,4">
-                                        <TextBlock FontSize="32"
-                                                   HorizontalAlignment="Center"
-                                                   Foreground="{Binding MutedTextBrush}"
-                                                   Opacity="0.4"
-                                                   Text="&#x1F4C2;" />
-                                        <TextBlock FontSize="13"
-                                                   HorizontalAlignment="Center"
-                                                   Foreground="{Binding MutedTextBrush}"
-                                                   Text="No recently opened files!" />
-                                    </StackPanel>
-                                    <ItemsControl ItemsSource="{Binding RecentFiles}"
-                                                  IsVisible="{Binding HasRecentFiles}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="kodo:RecentFileItem">
-                                                <Button Classes="recent"
-                                                        Tag="{Binding}"
-                                                        Click="RecentFileButton_OnClick"
-                                                        Margin="0,0,0,4">
-                                                    <ToolTip.Tip>
-                                                        <StackPanel Spacing="2">
-                                                            <TextBlock Text="{Binding DisplayName}"
-                                                                       FontWeight="SemiBold"
-                                                                       FontSize="12" />
-                                                            <TextBlock Text="{Binding Path}"
-                                                                       FontSize="11"
-                                                                       Opacity="0.7" />
-                                                            <TextBlock FontSize="11"
-                                                                       Opacity="0.7">
-                                                                <Run Text="Last opened " /><Run Text="{Binding LastOpenedLongText}" />
-                                                            </TextBlock>
-                                                        </StackPanel>
-                                                    </ToolTip.Tip>
-                                                    <Grid ColumnDefinitions="*,Auto,Auto" MinWidth="400">
-                                                        <!-- Filename -->
-                                                        <TextBlock Grid.Column="0"
-                                                                   FontSize="13"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                   Text="{Binding DisplayName}"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   VerticalAlignment="Center" />
-                                                        <!-- File type / Folder -->
-                                                        <TextBlock Grid.Column="1"
-                                                                   FontSize="12"
-                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                   Text="{Binding FileTypeName}"
-                                                                   VerticalAlignment="Center"
-                                                                   Margin="16,0,0,0"
-                                                                   MinWidth="64"
-                                                                   TextAlignment="Left" />
-                                                        <!-- Time last opened, right-aligned -->
-                                                        <TextBlock Grid.Column="2"
-                                                                   FontSize="12"
-                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                   Text="{Binding LastOpenedText}"
-                                                                   VerticalAlignment="Center"
-                                                                   Margin="16,0,0,0"
-                                                                   MinWidth="60"
-                                                                   TextAlignment="Right" />
-                                                    </Grid>
-                                                </Button>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+                                            CornerRadius="16">
+                                        <StackPanel Spacing="14">
+                                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                                <TextBlock FontSize="18"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Text="Get Started" />
+                                            </StackPanel>
+                                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                       TextWrapping="Wrap"
+                                                       FontSize="13"
+                                                       LineHeight="20"
+                                                       Text="Open a file or folder to get started, or create something new." />
 
-                        </Grid>
-                    </Grid>
-                    </ScrollViewer>
+                                            <!-- Action buttons row -->
+                                            <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
+                                                <!-- New File -->
+                                                <Button Classes="chrome"
+                                                        Click="NewFileButton_OnClick"
+                                                        ToolTip.Tip="New File (Ctrl+N)">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <Viewbox Width="14" Height="14" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                      Data="M6.75 3A2.25 2.25 0 0 0 4.5 5.25v13.5A2.25 2.25 0 0 0 6.75 21h10.5A2.25 2.25 0 0 0 19.5 18.75V8.56a2.25 2.25 0 0 0-.659-1.591l-3.81-3.81A2.25 2.25 0 0 0 13.44 2.5H6.75Zm6 11.25a.75.75 0 0 0-1.5 0v1.5h-1.5a.75.75 0 0 0 0 1.5h1.5v1.5a.75.75 0 0 0 1.5 0v-1.5h1.5a.75.75 0 0 0 0-1.5h-1.5v-1.5Z" />
+                                                            </Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock Text="New File" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <!-- Open File -->
+                                                <Button Classes="chrome"
+                                                        Click="OpenFileButton_OnClick"
+                                                        ToolTip.Tip="Open File (Ctrl+O)">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <Viewbox Width="14" Height="14" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                      Data="M11.47 1.72a.75.75 0 0 1 1.06 0l3 3a.75.75 0 0 1-1.06 1.06l-1.72-1.72V7.5h-1.5V4.06L9.53 5.78a.75.75 0 0 1-1.06-1.06l3-3ZM11.25 7.5V15a.75.75 0 0 0 1.5 0V7.5h3.75a3 3 0 0 1 3 3v6.75a3 3 0 0 1-3 3H6.75a3 3 0 0 1-3-3V10.5a3 3 0 0 1 3-3h4.5Z" />
+                                                            </Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock Text="Open File" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <!-- Open Folder -->
+                                                <Button Classes="chrome"
+                                                        Click="OpenFolderButton_OnClick"
+                                                        ToolTip.Tip="Open Folder (Ctrl+K)">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <Viewbox Width="14" Height="14" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                      Data="M3.75 5.25A2.25 2.25 0 0 1 6 3h3.879c.597 0 1.17.237 1.591.659l1.061 1.06c.14.141.331.22.53.22H18a2.25 2.25 0 0 1 2.25 2.25v.75A.75.75 0 0 1 19.5 8.75h-15A2.25 2.25 0 0 0 2.25 11v7.5A2.25 2.25 0 0 0 4.5 20.75H18A2.25 2.25 0 0 0 20.25 18.5V11A2.25 2.25 0 0 0 18 8.75h-5.189a2.25 2.25 0 0 1-1.591-.659l-1.06-1.06A.75.75 0 0 0 9.629 6H6A.75.75 0 0 0 5.25 6.75V8A.75.75 0 0 1 4.5 8.75H3.75A.75.75 0 0 1 3 8V5.25Z" />
+                                                            </Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock Text="Open Folder" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </WrapPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- ─ Marketplace card ─ -->
+                                    <Border Padding="24"
+                                            Background="{Binding CardBrush}"
+                                            BorderBrush="{Binding SurfaceBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="16">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                                            <StackPanel Grid.Column="0" Spacing="10">
+                                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                                    <TextBlock FontSize="18"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding PrimaryTextBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Text="Marketplace" />
+                                                </StackPanel>
+                                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                           TextWrapping="Wrap"
+                                                           FontSize="13"
+                                                           LineHeight="20"
+                                                           Text="Explore extensions, syntax highlighting packs, and themes." />
+                                            </StackPanel>
+                                            <Button Grid.Column="1"
+                                                    Classes="chrome"
+                                                    Click="OpenMarketplaceButton_OnClick"
+                                                    ToolTip.Tip="Browse extensions in the marketplace (Ctrl+E)"
+                                                    VerticalAlignment="Center"
+                                                    Content="Browse" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- ─ Links card ─ -->
+                                    <Border Padding="24,18"
+                                            Background="{Binding CardBrush}"
+                                            BorderBrush="{Binding SurfaceBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="16">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                                            <StackPanel Grid.Column="0" Spacing="10">
+                                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                                    <TextBlock FontSize="18"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding PrimaryTextBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Text="Links" />
+                                                </StackPanel>
+                                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                           FontSize="13"
+                                                           Text="Community, website, and release notes." />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        Spacing="8"
+                                                        VerticalAlignment="Center">
+                                                <Button Classes="chrome"
+                                                        Click="OpenDiscordButton_OnClick"
+                                                        ToolTip.Tip="Join the Kodo Discord server">
+                                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                                        <!-- Discord icon (simplified blobs path) -->
+                                                        <Viewbox Width="13" Height="13" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                      Data="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.053a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
+                                                                    </Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock Text="Discord" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Classes="chrome"
+                                                        Click="OpenWebsiteButton_OnClick"
+                                                        ToolTip.Tip="Open the Kodo website">
+                                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                                        <!-- Globe icon (U+1F310) -->
+                                                        <TextBlock Text="🌐" FontSize="13" VerticalAlignment="Center" />
+                                                        <TextBlock Text="Website" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Classes="chrome"
+                                                        Click="OpenReleasesPageButton_OnClick"
+                                                        ToolTip.Tip="View releases on GitHub">
+                                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                                        <!-- Tag/releases icon -->
+                                                        <Viewbox Width="13" Height="13" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                      Data="M17.707 3.293A1 1 0 0 0 17 3h-5a1 1 0 0 0-.707.293l-9 9a1 1 0 0 0 0 1.414l5 5A1 1 0 0 0 8 19a1 1 0 0 0 .707-.293l9-9A1 1 0 0 0 18 9V4a1 1 0 0 0-.293-.707ZM15 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2z" />
+                                                            </Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock Text="Releases" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- ─ Recently Edited card ─ -->
+                                    <Border Padding="24"
+                                            Background="{Binding CardBrush}"
+                                            BorderBrush="{Binding SurfaceBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="16">
+                                        <StackPanel Spacing="12">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Grid.Column="0"
+                                                            Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                                    <TextBlock FontSize="18"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding PrimaryTextBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Text="Recent" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1"
+                                                        Classes="chrome"
+                                                        Click="ClearRecentFilesButton_OnClick"
+                                                        IsVisible="{Binding HasRecentFiles}"
+                                                        VerticalAlignment="Center"
+                                                        FontSize="12"
+                                                        Padding="8,4"
+                                                        ToolTip.Tip="Clear the list of recently opened files"
+                                                        Content="Clear" />
+                                            </Grid>
+
+                                            <!-- Empty state -->
+                                            <StackPanel IsVisible="{Binding !HasRecentFiles}"
+                                                        HorizontalAlignment="Center"
+                                                        Spacing="8"
+                                                        Margin="0,12,0,8">
+                                                <TextBlock FontSize="28"
+                                                           HorizontalAlignment="Center"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           Opacity="0.35"
+                                                           Text="&#x1F4C2;" />
+                                                <TextBlock FontSize="13"
+                                                           HorizontalAlignment="Center"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           Opacity="0.7"
+                                                           Text="No recently opened files" />
+                                            </StackPanel>
+
+                                            <!-- Recent files list -->
+                                            <ItemsControl ItemsSource="{Binding RecentFiles}"
+                                                          IsVisible="{Binding HasRecentFiles}">
+                                                <ItemsControl.ItemContainerTheme>
+                                                    <ControlTheme TargetType="ContentPresenter">
+                                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                        <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                                    </ControlTheme>
+                                                </ItemsControl.ItemContainerTheme>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="kodo:RecentFileItem">
+                                                        <Button Classes="recent"
+                                                                Tag="{Binding}"
+                                                                Click="RecentFileButton_OnClick"
+                                                                Padding="10,8"
+                                                                Margin="0,0,0,3">
+                                                            <ToolTip.Tip>
+                                                                <StackPanel Spacing="2">
+                                                                    <TextBlock Text="{Binding DisplayName}"
+                                                                               FontWeight="SemiBold"
+                                                                               FontSize="12" />
+                                                                    <TextBlock Text="{Binding Path}"
+                                                                               FontSize="11"
+                                                                               Opacity="0.7" />
+                                                                    <TextBlock FontSize="11" Opacity="0.7">
+                                                                        <Run Text="Last opened " /><Run Text="{Binding LastOpenedLongText}" />
+                                                                    </TextBlock>
+                                                                </StackPanel>
+                                                            </ToolTip.Tip>
+                                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+
+                                                                <!-- Icon: folder or file -->
+                                                                <Viewbox Grid.Column="0"
+                                                                         Width="15" Height="15"
+                                                                         VerticalAlignment="Center">
+                                                                    <Canvas Width="24" Height="24">
+                                                                        <!-- Folder shape -->
+                                                                        <Path IsVisible="{Binding IsFolder}"
+                                                                              Fill="{Binding #RootWindow.MutedTextBrush}"
+                                                                              Opacity="0.55"
+                                                                              Data="M3.75 5.25A2.25 2.25 0 0 1 6 3h3.879c.597 0 1.17.237 1.591.659l1.061 1.06c.14.141.331.22.53.22H18a2.25 2.25 0 0 1 2.25 2.25v9A2.25 2.25 0 0 1 18 18.25H6A2.25 2.25 0 0 1 3.75 16V5.25Z" />
+                                                                        <!-- File shape -->
+                                                                        <Path IsVisible="{Binding !IsFolder}"
+                                                                              Fill="{Binding #RootWindow.MutedTextBrush}"
+                                                                              Opacity="0.55"
+                                                                              Data="M5.625 1.5H9a3.75 3.75 0 0 1 3.75 3.75v1.875c0 1.036.84 1.875 1.875 1.875H16.5a3.75 3.75 0 0 1 3.75 3.75v7.875c0 1.035-.84 1.875-1.875 1.875H5.625a1.875 1.875 0 0 1-1.875-1.875V3.375c0-1.036.84-1.875 1.875-1.875Z" />
+                                                                    </Canvas>
+                                                                </Viewbox>
+
+                                                                <!-- Name + type stacked -->
+                                                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                                                    <TextBlock FontSize="13"
+                                                                               FontWeight="SemiBold"
+                                                                               Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                               Text="{Binding DisplayName}"
+                                                                               TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock FontSize="11"
+                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                               Opacity="0.6"
+                                                                               Text="{Binding FileTypeName}" />
+                                                                </StackPanel>
+
+                                                                <!-- Timestamp, right-aligned -->
+                                                                <TextBlock Grid.Column="2"
+                                                                           FontSize="11"
+                                                                           Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                           Opacity="0.55"
+                                                                           Text="{Binding LastOpenedText}"
+                                                                           VerticalAlignment="Center" />
+                                                            </Grid>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+
+                                </StackPanel>
+
+                                <!-- ════════════════════
+                                     RIGHT COLUMN — News
+                                ════════════════════ -->
+                                <Border Grid.Column="1"
+                                        Background="{Binding CardBrush}"
+                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="16"
+                                        VerticalAlignment="Stretch">
+                                    <Grid RowDefinitions="Auto,Auto,*">
+
+                                        <!-- News panel header -->
+                                        <Border Grid.Row="0"
+                                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                                BorderThickness="0,0,0,1"
+                                                Padding="20,14">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Orientation="Horizontal" Spacing="10"
+                                                            VerticalAlignment="Center">
+                                                    <Border Width="3" Height="20" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding PrimaryTextBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Text="News" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1"
+                                                        Classes="chrome"
+                                                        Click="RefreshNewsButton_OnClick"
+                                                        IsEnabled="{Binding !IsNewsLoading}"
+                                                        VerticalAlignment="Center"
+                                                        ToolTip.Tip="Refresh news"
+                                                        Content="↻" />
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Tutorial shortcut strip -->
+                                        <Border Grid.Row="1"
+                                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                                BorderThickness="0,0,0,1"
+                                                Padding="20,12">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Grid.Column="0" Spacing="2">
+                                                    <TextBlock FontSize="12"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding PrimaryTextBrush}"
+                                                               Text="New to Kodo?" />
+                                                    <TextBlock FontSize="12"
+                                                               Foreground="{Binding MutedTextBrush}"
+                                                               Text="Take the built-in tutorial." />
+                                                </StackPanel>
+                                                <Button Grid.Column="1"
+                                                        Classes="chrome"
+                                                        Click="OpenTutorialButton_OnClick"
+                                                        VerticalAlignment="Center"
+                                                        ToolTip.Tip="Open the interactive tutorial"
+                                                        Content="Tutorial" />
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- News body -->
+                                        <Border Grid.Row="2"
+                                                Padding="16,14">
+                                            <Panel>
+                                            <!-- Loading spinner -->
+                                            <StackPanel IsVisible="{Binding IsNewsLoading}"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Spacing="8">
+                                                <TextBlock FontSize="11"
+                                                           HorizontalAlignment="Center"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           Opacity="0.5"
+                                                           Text="Loading news..." />
+                                            </StackPanel>
+
+                                            <!-- Error state -->
+                                            <StackPanel IsVisible="{Binding IsNewsError}"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Spacing="6">
+                                                <TextBlock FontSize="20"
+                                                           HorizontalAlignment="Center"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           Opacity="0.25"
+                                                           Text="&#x26A0;" />
+                                                <TextBlock FontSize="11"
+                                                           HorizontalAlignment="Center"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           Opacity="0.5"
+                                                           Text="Could not load news." />
+                                            </StackPanel>
+
+                                            <!-- Empty state -->
+                                            <StackPanel IsVisible="{Binding IsNewsEmpty}"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Spacing="8">
+                                                <TextBlock FontSize="26"
+                                                           HorizontalAlignment="Center"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           Opacity="0.2"
+                                                           Text="&#x1F4F0;" />
+                                                <TextBlock FontSize="12"
+                                                           HorizontalAlignment="Center"
+                                                           Foreground="{Binding MutedTextBrush}"
+                                                           Opacity="0.45"
+                                                           TextAlignment="Center"
+                                                           TextWrapping="Wrap"
+                                                           MaxWidth="200"
+                                                           Text="No announcements yet." />
+                                            </StackPanel>
+
+                                            <!-- News items -->
+                                            <ScrollViewer IsVisible="{Binding IsNewsContentVisible}"
+                                                          VerticalScrollBarVisibility="Auto"
+                                                          HorizontalScrollBarVisibility="Disabled">
+                                                <ItemsControl ItemsSource="{Binding NewsItems}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="kodo:NewsItem">
+                                                            <Border BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                                    BorderThickness="0,0,0,1"
+                                                                    Padding="4,12">
+                                                                <StackPanel Spacing="6">
+                                                                    <TextBlock FontSize="13"
+                                                                               FontWeight="SemiBold"
+                                                                               Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                               TextWrapping="Wrap"
+                                                                               IsVisible="{Binding HasTitle}"
+                                                                               Text="{Binding Title}" />
+                                                                    <TextBlock FontSize="11"
+                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                               IsVisible="{Binding HasUpdatedAt}"
+                                                                               Opacity="0.7"
+                                                                               Text="{Binding UpdatedAt}" />
+                                                                    <TextBlock FontSize="12"
+                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                               TextWrapping="Wrap"
+                                                                               LineHeight="19"
+                                                                               IsVisible="{Binding HasBody}"
+                                                                               Text="{Binding Body}" />
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                            </Panel>
+                                        </Border>
+
+                                    </Grid>
+                                </Border>
+
+                            </Grid>
+                        </ScrollViewer>
+
                     </Grid>
                 </Border>
 

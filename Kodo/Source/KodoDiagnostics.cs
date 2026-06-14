@@ -4,15 +4,12 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Collections.Concurrent;
 
 namespace Kodo;
 
 internal static class KodoDiagnostics
 {
     private static readonly string CurrentAppVersion = ResolveAppVersion();
-    private static readonly ConcurrentDictionary<string, byte> LoggedExceptionFingerprints = new(StringComparer.Ordinal);
-
     private static string ResolveAppVersion()
     {
         var raw = Assembly.GetExecutingAssembly()
@@ -128,65 +125,4 @@ internal static class KodoDiagnostics
         }
     }
 
-    // Namespaces that are known to throw internally as part of normal operation.
-    // First-chance exceptions originating entirely within these are suppressed.
-    private static readonly string[] SuppressedNamespacePrefixes =
-    [
-        "DiscordRPC.",
-        "Avalonia.",
-        "AvaloniaEdit.",
-        "SkiaSharp.",
-        "Svg.",
-    ];
-
-    private static bool IsFromSuppressedNamespace(Exception exception)
-    {
-        // new StackTrace(exception) returns empty frames for first-chance exceptions
-        // because the CLR hasn't unwound the stack yet. Parse the string form instead,
-        // which is populated by the time FirstChanceException fires.
-        var trace = exception.StackTrace ?? string.Empty;
-
-        // If any line contains "Kodo." the exception touched our code - always log it.
-        if (trace.Contains("Kodo.", StringComparison.Ordinal))
-            return false;
-
-        // No Kodo frames: suppress if ANY "at " line belongs to a known third-party
-        // namespace. Walking all frames (not just the first) catches cases where BCL
-        // frames (e.g. System.IO.Pipes) appear at the top but the exception originates
-        // from a suppressed library (e.g. DiscordRPC calling into named pipes).
-        var span = trace.AsSpan();
-        int searchFrom = 0;
-        while (true)
-        {
-            var atIdx = span[searchFrom..].IndexOf("   at ", StringComparison.Ordinal);
-            if (atIdx < 0) break;
-
-            var afterAt = span[(searchFrom + atIdx + 6)..]; // skip "   at "
-            foreach (var prefix in SuppressedNamespacePrefixes)
-            {
-                if (afterAt.StartsWith(prefix, StringComparison.Ordinal))
-                    return true;
-            }
-
-            searchFrom += atIdx + 6;
-        }
-
-        return false;
-    }
-
-    public static bool TryWriteFirstChanceLog(string source, Exception exception)
-    {
-        if (exception is OperationCanceledException)
-            return false;
-
-        if (IsFromSuppressedNamespace(exception))
-            return false;
-
-        var fingerprint = $"{source}|{exception.GetType().FullName}|{exception.Message}|{exception.StackTrace}";
-        if (!LoggedExceptionFingerprints.TryAdd(fingerprint, 0))
-            return false;
-
-        WriteDiagnosticLog(source, exception, isTerminating: false, severity: "FirstChance");
-        return true;
-    }
 }

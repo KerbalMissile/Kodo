@@ -46,7 +46,6 @@ public partial class App : Application
     // the framework has finished starting up.
     public override void Initialize()
     {
-        AppDomain.CurrentDomain.FirstChanceException += CurrentDomain_OnFirstChanceException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
         TaskScheduler.UnobservedTaskException       += TaskScheduler_OnUnobservedTaskException;
         Dispatcher.UIThread.UnhandledException      += DispatcherUiThread_OnUnhandledException;
@@ -122,14 +121,6 @@ public partial class App : Application
     }
 
     // ── Global exception handlers ────────────────────────────────────────────
-
-    private static void CurrentDomain_OnFirstChanceException(object? sender, System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs e)
-    {
-        if (e.Exception is not Exception exception)
-            return;
-
-        KodoDiagnostics.TryWriteFirstChanceLog("AppDomain.FirstChanceException", exception);
-    }
 
     private static void CurrentDomain_OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {

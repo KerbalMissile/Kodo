@@ -584,6 +584,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string ReleasesPageUrl = "https://github.com/KerbalMissile/Kodo/releases";
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
     private const string WebsiteUrl = "https://kerbalmissile.github.io/Kodo-Website/";
+    // GitHub Contents API endpoint for ANNOUNCEMENTS.md.  Uses the same raw+json
+    // Accept header as the marketplace index so GitHub returns the file bytes directly
+    // with no base64 unwrapping, and benefits from the same generous rate limits.
+    private const string AnnouncementsUrl = "https://api.github.com/repos/KerbalMissile/Kodo/contents/Announcements/ANNOUNCEMENTS.md";
+
+    private bool _isNewsLoading = true;
+    private bool _isNewsError;
 
     private string? _currentFilePath;
     // Encoding detected (or chosen) for the currently open file. Defaults to UTF-8.
@@ -870,6 +877,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public ObservableCollection<MarketplaceExtension> MarketplaceExtensions { get; } = new();
     public ObservableCollection<string> ExtensionLoadErrors { get; } = new();
     public ObservableCollection<TerminalShellOption> AvailableTerminalShells { get; } = new();
+    public ObservableCollection<NewsItem> NewsItems { get; } = new();
+
+    public bool IsNewsLoading
+    {
+        get => _isNewsLoading;
+        private set { if (_isNewsLoading == value) return; _isNewsLoading = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsNewsContentVisible)); OnPropertyChanged(nameof(IsNewsEmpty)); }
+    }
+
+    public bool IsNewsError
+    {
+        get => _isNewsError;
+        private set { if (_isNewsError == value) return; _isNewsError = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsNewsContentVisible)); OnPropertyChanged(nameof(IsNewsEmpty)); }
+    }
+
+    public bool IsNewsContentVisible => !IsNewsLoading && !IsNewsError && NewsItems.Count > 0;
+    public bool IsNewsEmpty => !IsNewsLoading && !IsNewsError && NewsItems.Count == 0;
 
     public LoadedExtension? CurrentLanguageExtension
     {
@@ -1625,6 +1648,107 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsRefreshingLatestRelease));
             OnPropertyChanged(nameof(RefreshLatestReleaseButtonText));
         }
+    }
+
+    private async Task FetchAnnouncementsAsync()
+    {
+        IsNewsLoading = true;
+        IsNewsError = false;
+        NewsItems.Clear();
+
+        try
+        {
+            // Use the GitHub Contents API with the raw+json Accept header so GitHub
+            // returns the file bytes directly (no base64 wrapping) at the same
+            // generous rate limits as the marketplace index fetch.
+            using var request = new HttpRequestMessage(HttpMethod.Get, AnnouncementsUrl);
+            request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+            request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
+
+            using var response = await MarketplaceHttpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            var md = await response.Content.ReadAsStringAsync();
+            var items = ParseAnnouncementsMd(md);
+            foreach (var item in items)
+                NewsItems.Add(item);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.WriteDebugFallback("Failed to fetch announcements", ex);
+            IsNewsError = true;
+        }
+        finally
+        {
+            IsNewsLoading = false;
+            OnPropertyChanged(nameof(IsNewsContentVisible));
+            OnPropertyChanged(nameof(IsNewsEmpty));
+        }
+    }
+
+    // Parses the ANNOUNCEMENTS.md format:
+    //   ## Title
+    //   > 2024-06-01          ← optional date line (blockquote)
+    //   body lines...
+    //   ---   (separator between posts)
+    //
+    // Items are returned in reverse order so the last entry in the file
+    // appears at the top of the news panel.
+    private static List<NewsItem> ParseAnnouncementsMd(string md)
+    {
+        var items = new List<NewsItem>();
+        // Split on the horizontal rule separator
+        var sections = md.Split(["---"], StringSplitOptions.RemoveEmptyEntries);
+        foreach (var section in sections)
+        {
+            var lines = section.Split('\n')
+                               .Select(l => l.TrimEnd('\r').Trim())
+                               .ToList();
+
+            string? title = null;
+            string? updatedAt = null;
+            var bodyLines = new List<string>();
+
+            foreach (var line in lines)
+            {
+                if (title is null && line.StartsWith("## "))
+                {
+                    title = line[3..].Trim();
+                }
+                else if (title is not null && updatedAt is null && line.StartsWith("> "))
+                {
+                    // A blockquote immediately after the heading is treated as the date.
+                    // Try to parse yyyy-MM-dd and reformat to e.g. "June 12, 2026";
+                    // fall back to the raw string if it doesn't match that pattern.
+                    var raw = line[2..].Trim();
+                    updatedAt = DateTime.TryParseExact(
+                        raw,
+                        "yyyy-MM-dd",
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None,
+                        out var parsed)
+                        ? parsed.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)
+                        : raw;
+                }
+                else if (title is not null && line.Length > 0)
+                {
+                    bodyLines.Add(line);
+                }
+            }
+
+            if (title is null && bodyLines.Count == 0) continue;
+
+            items.Add(new NewsItem
+            {
+                Title     = title ?? string.Empty,
+                Body      = string.Join("\n", bodyLines).Trim(),
+                UpdatedAt = updatedAt ?? string.Empty,
+            });
+        }
+
+        // Reverse so the last-written entry in the file surfaces at the top.
+        items.Reverse();
+        return items;
     }
 
     private async Task<ReleaseInfo?> FetchLatestReleaseInfoAsync()
@@ -6954,6 +7078,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _ = RefreshExtensionsDataAsync();
         _ = RefreshLatestReleaseAsync();
+        _ = FetchAnnouncementsAsync();
 
         // Show the What's New splash once per upgrade. Uses the same version parser
         // as IsNewerVersionAvailable so v-prefixes, -BETA, and -DEV suffixes are all
@@ -7867,6 +7992,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         OpenExtensionsPage(showMarketplaceTab: true, forceRefresh: true);
     }
+
+    private void RefreshNewsButton_OnClick(object? sender, RoutedEventArgs e) =>
+        _ = FetchAnnouncementsAsync();
 
     private void OpenTutorialButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -13327,4 +13455,13 @@ public sealed class BoolToFontWeightConverter : Avalonia.Data.Converters.IValueC
 
     public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
         throw new NotSupportedException();
+}
+public sealed class NewsItem
+{
+    public string Title     { get; init; } = string.Empty;
+    public string Body      { get; init; } = string.Empty;
+    public string UpdatedAt { get; init; } = string.Empty;
+    public bool HasTitle     => !string.IsNullOrWhiteSpace(Title);
+    public bool HasBody      => !string.IsNullOrWhiteSpace(Body);
+    public bool HasUpdatedAt => !string.IsNullOrWhiteSpace(UpdatedAt);
 }
