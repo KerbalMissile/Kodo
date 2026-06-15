@@ -60,6 +60,9 @@ public sealed class CompiledSyntaxProfile
 
         rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)(?![\p{L}\p{Nd}_])", RegexOptions.Compiled), "number", "#B5CEA8"));
 
+        if (traits.IsMarkupLike)
+            rules.Add(new(new Regex(@"(?<=>)[^<>]+(?=<)", RegexOptions.Compiled), MarkupTextToken, MarkupTextFallback));
+
         if (traits.IsCssLike)
         {
             rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_-])#[0-9A-Fa-f]{3}(?:[0-9A-Fa-f]{1}|[0-9A-Fa-f]{3}|[0-9A-Fa-f]{5})?(?![\p{L}\p{Nd}_-])", RegexOptions.Compiled), "number", "#B5CEA8"));
