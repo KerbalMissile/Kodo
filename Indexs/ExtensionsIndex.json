@@ -130,7 +130,7 @@
       "description": "Syntax highlighting for XML and related configuration files.",
       "fileName": "XML-Kodo-Extension-v1.0.3.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/XML-Kodo-Extension-v1.0.3.kox",
-      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/xml-icon.png"
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/2/2d/Extensible_Markup_Language_%28XML%29_logo.svg"
     },
     {
       "id": "json-kodo-extension",
@@ -141,7 +141,7 @@
       "description": "Syntax highlighting for JSON and JSONC files.",
       "fileName": "JSON-Kodo-Extension-v1.0.2.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JSON-Kodo-Extension-v1.0.2.kox",
-      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/json-icon.png"
+      "iconUrl": "https://commons.wikimedia.org/wiki/File:JSON_vector_logo.svg"
     },
     {
       "id": "yaml-kodo-extension",
@@ -152,7 +152,7 @@
       "description": "Syntax highlighting for YAML files.",
       "fileName": "YAML-Kodo-Extension-v1.0.2.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/YAML-Kodo-Extension-v1.0.2.kox",
-      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/yaml-icon.png"
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/5/5a/Official_YAML_Logo.svg"
     },
     {
       "id": "toml-kodo-extension",
@@ -163,7 +163,7 @@
       "description": "Syntax highlighting for TOML files.",
       "fileName": "TOML-Kodo-Extension-v1.0.2.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/TOML-Kodo-Extension-v1.0.2.kox",
-      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/toml-icon.png"
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c1/TOML_Logo.svg"
     },
     {
       "id": "markdown-kodo-extension",
@@ -174,7 +174,7 @@
       "description": "Syntax highlighting for Markdown and reStructuredText files.",
       "fileName": "Markdown-Kodo-Extension-v1.3.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Markdown-Kodo-Extension-v1.3.0.kox",
-      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/markdown-icon.png"
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/4/48/Markdown-mark.svg"
     },
     {
       "id": "sql-kodo-extension",
@@ -196,7 +196,7 @@
       "description": "Syntax highlighting for TypeScript files.",
       "fileName": "TypeScript-Kodo-Extension-v1.0.3.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/TypeScript-Kodo-Extension-v1.0.3.kox",
-      "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/typescript-icon.png"
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/4/4c/Typescript_logo_2020.svg"
     },
     {
       "id": "Rust-kodo-extension",
@@ -207,7 +207,7 @@
       "description": "Syntax highlighting for Rust files.",
       "fileName": "Rust-Kodo-Extension-v1.0.2.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Rust-Kodo-Extension-v1.0.2.kox",
-      "iconUrl": "https://www.vhv.rs/dpng/d/415-4150318_rust-programming-language-logo-hd-png-download.png"
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/d/d5/Rust_programming_language_black_logo.svg"
     },
     {
       "id": "java-kodo-extension",
@@ -218,7 +218,7 @@
       "description": "Syntax highlighting for Java files.",
       "fileName": "Java-Kodo-Extension-v1.0.2.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Java-Kodo-Extension-v1.0.2.kox",
-      "iconUrl": "https://images.seeklogo.com/logo-png/45/1/java-logo-png_seeklogo-459104.png"
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/de/e/e1/Java-Logo.svg"
     },
     {
       "id": "powershell-kodo-extension",
@@ -229,7 +229,7 @@
       "description": "Syntax highlighting for PowerShell files.",
       "fileName": "PowerShell-Kodo-Extension-v1.0.2.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/PowerShell-Kodo-Extension-v1.0.2.kox",
-      "iconUrl": "https://pbcdn1.podbean.com/imglogo/image-logo/1769310/powershell_300x300.png"
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Powershell_128.svg"
     },
     {
       "id": "bash-kodo-extension",
