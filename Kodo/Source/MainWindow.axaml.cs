@@ -233,12 +233,12 @@ public record class LoadedExtension : INotifyPropertyChanged
     // True for the 2nd, 3rd, etc. entries split out of a multi-theme array -
     // they appear in ThemeExtensions but are hidden from the Installed list.
     public bool IsThemeSubEntry { get; init; }
-    // Raw PNG bytes read from icon.png on the background scan thread.
-    // Decoded into IconImage on the UI thread by ApplyLoadedExtensionsResult.
+    // Raw PNG or SVG bytes read from icon.png / icon.svg on the background scan thread.
+    // Decoded into IconImage (PNG) or SvgData (SVG) on the UI thread by ApplyLoadedExtensionsResult.
     public byte[]? IconBytes { get; set; }
-    // Optional icon loaded from icon.png inside the .kox / folder
+    // Optional icon loaded from icon.png / icon.svg inside the .kox / folder
     public Bitmap? IconImage { get; set; }
-    // SVG text for icons sourced from the marketplace index (set on UI thread).
+    // SVG text for icons sourced from the marketplace index or local icon.svg
     public string? SvgData { get; set; }
     // Fallback: first two letters of the name, shown when no icon is present
     public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
@@ -573,11 +573,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion ?? "v0.0.0";
     public string CopyrightText => $"© {DateTime.Now.Year} KerbalMissile and SS-YYC. Licensed under KPL-v1.1.";
-    // GitHub Contents API endpoint for the extension index.  This has much more
-    // generous rate limits for unauthenticated requests than raw.githubusercontent.com
-    // (which started enforcing strict anonymous limits in May 2025).
-    // The Accept header below makes GitHub return the raw file bytes directly,
-    // so the response body is plain JSON with no base64 unwrapping needed.
+    // GitHub Contents API endpoint for the extension index JSON.
+    // All Kodo-hosted assets (index JSON, extension .kox packages, and repo-hosted
+    // icon images) are fetched via the Contents API with the raw+json Accept header,
+    // which makes GitHub return file bytes directly — no base64 unwrapping needed.
+    // Third-party icon URLs (e.g. Wikipedia, Wikimedia) are fetched as plain GETs
+    // since the Contents API only applies to files inside this repository.
     private const string DefaultMarketplaceIndexUrl = "https://api.github.com/repos/KerbalMissile/Kodo/contents/Indexs/ExtensionsIndex.json";
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases/latest";
     private const string ReleasesApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases";
@@ -689,7 +690,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly Dictionary<string, DateTime> _warningDialogCooldowns = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _iconFetchSemaphore = new(4, 4);
     private static readonly TimeSpan ExtensionsRefreshCooldown = TimeSpan.FromSeconds(8);
-    private static readonly TimeSpan WarningDialogCooldown = TimeSpan.FromSeconds(10);
+    // Disk cache for the marketplace index JSON.  Sits next to settings in
+    // %LocalAppData%\Kodo so it survives across sessions and network outages.
+    // The sidecar .etag file holds the ETag returned by the last successful
+    // GitHub Contents API response; sent as If-None-Match on subsequent requests
+    // so a 304 Not Modified short-circuits the fetch without consuming a rate-limit
+    // slot (304s are free against GitHub's 60 req/hr anonymous quota).
+    private string MarketplaceIndexCachePath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "marketplace-index.json");
+    private string MarketplaceIndexETagPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "marketplace-index.json.etag");
+    // In-memory ETag kept in sync with every successful 200 response.
+    // Null means no cache exists yet; loaded lazily from disk on first fetch.
+    private string? _marketplaceIndexETag;
+    // Prevents the exact same error (same context + exception type + message) from
+    // spawning duplicate dialogs within a short burst.  3 s is enough to debounce
+    // rapid retries while still letting a genuinely new occurrence through quickly.
+    private static readonly TimeSpan WarningDialogCooldown   = TimeSpan.FromSeconds(3);
+
+    // Hard ceiling for any GitHub network operation (index fetch, announcements,
+    // release info, icon downloads).  If the operation does not *complete* — both
+    // headers and body — within this window we cancel it, log a warning, and show
+    // the standard Kodo error dialog so the user knows the panel is stale.
+    private static readonly TimeSpan GitHubOperationTimeout  = TimeSpan.FromSeconds(7);
     private static readonly HashSet<string> ImagePreviewExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".apng", ".jpg", ".jpeg", ".jpe", ".jfif", ".bmp", ".dib", ".gif",
@@ -1203,7 +1226,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await RefreshExtensionsDataAsync();
     }
 
-    private async Task RefreshExtensionsDataAsync(bool force = false)
+    private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false)
     {
         if (_isRefreshingExtensions)
             return;
@@ -1212,7 +1235,76 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
 
         IsRefreshingExtensions = true;
-        ExtensionsStatusText = "Refreshing installed extensions and marketplace...";
+        ExtensionsStatusText = "Refreshing extensions...";
+
+        // ── Refresh watchdog ────────────────────────────────────────────────
+        // If the entire refresh (disk scan + marketplace fetch) does not complete
+        // within GitHubOperationTimeout (7 s) we fire the standard Kodo warning
+        // dialog so the user knows the panel is stuck — not just silently spinning.
+        //
+        // HOW IT WORKS:
+        //   A CancellationTokenSource drives a parallel Task.Delay watchdog.
+        //   The watchdog races the real work; whichever finishes first wins.
+        //   • Real work finishes first  → watchdog CTS is cancelled, delay exits
+        //     cleanly, no dialog is shown.
+        //   • Watchdog fires first      → the delay elapses, the watchdog posts
+        //     a TimeoutException to the UI thread (dialog + log), then exits.
+        //     The real work is NOT hard-cancelled: network ops already carry their
+        //     own 7-second CancellationToken (RunWithGitHubTimeoutAsync), so they
+        //     will fail shortly after and clean up normally via the catch block.
+        //
+        // WHY NOT Task.WhenAny + hard cancel on the work task?
+        //   The work awaits Dispatcher.UIThread.InvokeAsync in several places.
+        //   Cancelling an InvokeAsync continuation from a background token is not
+        //   safe — it can leave the ObservableCollections mid-mutation and corrupt
+        //   the binding state.  The watchdog-only approach lets the work unwind
+        //   itself cleanly while giving the user immediate feedback.
+        //
+        // suppressWatchdog = true when called as a sub-step of an install/uninstall.
+        // In those flows the outer operation already owns error reporting (download
+        // timeout, write failure, etc.) and has its own RunWithGitHubTimeoutAsync
+        // guard on the network work.  Firing a second independent watchdog here
+        // would race against the outer handler and produce a misleading
+        // "Marketplace refresh" dialog for what is actually an install timeout.
+        using var watchdogCts = new CancellationTokenSource();
+        var watchdogToken = watchdogCts.Token;
+        if (!suppressWatchdog)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(GitHubOperationTimeout, watchdogToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Work finished in time — nothing to do.
+                    return;
+                }
+
+                // Still refreshing after 7 s: build a descriptive TimeoutException
+                // and surface it through the standard Kodo warning dialog + log.
+                var timeoutEx = new TimeoutException(
+                    $"Marketplace refresh did not complete within " +
+                    $"{GitHubOperationTimeout.TotalSeconds:0} seconds. " +
+                    "This may indicate a slow or stalled network connection, " +
+                    "a slow disk scan, or a hung extension operation.");
+
+                KodoDiagnostics.WriteDiagnosticLog(
+                    source: "MainWindow.RefreshExtensionsDataAsync.Watchdog",
+                    exception: timeoutEx,
+                    isTerminating: false,
+                    severity: "Warning",
+                    operation: "Marketplace refresh watchdog");
+
+                await Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    // Update status bar so the panel itself reflects the stall.
+                    ExtensionsStatusText = "Marketplace refresh is taking too long. Check your connection.";
+                    await ShowWarningDialogAsync("Marketplace refresh", timeoutEx);
+                });
+            }, watchdogToken);
+        }
 
         try
         {
@@ -1235,19 +1327,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     ApplyTheme(_requestedThemeName);
                 }
                 var updateCount = MarketplaceExtensions.Count(e => e.IsUpdateAvailable);
+                var installedCount = VisibleLoadedExtensions.Count();
+                var marketplaceCount = MarketplaceExtensions.Count;
+                var installedWord = installedCount == 1 ? "extension" : "extensions";
+                var marketplaceWord = marketplaceCount == 1 ? "extension" : "extensions";
+                var updateWord = updateCount == 1 ? "update" : "updates";
                 ExtensionsStatusText = updateCount > 0
-                    ? $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s). {updateCount} update(s) available."
-                    : $"Refreshed {VisibleLoadedExtensions.Count()} installed and {MarketplaceExtensions.Count} marketplace extension(s).";
+                    ? $"Found {installedCount} installed {installedWord} and {marketplaceCount} in the marketplace. {updateCount} {updateWord} available."
+                    : $"Found {installedCount} installed {installedWord} and {marketplaceCount} in the marketplace.";
                 _lastExtensionsRefreshUtc = DateTime.UtcNow;
             });
         }
         catch (Exception ex)
         {
-            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = $"Refresh failed: {ex.Message}");
-            await ShowWarningDialogAsync("Extension refresh", ex);
+            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "Couldn't refresh extensions. Check your connection and try again.");
+            await Dispatcher.UIThread.InvokeAsync(async () => await ShowWarningDialogAsync("Marketplace fetch", ex));
         }
         finally
         {
+            // Cancel the watchdog whether we succeeded, timed out, or threw — it
+            // must not fire after IsRefreshingExtensions has been cleared.
+            await watchdogCts.CancelAsync();
             await Dispatcher.UIThread.InvokeAsync(() => IsRefreshingExtensions = false);
         }
     }
@@ -1322,14 +1422,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
 
         // Decode icon bitmaps here on the UI thread. The background scan stored raw
-        // PNG bytes in IconBytes to avoid creating Avalonia Bitmaps off-thread (which
+        // PNG/SVG bytes in IconBytes to avoid creating Avalonia Bitmaps off-thread (which
         // is unsafe and causes silent failures). Now that we're on the UI thread we
         // can safely decode them and clear the staging bytes to free the memory.
         foreach (var ext in LoadedExtensions)
         {
-            if (ext.IconImage is null && ext.IconBytes is not null)
+            if (ext.IconImage is null && ext.SvgData is null && ext.IconBytes is not null)
             {
-                ext.IconImage = DecodeBitmapOnUiThread(ext.IconBytes);
+                if (IsSvgContent(ext.IconBytes))
+                {
+                    try { ext.SvgData = System.Text.Encoding.UTF8.GetString(ext.IconBytes); }
+                    catch { /* malformed SVG - leave icon absent */ }
+                }
+                else
+                {
+                    ext.IconImage = DecodeBitmapOnUiThread(ext.IconBytes);
+                }
                 ext.IconBytes = null;
                 ext.NotifyIconChanged();
             }
@@ -1361,59 +1469,78 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState());
 
+        // —— Disk-cache fast path ———————————————————————————
+        // Seed the collection from the on-disk cache so the marketplace appears
+        // immediately even before the network round-trip completes. Subsequent
+        // refreshes in the same session skip this (collection is already populated).
+        var diskJson = TryReadMarketplaceIndexCache();
+        if (diskJson is not null && !MarketplaceExtensions.Any())
+            ParseAndApplyMarketplaceIndex(diskJson, marketplaceExtensions, extensionLoadErrors);
+
         try
         {
-            // Request the index via the GitHub Contents API.  The raw+json Accept header
-            // instructs GitHub to return the file bytes directly (plain JSON), so no
-            // base64 unwrapping is required.  Cache-Control: no-cache ensures GitHub
-            // serves the latest committed version rather than a CDN-cached copy.
+            // —— Conditional ETag fetch ——————————————————————————
+            // Send If-None-Match with the stored ETag so GitHub can reply 304 Not
+            // Modified when the index hasn't changed.  304 responses do NOT count
+            // against the 60 req/hr anonymous rate limit, so repeated refreshes
+            // (startup, post-install, manual) are free as long as nothing changed.
+            // Only a real 200 response burns one rate-limit slot.
+            _marketplaceIndexETag ??= TryReadMarketplaceIndexETag();
             using var indexRequest = new HttpRequestMessage(HttpMethod.Get, DefaultMarketplaceIndexUrl);
             indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-            indexRequest.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
-            using var indexResponse = await MarketplaceHttpClient.SendAsync(indexRequest);
-            indexResponse.EnsureSuccessStatusCode();
-            var remoteJson = await indexResponse.Content.ReadAsStringAsync();
+            if (_marketplaceIndexETag is not null)
+                indexRequest.Headers.TryAddWithoutValidation("If-None-Match", _marketplaceIndexETag);
 
-            // Use lenient options so minor JSON issues in the remote index
-            // (trailing commas, comments) don't abort the entire fetch.
-            var jsonOptions = new JsonDocumentOptions
-            {
-                AllowTrailingCommas = true,
-                CommentHandling = JsonCommentHandling.Skip
-            };
-            using var doc = JsonDocument.Parse(remoteJson, jsonOptions);
-            if (doc.RootElement.TryGetProperty("extensions", out var extensionsElement) &&
-                extensionsElement.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in extensionsElement.EnumerateArray())
+            var (statusCode, remoteJson, newETag) = await RunWithGitHubTimeoutAsync(
+                "Marketplace index fetch",
+                async ct =>
                 {
-                    try
-                    {
-                        var entry = ParseMarketplaceExtension(item);
-                        if (string.IsNullOrWhiteSpace(entry.Id) || marketplaceExtensions.Any(e => e.Id == entry.Id))
-                            continue;
+                    using var indexResponse = await MarketplaceHttpClient.SendAsync(indexRequest, ct);
+                    if ((int)indexResponse.StatusCode == 304)
+                        return (304, (string?)null, (string?)null);
+                    indexResponse.EnsureSuccessStatusCode();
+                    var body = await indexResponse.Content.ReadAsStringAsync(ct);
+                    var etag = indexResponse.Headers.ETag?.Tag;
+                    return (200, body, etag);
+                });
 
-                        marketplaceExtensions.Add(entry);
-                    }
-                    catch (Exception itemEx)
-                    {
-                        // Skip malformed entries but keep loading the rest of the index.
-                        KodoDiagnostics.WriteDebugFallback("Skipped malformed marketplace entry", itemEx);
-                    }
+            if (statusCode == 304)
+            {
+                // Index unchanged — reuse whatever is already in the collection
+                // (disk-cache seed or previous refresh).  No parse, no disk write.
+                KodoDiagnostics.WriteDebugFallback("Marketplace index: 304 Not Modified — reusing cached data.");
+            }
+            else if (remoteJson is not null)
+            {
+                // Fresh 200 — parse, update disk cache, store new ETag.
+                marketplaceExtensions.Clear();
+                extensionLoadErrors.Clear();
+                ParseAndApplyMarketplaceIndex(remoteJson, marketplaceExtensions, extensionLoadErrors);
+                TryWriteMarketplaceIndexCache(remoteJson);
+                if (newETag is not null)
+                {
+                    _marketplaceIndexETag = newETag;
+                    TryWriteMarketplaceIndexETag(newETag);
                 }
             }
         }
         catch (Exception ex)
         {
-            extensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            if (diskJson is not null)
             {
-                RefreshMarketplaceConnectivityState("Marketplace fetch", ex);
-            });
-            // Fire-and-forget: do NOT await the dialog here. Awaiting ShowDialog
-            // blocks until the user dismisses it, which holds IsRefreshingExtensions=true
-            // and leaves the UI stuck on "Refreshing..." indefinitely.
-            _ = ShowWarningDialogAsync("Marketplace fetch", ex);
+                // Network failed but a cached copy exists — the marketplace was
+                // already seeded above, so stay usable.  Log without a dialog.
+                extensionLoadErrors.Add($"Marketplace index fetch failed (using cached copy): {ex.Message}");
+                KodoDiagnostics.WriteDebugFallback("Marketplace index fetch failed; using disk cache.", ex);
+                await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
+            }
+            else
+            {
+                // No cache at all — propagate so the caller shows the error dialog.
+                extensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
+                await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
+                throw;
+            }
         }
 
         // All ObservableCollection mutations and PropertyChanged notifications must
@@ -1429,6 +1556,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             SyncMarketplaceInstallStates();
             OnPropertyChanged(nameof(ExtensionLoadErrors));
+            OnPropertyChanged(nameof(IsMarketplaceUnavailableVisible));
+            OnPropertyChanged(nameof(IsMarketplacePartialErrorVisible));
             OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
             NotifyExtensionFiltersChanged();
 
@@ -1463,9 +1592,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         // leave whatever the kox provided in place.
                     });
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Network failure - leave the kox icon (or abbreviation) in place.
+                    // Network failure for this icon - leave the kox icon (or abbreviation) in place.
+                    KodoDiagnostics.WriteDebugFallback($"Icon fetch failed for installed extension '{pair.ext.Id}': {pair.iconUrl}", ex);
                 }
             });
 
@@ -1496,25 +1626,49 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         });
 
+        var iconFailures = 0;
+        var iconAttempts = 0;
+        Exception? lastIconException = null;
+
         var tasks = MarketplaceExtensions
             .Where(entry => entry.IconImage is null && entry.SvgData is null && marketplaceIconMap.TryGetValue(entry.Id, out _))
             .Select(async entry =>
             {
+                Interlocked.Increment(ref iconAttempts);
                 try
                 {
                     var icon = await GetCachedIconAsync(marketplaceIconMap[entry.Id]);
                     if (!icon.HasValue)
+                    {
+                        KodoDiagnostics.WriteDebugFallback($"Icon fetch returned no data for marketplace extension '{entry.Id}': {marketplaceIconMap[entry.Id]}");
+                        Interlocked.Increment(ref iconFailures);
                         return;
+                    }
 
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
                         ReplaceMarketplaceIcon(entry, icon);
                     });
                 }
-                catch { /* Network failure - fallback to local icon or abbreviation. */ }
+                catch (Exception ex)
+                {
+                    KodoDiagnostics.WriteDebugFallback($"Icon fetch failed for marketplace extension '{entry.Id}': {marketplaceIconMap[entry.Id]}", ex);
+                    Interlocked.Increment(ref iconFailures);
+                    Interlocked.Exchange(ref lastIconException, ex);
+                }
             });
 
         await Task.WhenAll(tasks);
+
+        // Log a warning if every icon fetch failed — suggests a network or rate-limit
+        // problem — but don't surface a dialog: icons are decorative and a modal here
+        // would block the marketplace from appearing while extensions loaded fine.
+        if (iconAttempts > 0 && iconFailures == iconAttempts && lastIconException is not null)
+        {
+            KodoDiagnostics.WriteDebugFallback(
+                $"All {iconAttempts} marketplace icon fetch(es) failed; icons will show abbreviations.",
+                lastIconException);
+        }
     }
 
     // Discriminated result from GetCachedIconAsync.
@@ -1548,12 +1702,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out bytes))
             {
                 // Per-request timeout so a single stalled icon fetch cannot hold
-                // up the entire FetchMarketplaceIconsAsync Task.WhenAll for the
-                // full 30-second HttpClient.Timeout.  10 s is ample for a CDN
-                // asset; failures are swallowed by the caller's catch block and
-                // the extension falls back to its abbreviation placeholder.
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                bytes = await MarketplaceHttpClient.GetByteArrayAsync(iconUrl, cts.Token);
+                // up the entire FetchMarketplaceIconsAsync Task.WhenAll.
+                // Uses GitHubOperationTimeout (7 s) — the same ceiling applied to
+                // every other GitHub operation — so icon fetches are consistent.
+                using var cts = new CancellationTokenSource(GitHubOperationTimeout);
+
+                // Kodo-hosted icon URLs use the GitHub Contents API
+                // (api.github.com/repos/.../contents/...) so the raw+json Accept header
+                // is required to get file bytes directly rather than a base64-wrapped
+                // JSON response.  Third-party URLs (Wikipedia, etc.) are plain GETs.
+                using var request = new HttpRequestMessage(HttpMethod.Get, iconUrl);
+                if (IsGitHubContentsApiUrl(iconUrl))
+                    request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+
+                using var response = await MarketplaceHttpClient.SendAsync(request, cts.Token);
+                response.EnsureSuccessStatusCode();
+                bytes = await response.Content.ReadAsByteArrayAsync(cts.Token);
                 _marketplaceIconBytesCache[iconUrl] = bytes;
             }
         }
@@ -1641,6 +1805,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             LatestRelease = null;
             LatestReleaseStatusText = $"Could not load release info: {ex.Message}";
+
+            // Log and surface the Kodo warning dialog so the user knows why the
+            // release panel is empty (timeout, rate-limit, no connectivity, etc.).
+            KodoDiagnostics.WriteDebugFallback("Failed to fetch latest release info", ex);
+            await ShowWarningDialogAsync("Latest release info fetch", ex);
         }
         finally
         {
@@ -1661,14 +1830,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // Use the GitHub Contents API with the raw+json Accept header so GitHub
             // returns the file bytes directly (no base64 wrapping) at the same
             // generous rate limits as the marketplace index fetch.
+            // The entire operation — headers + body — must complete within
+            // GitHubOperationTimeout (7 s); a stall past that point throws
+            // TimeoutException and surfaces the standard Kodo error dialog.
             using var request = new HttpRequestMessage(HttpMethod.Get, AnnouncementsUrl);
             request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
             request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
 
-            using var response = await MarketplaceHttpClient.SendAsync(request);
-            response.EnsureSuccessStatusCode();
+            var (response, md) = await RunWithGitHubTimeoutAsync(
+                "News / Announcements fetch",
+                async ct =>
+                {
+                    using var resp = await MarketplaceHttpClient.SendAsync(request, ct);
+                    resp.EnsureSuccessStatusCode();
+                    var body = await resp.Content.ReadAsStringAsync(ct);
+                    // Return a tuple; ownership of HttpResponseMessage stays inside the
+                    // lambda so the using-scope disposes it after we've read the body.
+                    return (resp, body);
+                });
 
-            var md = await response.Content.ReadAsStringAsync();
             var items = ParseAnnouncementsMd(md);
             foreach (var item in items)
                 NewsItems.Add(item);
@@ -1677,6 +1857,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             KodoDiagnostics.WriteDebugFallback("Failed to fetch announcements", ex);
             IsNewsError = true;
+
+            // Show the Kodo warning dialog so the user knows the news panel is stale
+            // and can see the specific reason (timeout, HTTP error, parse failure, etc.).
+            // Fire-and-forget is intentional: IsNewsLoading must be cleared immediately
+            // in the finally block; we must not await the modal here.
+            _ = ShowWarningDialogAsync("News / Announcements fetch", ex);
         }
         finally
         {
@@ -1765,13 +1951,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApiUrl);
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
 
-        using var response = await MarketplaceHttpClient.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
-            return null;
+        return await RunWithGitHubTimeoutAsync<ReleaseInfo?>(
+            "Latest stable release fetch",
+            async ct =>
+            {
+                using var response = await MarketplaceHttpClient.SendAsync(request, ct);
+                if (!response.IsSuccessStatusCode)
+                    return null;
 
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-        return ParseReleaseInfo(doc.RootElement);
+                var json = await response.Content.ReadAsStringAsync(ct);
+                using var doc = JsonDocument.Parse(json);
+                return ParseReleaseInfo(doc.RootElement);
+            });
     }
 
     private async Task<ReleaseInfo?> TryFetchLatestListedReleaseAsync()
@@ -1779,22 +1970,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         using var request = new HttpRequestMessage(HttpMethod.Get, ReleasesApiUrl);
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
 
-        using var response = await MarketplaceHttpClient.SendAsync(request);
-        response.EnsureSuccessStatusCode();
+        return await RunWithGitHubTimeoutAsync<ReleaseInfo?>(
+            "Releases list fetch",
+            async ct =>
+            {
+                using var response = await MarketplaceHttpClient.SendAsync(request, ct);
+                response.EnsureSuccessStatusCode();
 
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-        if (doc.RootElement.ValueKind != JsonValueKind.Array)
-            return null;
+                var json = await response.Content.ReadAsStringAsync(ct);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                    return null;
 
-        foreach (var release in doc.RootElement.EnumerateArray())
-        {
-            var parsedRelease = ParseReleaseInfo(release);
-            if (parsedRelease is not null)
-                return parsedRelease;
-        }
+                foreach (var release in doc.RootElement.EnumerateArray())
+                {
+                    var parsedRelease = ParseReleaseInfo(release);
+                    if (parsedRelease is not null)
+                        return parsedRelease;
+                }
 
-        return null;
+                return null;
+            });
     }
 
     private static ReleaseInfo? ParseReleaseInfo(JsonElement releaseElement)
@@ -1827,6 +2023,74 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
     }
 
+    // Extracts marketplace entries from a raw JSON string and appends them to
+    // the provided lists.  Shared by the disk-cache seed path and the live-200
+    // parse path so both go through identical validation logic.
+    private static void ParseAndApplyMarketplaceIndex(
+        string json,
+        List<MarketplaceExtension> marketplaceExtensions,
+        List<string> extensionLoadErrors)
+    {
+        var jsonOptions = new JsonDocumentOptions
+        {
+            AllowTrailingCommas = true,
+            CommentHandling = JsonCommentHandling.Skip
+        };
+        using var doc = JsonDocument.Parse(json, jsonOptions);
+        if (!doc.RootElement.TryGetProperty("extensions", out var extensionsElement) ||
+            extensionsElement.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var item in extensionsElement.EnumerateArray())
+        {
+            try
+            {
+                var entry = ParseMarketplaceExtension(item);
+                if (string.IsNullOrWhiteSpace(entry.Id) || marketplaceExtensions.Any(e => e.Id == entry.Id))
+                    continue;
+                marketplaceExtensions.Add(entry);
+            }
+            catch (Exception itemEx)
+            {
+                var entryId = item.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "?" : "?";
+                extensionLoadErrors.Add($"Skipped malformed marketplace entry '{entryId}': {itemEx.Message}");
+                KodoDiagnostics.WriteDebugFallback($"Skipped malformed marketplace entry '{entryId}'", itemEx);
+            }
+        }
+    }
+
+    private string? TryReadMarketplaceIndexCache()
+    {
+        try { return File.Exists(MarketplaceIndexCachePath) ? File.ReadAllText(MarketplaceIndexCachePath, System.Text.Encoding.UTF8) : null; }
+        catch (Exception ex) { KodoDiagnostics.WriteDebugFallback("Could not read marketplace index cache.", ex); return null; }
+    }
+
+    private void TryWriteMarketplaceIndexCache(string json)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(MarketplaceIndexCachePath)!);
+            File.WriteAllText(MarketplaceIndexCachePath, json, System.Text.Encoding.UTF8);
+        }
+        catch (Exception ex) { KodoDiagnostics.WriteDebugFallback("Could not write marketplace index cache.", ex); }
+    }
+
+    private string? TryReadMarketplaceIndexETag()
+    {
+        try { return File.Exists(MarketplaceIndexETagPath) ? File.ReadAllText(MarketplaceIndexETagPath).Trim() : null; }
+        catch { return null; }
+    }
+
+    private void TryWriteMarketplaceIndexETag(string etag)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(MarketplaceIndexETagPath)!);
+            File.WriteAllText(MarketplaceIndexETagPath, etag);
+        }
+        catch (Exception ex) { KodoDiagnostics.WriteDebugFallback("Could not write marketplace index ETag.", ex); }
+    }
+
     private static MarketplaceExtension ParseMarketplaceExtension(JsonElement item)
     {
         var id = item.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty;
@@ -1835,9 +2099,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var type = item.TryGetProperty("type", out var typeElement) ? typeElement.GetString() ?? string.Empty : string.Empty;
         var author = item.TryGetProperty("author", out var authorElement) ? authorElement.GetString() ?? string.Empty : string.Empty;
         var description = item.TryGetProperty("description", out var descriptionElement) ? descriptionElement.GetString() ?? string.Empty : string.Empty;
-        var rawDownloadUrl = item.TryGetProperty("downloadUrl", out var downloadUrlElement) ? downloadUrlElement.GetString() ?? string.Empty : string.Empty;
+        var rawDownloadUrl = NormalizeGitHubBlobViewerUrl(
+            item.TryGetProperty("downloadUrl", out var downloadUrlElement) ? downloadUrlElement.GetString() ?? string.Empty : string.Empty);
         var declaredFileName = item.TryGetProperty("fileName", out var fileNameElement) ? fileNameElement.GetString() ?? string.Empty : string.Empty;
-        var iconUrl = NormalizeIconUrl(item.TryGetProperty("iconUrl", out var iconUrlElement) ? iconUrlElement.GetString() ?? string.Empty : string.Empty);
+        var iconUrl = NormalizeGitHubUrl(
+            item.TryGetProperty("iconUrl", out var iconUrlElement) ? iconUrlElement.GetString() ?? string.Empty : string.Empty);
         var urlFileName = TryGetFileNameFromUrl(rawDownloadUrl);
         var bestKnownVersion = GetHighestKnownExtensionVersion(declaredVersion, declaredFileName, urlFileName);
         var canonicalFileName = GetCanonicalMarketplaceFileName(declaredFileName, urlFileName, bestKnownVersion);
@@ -2075,13 +2341,37 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var wasUpdate = marketplaceExtension.IsUpdateAvailable;
             var installedExtension = GetPreferredLoadedExtension(marketplaceExtension.Id);
             var outputPath = ResolveExtensionInstallPath(marketplaceExtension, installedExtension);
-            var bytes = await MarketplaceHttpClient.GetByteArrayAsync(marketplaceExtension.DownloadUrl);
+
+            // Download the package under GitHubOperationTimeout (7 s) so a stalled
+            // download cannot silently hold up the entire install pipeline and then
+            // trigger the RefreshExtensionsDataAsync watchdog as a false positive.
+            // Previously used GetByteArrayAsync with no CancellationToken, meaning
+            // the download could block for the full 30-second HttpClient.Timeout.
+            var bytes = await RunWithGitHubTimeoutAsync(
+                $"Extension download - {marketplaceExtension.Name}",
+                async ct =>
+                {
+                    using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, marketplaceExtension.DownloadUrl);
+                    // Contents API URLs require raw+json to receive file bytes directly
+                    // instead of a base64-wrapped JSON envelope.
+                    if (IsGitHubContentsApiUrl(marketplaceExtension.DownloadUrl))
+                        downloadRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+                    using var downloadResponse = await MarketplaceHttpClient.SendAsync(
+                        downloadRequest, HttpCompletionOption.ResponseContentRead, ct);
+                    downloadResponse.EnsureSuccessStatusCode();
+                    return await downloadResponse.Content.ReadAsByteArrayAsync(ct);
+                });
+
             ValidateDownloadedExtensionPackage(marketplaceExtension, bytes);
             DeleteInstalledExtensionSources(marketplaceExtension.Id, outputPath);
             await File.WriteAllBytesAsync(outputPath, bytes);
             NormalizeKoxManifestVersion(outputPath);
 
-            await RefreshExtensionsDataAsync(force: true);
+            // suppressWatchdog: true — the download above already carried its own
+            // RunWithGitHubTimeoutAsync guard. A second independent watchdog here
+            // would race the outer install handler and emit a misleading
+            // "Marketplace refresh" dialog for what was actually an install timeout.
+            await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
             ExtensionsStatusText = $"{marketplaceExtension.Name} {(wasUpdate ? "updated" : "installed")}.";
         }
         catch (Exception ex)
@@ -2156,7 +2446,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     File.Delete(resolvedPath);
             }
 
-            await RefreshExtensionsDataAsync(force: true);
+            // suppressWatchdog: true — uninstall is a local disk operation with its
+            // own error handling above; the watchdog is not meaningful here.
+            await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
             ExtensionsStatusText = $"{extension.Name} uninstalled.";
         }
         catch (Exception ex)
@@ -2328,40 +2620,106 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Converts a GitHub "blob" viewer URL to its raw.githubusercontent.com equivalent
-    /// so the image bytes can be fetched directly instead of receiving an HTML page.
-    /// e.g. https://github.com/owner/repo/blob/main/icon.png
-    ///   -> https://raw.githubusercontent.com/owner/repo/main/icon.png
-    /// Non-GitHub and already-raw URLs are returned unchanged.
+    /// Converts a GitHub blob viewer URL
+    /// (https://github.com/{owner}/{repo}/blob/{branch}/{path}) to the
+    /// Contents API (https://api.github.com/repos/{owner}/{repo}/contents/{path})
+    /// so it can be fetched as raw bytes.  Raw CDN URLs
+    /// (raw.githubusercontent.com), Contents API URLs, and all other URLs are
+    /// returned unchanged — this rewrite is only needed for blob viewer links,
+    /// which return an HTML page rather than file bytes when fetched directly.
     /// </summary>
-    private static string NormalizeIconUrl(string iconUrl)
+    private static string NormalizeGitHubBlobViewerUrl(string url)
     {
-        if (string.IsNullOrWhiteSpace(iconUrl))
-            return iconUrl;
+        if (string.IsNullOrWhiteSpace(url))
+            return url;
 
-        if (!Uri.TryCreate(iconUrl, UriKind.Absolute, out var uri))
-            return iconUrl;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return url;
 
-        if (uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
-            return iconUrl;
+        // Only rewrite github.com /blob/ viewer URLs — everything else is already fetchable.
+        if (!uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+            return url;
 
+        var segments = uri.AbsolutePath.TrimStart('/').Split('/');
+        if (segments.Length >= 5 && segments[2].Equals("blob", StringComparison.OrdinalIgnoreCase))
+        {
+            var owner = segments[0];
+            var repo  = segments[1];
+            var path  = string.Join("/", segments, 4, segments.Length - 4);
+            return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
+        }
+
+        return url; // non-blob github.com URL (e.g. releases page) — leave alone
+    }
+
+    /// <summary>
+    /// Normalises any GitHub file URL to the Contents API so it can be fetched
+    /// as raw bytes using the <c>application/vnd.github.raw+json</c> Accept header.
+    ///
+    /// All three GitHub URL forms are accepted and rewritten:
+    ///   https://github.com/{owner}/{repo}/blob/{branch}/{path}      (viewer)
+    ///   https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}  (raw CDN)
+    ///   https://api.github.com/repos/{owner}/{repo}/contents/{path} (already correct)
+    ///   -> https://api.github.com/repos/{owner}/{repo}/contents/{path}
+    ///
+    /// This means contributors can use any of the three forms in the extension
+    /// index and the app will normalise them transparently at parse time.
+    /// Third-party URLs (e.g. Wikipedia, Wikimedia) are returned unchanged.
+    /// </summary>
+    private static string NormalizeGitHubUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return url;
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return url;
+
+        // github.com/blob viewer URL
+        // /{owner}/{repo}/blob/{branch}/{...path} -> Contents API
         if (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
         {
-            // Expect: /{owner}/{repo}/blob/{branch}/{...path}
             var segments = uri.AbsolutePath.TrimStart('/').Split('/');
             if (segments.Length >= 5 &&
                 segments[2].Equals("blob", StringComparison.OrdinalIgnoreCase))
             {
-                var owner  = segments[0];
-                var repo   = segments[1];
-                var branch = segments[3];
-                var path   = string.Join("/", segments, 4, segments.Length - 4);
-                return $"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}";
+                var owner = segments[0];
+                var repo  = segments[1];
+                var path  = string.Join("/", segments, 4, segments.Length - 4);
+                return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
             }
+            return url; // non-blob github.com URL (e.g. releases page) - leave alone
         }
 
-        return iconUrl;
+        // raw.githubusercontent.com CDN URL
+        // /{owner}/{repo}/{branch}/{...path} -> Contents API
+        if (uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var segments = uri.AbsolutePath.TrimStart('/').Split('/');
+            if (segments.Length >= 4)
+            {
+                var owner = segments[0];
+                var repo  = segments[1];
+                // segments[2] is the branch - omitted from the Contents API path
+                var path  = string.Join("/", segments, 3, segments.Length - 3);
+                return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
+            }
+            return url;
+        }
+
+        // Already a Contents API URL or a third-party URL - leave unchanged.
+        return url;
     }
+
+    /// <summary>
+    /// Returns true when <paramref name="url"/> is a GitHub Contents API endpoint
+    /// (api.github.com/repos/.../contents/...).  Used to decide whether to add
+    /// the <c>application/vnd.github.raw+json</c> Accept header to a request so
+    /// GitHub returns file bytes directly instead of a base64-wrapped JSON object.
+    /// </summary>
+    private static bool IsGitHubContentsApiUrl(string url) =>
+        !string.IsNullOrWhiteSpace(url) &&
+        url.StartsWith("https://api.github.com/repos/", StringComparison.OrdinalIgnoreCase) &&
+        url.Contains("/contents/", StringComparison.OrdinalIgnoreCase);
 
     private static string ReplaceVersionInValue(string value, string oldVersion, string newVersion)
     {
@@ -2562,6 +2920,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             using var iconStream = File.OpenRead(iconPath);
             baseExt.IconBytes = ReadIconBytesFromStream(iconStream);
         }
+        else
+        {
+            var svgIconPath = Path.Combine(folderPath, "icon.svg");
+            if (File.Exists(svgIconPath))
+            {
+                using var iconStream = File.OpenRead(svgIconPath);
+                baseExt.IconBytes = ReadIconBytesFromStream(iconStream);
+            }
+        }
 
         var themePath = Path.Combine(folderPath, "theme.json");
         if (!File.Exists(themePath))
@@ -2685,7 +3052,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ParseLanguage(lang2Doc.RootElement, baseExt);
         }
 
-        var iconEntry = archive.GetEntry("icon.png");
+        var iconEntry = archive.GetEntry("icon.png") ?? archive.GetEntry("icon.svg");
         if (iconEntry is not null)
         {
             using var iconStream = iconEntry.Open();
@@ -3599,6 +3966,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(RefreshExtensionsButtonText));
             OnPropertyChanged(nameof(CanUpdateAllExtensions));
             OnPropertyChanged(nameof(IsMarketplaceUnavailableVisible));
+            OnPropertyChanged(nameof(IsMarketplacePartialErrorVisible));
             OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
         }
     }
@@ -4041,9 +4409,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string RefreshExtensionsButtonText => IsRefreshingExtensions ? "Refreshing..." : "Refresh";
 
-    // True when the marketplace tab is empty AND a refresh is in progress (likely a connectivity issue).
-    public bool IsMarketplaceUnavailableVisible => MarketplaceExtensions.Count == 0 && IsRefreshingExtensions;
-    public bool IsMarketplaceEmptyVisible => MarketplaceExtensions.Count == 0 && !IsRefreshingExtensions;
+    // True when the marketplace has NO entries and there was a connectivity error.
+    public bool IsMarketplaceUnavailableVisible => MarketplaceExtensions.Count == 0 && IsMarketplaceConnectivityWarningVisible;
+    // True when the marketplace has entries but some failed to load (partial error).
+    public bool IsMarketplacePartialErrorVisible => MarketplaceExtensions.Count > 0 && IsMarketplaceConnectivityWarningVisible;
+    public bool IsMarketplaceEmptyVisible => MarketplaceExtensions.Count == 0 && !IsRefreshingExtensions && !IsMarketplaceConnectivityWarningVisible;
 
     public bool IsMarketplaceConnectivityWarningVisible
     {
@@ -4053,6 +4423,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isMarketplaceConnectivityWarningVisible == value) return;
             _isMarketplaceConnectivityWarningVisible = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsMarketplaceUnavailableVisible));
+            OnPropertyChanged(nameof(IsMarketplacePartialErrorVisible));
+            OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
         }
     }
 
@@ -6122,7 +6495,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Settings] Failed to load settings from '{SettingsFilePath}': {ex.Message}");
+            KodoDiagnostics.WriteDiagnosticLog("MainWindow.LoadSettings", ex, false, "Warning", $"Failed to load settings from '{SettingsFilePath}'");
             return new AppSettings();
         }
     }
@@ -6209,7 +6582,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 File.WriteAllText(tempPath, JsonSerializer.Serialize(snapshot));
                 File.Move(tempPath, SettingsFilePath, overwrite: true);
             }
-            catch (Exception ex) { Console.WriteLine($"[Settings] Failed to save settings to '{SettingsFilePath}': {ex.Message}"); }
+            catch (Exception ex) { KodoDiagnostics.WriteDiagnosticLog("MainWindow.PersistSettingsSnapshot", ex, false, "Warning", $"Failed to save settings to '{SettingsFilePath}'"); }
         });
     }
 
@@ -9322,7 +9695,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (pendingUpdateIds.Count == 0)
         {
-            ExtensionsStatusText = "All marketplace extensions are already up to date.";
+            ExtensionsStatusText = "All extensions are up to date.";
             return;
         }
 
@@ -9355,7 +9728,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             ExtensionsStatusText = failedUpdates == 0
                 ? $"Updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}."
-                : $"Updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}. {failedUpdates} still need attention.";
+                : $"Updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}. {failedUpdates} couldn't be updated.";
         }
         finally
         {
@@ -9371,7 +9744,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var marketplaceExtension = GetMarketplaceExtensionForInstalled(extension);
         if (marketplaceExtension is null)
         {
-            ExtensionsStatusText = $"No marketplace update source found for {extension.Name}.";
+            ExtensionsStatusText = $"Couldn't find an update source for {extension.Name}.";
             return;
         }
 
@@ -10154,18 +10527,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!hasInternetConnection)
         {
             message = hasWirelessConnection
-                ? "Kodo cannot reach the internet right now. Marketplace installs and updates may fail until your connection comes back."
-                : "No Wi-Fi or internet connection detected. Marketplace installs and downloads may fail until you are back online.";
+                ? "No internet connection. Marketplace installs and updates won't work until you're back online."
+                : "No Wi-Fi or internet detected. Marketplace installs and updates won't work until you're back online.";
         }
-        else if (exception is not null && IsConnectivityFailure(exception))
+        else if (exception is not null)
         {
+            // Show a message for any exception when internet is available — not just
+            // known connectivity failures. This covers rate-limit responses, JSON parse
+            // errors, unexpected HTTP status codes, and other non-network failures that
+            // would otherwise be silent.
             message = hasWirelessConnection
-                ? "Kodo could not reach the marketplace. The connection may be unstable or the server temporarily unavailable - try again shortly."
-                : "No Wi-Fi connection detected. If you are expecting wireless access, reconnect first. Marketplace downloads can fail while the app is offline or the network is unstable.";
+                ? "Couldn't reach the marketplace. Your connection may be unstable — try again in a moment."
+                : "No Wi-Fi detected. If you're expecting a connection, reconnect first. Marketplace downloads may fail while offline.";
         }
 
         if (!string.IsNullOrWhiteSpace(operation) && !string.IsNullOrWhiteSpace(message))
-            message = $"{message} Latest issue: {operation}.";
+            message = $"{message} (Last issue: {operation})";
 
         MarketplaceConnectivityMessage = message;
         IsMarketplaceConnectivityWarningVisible = !string.IsNullOrWhiteSpace(message);
@@ -10736,6 +11113,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             KodoDiagnostics.WriteDiagnosticLog(source, dialogEx, false, "Warning Dialog Failure", context);
             KodoDiagnostics.WriteDebugFallback($"ShowWarningDialogAsync failed to display for context '{context}'.", dialogEx);
         }
+    }
+
+    // ── GitHub timeout helper ─────────────────────────────────────────────────
+    //
+    // Runs <paramref name="factory"/> with a CancellationToken that fires after
+    // GitHubOperationTimeout (7 s).  On expiry the task is cancelled and a
+    // TimeoutException (with the operation name embedded) is thrown so the
+    // caller's existing catch block can route it straight to ShowWarningDialogAsync.
+    //
+    // Usage:
+    //   var result = await RunWithGitHubTimeoutAsync("Marketplace index fetch",
+    //       ct => MarketplaceHttpClient.SendAsync(request, ct));
+    private static async Task<T> RunWithGitHubTimeoutAsync<T>(
+        string operationName,
+        Func<CancellationToken, Task<T>> factory)
+    {
+        using var cts = new CancellationTokenSource(GitHubOperationTimeout);
+        try
+        {
+            return await factory(cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Re-raise as TimeoutException so callers can distinguish a
+            // deliberate 7-second timeout from a user-initiated cancellation.
+            throw new TimeoutException(
+                $"GitHub operation '{operationName}' did not complete within " +
+                $"{GitHubOperationTimeout.TotalSeconds:0} seconds and was cancelled.");
+        }
+    }
+
+    // Overload for operations that return no value.
+    private static async Task RunWithGitHubTimeoutAsync(
+        string operationName,
+        Func<CancellationToken, Task> factory)
+    {
+        await RunWithGitHubTimeoutAsync<bool>(
+            operationName,
+            async ct => { await factory(ct).ConfigureAwait(false); return true; })
+            .ConfigureAwait(false);
     }
 
     private bool ShouldSuppressWarningDialog(string context, Exception exception)
