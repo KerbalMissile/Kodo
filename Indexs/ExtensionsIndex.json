@@ -171,7 +171,7 @@
       "name": "Markdown Language Support",
       "type": "language",
       "author": "Kodo Team",
-      "description": "Syntax highlighting for Markdown and reStructuredText files, including improved fenced-code, inline code, headings, links, and table formatting.",
+      "description": "Syntax highlighting for Markdown and reStructuredText files.",
       "fileName": "Markdown-Kodo-Extension-v1.3.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/Markdown-Kodo-Extension-v1.3.0.kox",
       "iconUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/markdown-icon.png"
