@@ -9,7 +9,8 @@ namespace Kodo;
 
 internal static class KodoDiagnostics
 {
-    private static readonly string CurrentAppVersion = ResolveAppVersion();
+    public static string AppVersion { get; } = ResolveAppVersion();
+    private static readonly string CurrentAppVersion = AppVersion;
     private static string ResolveAppVersion()
     {
         var raw = Assembly.GetExecutingAssembly()
