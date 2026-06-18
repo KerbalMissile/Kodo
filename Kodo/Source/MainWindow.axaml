@@ -1612,7 +1612,8 @@
                                                                 Tag="{Binding}"
                                                                 Click="RecentFileButton_OnClick"
                                                                 Padding="10,8"
-                                                                Margin="0,0,0,3">
+                                                                Margin="0,0,0,3"
+                                                                HorizontalContentAlignment="Stretch">
                                                             <ToolTip.Tip>
                                                                 <StackPanel Spacing="2">
                                                                     <TextBlock Text="{Binding DisplayName}"
@@ -1626,7 +1627,10 @@
                                                                     </TextBlock>
                                                                 </StackPanel>
                                                             </ToolTip.Tip>
-                                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                            <!-- Auto = icon, * = filename (flexes), the two trailing
+                                                                 fixed-width columns keep file-type and timestamp
+                                                                 lined up in neat columns across every row. -->
+                                                            <Grid ColumnDefinitions="Auto,*,110,64" ColumnSpacing="14">
 
                                                                 <!-- Icon: folder or file -->
                                                                 <Viewbox Grid.Column="0"
@@ -1646,26 +1650,33 @@
                                                                     </Canvas>
                                                                 </Viewbox>
 
-                                                                <!-- Name + type stacked -->
-                                                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
-                                                                    <TextBlock FontSize="13"
-                                                                               FontWeight="SemiBold"
-                                                                               Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                               Text="{Binding DisplayName}"
-                                                                               TextTrimming="CharacterEllipsis" />
-                                                                    <TextBlock FontSize="11"
-                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                               Opacity="0.6"
-                                                                               Text="{Binding FileTypeName}" />
-                                                                </StackPanel>
+                                                                <!-- Filename -->
+                                                                <TextBlock Grid.Column="1"
+                                                                           FontSize="13"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                           Text="{Binding DisplayName}"
+                                                                           VerticalAlignment="Center"
+                                                                           TextTrimming="CharacterEllipsis" />
 
-                                                                <!-- Timestamp, right-aligned -->
+                                                                <!-- File type column -->
                                                                 <TextBlock Grid.Column="2"
+                                                                           FontSize="11"
+                                                                           Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                           Opacity="0.6"
+                                                                           Text="{Binding FileTypeName}"
+                                                                           VerticalAlignment="Center"
+                                                                           TextTrimming="CharacterEllipsis" />
+
+                                                                <!-- Last-opened column, right-aligned -->
+                                                                <TextBlock Grid.Column="3"
                                                                            FontSize="11"
                                                                            Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                            Opacity="0.55"
                                                                            Text="{Binding LastOpenedText}"
-                                                                           VerticalAlignment="Center" />
+                                                                           VerticalAlignment="Center"
+                                                                           HorizontalAlignment="Right"
+                                                                           TextAlignment="Right" />
                                                             </Grid>
                                                         </Button>
                                                     </DataTemplate>
@@ -3742,6 +3753,34 @@
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding AutoSaveStatusText}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Extension Updates -->
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="24">
+                            <StackPanel Spacing="14">
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                    <TextBlock FontSize="18"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="Extension Updates" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <CheckBox IsChecked="{Binding IsAutoUpdateExtensionsEnabled, Mode=TwoWay}"
+                                              VerticalAlignment="Center" />
+                                    <TextBlock VerticalAlignment="Center"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Automatically update extensions" />
+                                </StackPanel>
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding AutoUpdateExtensionsStatusText}" />
                             </StackPanel>
                         </Border>
 

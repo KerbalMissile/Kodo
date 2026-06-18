@@ -622,6 +622,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _hasUntitledDocument;
     private bool _isRefreshingExtensions;
     private bool _isUpdatingAllExtensions;
+    // Guards the silent background sweep (AutoUpdateExtensionsIfEnabledAsync)
+    // so it never overlaps with itself or with the manual "Update All" button.
+    private bool _isAutoUpdatingExtensions;
+    private bool _isAutoUpdateExtensionsEnabled;
     private bool _isRefreshingLatestRelease;
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
@@ -681,6 +685,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private FileSystemWatcher? _extensionsFolderWatcher;
     private FileSystemWatcher? _projectExtensionsFolderWatcher;
     private readonly DispatcherTimer _extensionsRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    // Periodic background check for extension updates while Kodo stays open.
+    // Only runs (see UpdateExtensionAutoUpdateLifecycle) when the user has
+    // opted into "Automatically update extensions" in Settings.
+    private readonly DispatcherTimer _extensionAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
     private readonly IndentGuideBackgroundRenderer _indentGuideRenderer = new();
     private readonly List<string> _startupOpenTabPaths = [];
     private readonly Dictionary<string, IBrush> _brushCache = new(StringComparer.OrdinalIgnoreCase);
@@ -754,6 +762,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<LoadedExtension, CompiledSyntaxProfile> _compiledSyntaxProfileCache =
         new(ReferenceEqualityComparer.Instance);
+    // Caches the result of the content-sniff (first-line language detection) per absolute
+    // file path. Avoids re-opening and reading the file on every tab switch for files that
+    // have no matching extension (e.g. Makefile, Dockerfile, .csproj opened from a folder).
+    // Entries are never stale within a session because the language mapping is fixed once
+    // the file is first opened; the cache is small (one string key per opened file).
+    private readonly Dictionary<string, LoadedExtension?> _contentSniffCache =
+        new(StringComparer.OrdinalIgnoreCase);
     private string _findText = string.Empty;
     private int _tutorialStepIndex;
 
@@ -1054,6 +1069,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isWordWrapEnabled = settings.WordWrapEnabled;
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
+        _isAutoUpdateExtensionsEnabled = settings.AutoUpdateExtensionsEnabled;
         _hasCompletedTutorial = settings.HasCompletedTutorial;
         _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom" or "theme"
             ? settings.AccentColorMode : "kodo";
@@ -1086,6 +1102,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _wordCountRefreshTimer.Tick += WordCountRefreshTimer_OnTick;
         _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
+        _extensionAutoUpdateTimer.Tick += ExtensionAutoUpdateTimer_OnTick;
 
         // ── Pre-DataContext theme bootstrap ────────────────────────────────────
         // Extensions must be loaded before ApplyTheme so custom themes are available.
@@ -1113,6 +1130,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // (marketplace data, update badges) without touching the brush values again
         // unless the user has changed settings while offline.
         UpdateDiscordRichPresenceLifecycle();
+        UpdateExtensionAutoUpdateLifecycle();
         ApplyEditorSettings();
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += NetworkChange_OnNetworkAddressChanged;
@@ -1416,6 +1434,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _highlightingCache.Clear();
         _compiledSyntaxProfileCache.Clear();
+        _contentSniffCache.Clear();
         SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
         SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
 
@@ -2139,6 +2158,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(AvailableExtensionUpdatesCount));
         OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
         OnPropertyChanged(nameof(ExtensionUpdatesBannerText));
+        OnPropertyChanged(nameof(AutoUpdateExtensionsStatusText));
         NotifyExtensionActionStateChanged();
         NotifyExtensionFiltersChanged();
     }
@@ -3249,13 +3269,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (extension is null)
         {
             // No extension matched - try to detect the language from file content.
-            // We read only the first non-empty line so this stays cheap even for large files.
-            extension = TryDetectLanguageFromContent(filePath);
-            if (extension is null)
+            // Result is cached per path so we only read the file once per session.
+            if (!_contentSniffCache.TryGetValue(filePath, out var sniffed))
+            {
+                sniffed = TryDetectLanguageFromContent(filePath);
+                _contentSniffCache[filePath] = sniffed;
+            }
+            if (sniffed is null)
                 return null;
 
             // Content-sniffed match: use the base extension as-is (no profile narrowing).
-            return extension;
+            return sniffed;
         }
 
         var matchingProfiles = extension.SyntaxProfiles
@@ -4673,6 +4697,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Settings toggle: when on, Kodo silently installs marketplace updates for
+    // installed extensions on launch and every few hours afterwards, instead of
+    // requiring a manual click on "Update" / "Update All" in the Marketplace.
+    public bool IsAutoUpdateExtensionsEnabled
+    {
+        get => _isAutoUpdateExtensionsEnabled;
+        set
+        {
+            if (_isAutoUpdateExtensionsEnabled == value) return;
+            _isAutoUpdateExtensionsEnabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoUpdateExtensionsStatusText));
+            SaveSettings();
+            UpdateExtensionAutoUpdateLifecycle();
+            if (value)
+                _ = AutoUpdateExtensionsIfEnabledAsync();
+        }
+    }
+
     public IEnumerable<LoadedExtension> FilteredInstalledExtensions
     {
         get
@@ -5906,6 +5949,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? "Changes are saved automatically a couple seconds after you stop typing."
                 : "Autosave will start working after the file has been saved once.";
 
+    public string AutoUpdateExtensionsStatusText =>
+        !IsAutoUpdateExtensionsEnabled
+            ? "Extensions only update when you click Update in the Marketplace."
+            : AvailableExtensionUpdatesCount > 0
+                ? $"Checking periodically and installing updates automatically. {AvailableExtensionUpdatesCount} update{(AvailableExtensionUpdatesCount == 1 ? string.Empty : "s")} pending."
+                : "Checking periodically and installing new extension updates automatically.";
+
     public string StatusBarFilePathVisibilityText => IsStatusBarFilePathVisible
         ? "The status bar shows the full path for the current file or folder."
         : "The status bar keeps a shorter label instead of the full file or folder path.";
@@ -6539,6 +6589,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             EditorFontSize                         = EditorFontSize,
             ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
             RestoreOpenTabsOnLaunchEnabled          = IsRestoreOpenTabsOnLaunchEnabled,
+            AutoUpdateExtensionsEnabled             = IsAutoUpdateExtensionsEnabled,
             PreferredTerminalShellId                = SelectedTerminalShell?.Id,
             TerminalVisible                         = IsTerminalVisible,
             TerminalPanelHeight                     = TerminalPanelHeight,
@@ -7167,8 +7218,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         ActiveEditorTab.Content = EditorTextBox.Document.Text;
         ActiveEditorTab.IsDirty = _isDirty;
+        var scrollOffset = EditorTextBox.TextArea.TextView.ScrollOffset;
         ActiveEditorTab.TopLineNumber = EditorTextBox.TextArea.TextView.GetDocumentLineByVisualTop(
-            EditorTextBox.TextArea.TextView.ScrollOffset.Y)?.LineNumber ?? 1;
+            scrollOffset.Y)?.LineNumber ?? 1;
+        // Also save the exact pixel offset so restoration is sub-line-accurate.
+        ActiveEditorTab.ScrollOffsetY = scrollOffset.Y;
         if (!ActiveEditorTab.IsUntitled && !string.IsNullOrWhiteSpace(_currentFilePath))
             ActiveEditorTab.Path = _currentFilePath;
     }
@@ -7202,10 +7256,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
         SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
-        // Restore scroll position synchronously. ScrollToLine works immediately after
-        // SetEditorContent because it operates on line numbers rather than pixel offsets,
-        // so no layout pass is needed and there is no visible delay on tab switch.
+        // Restore scroll position. ScrollToLine is applied synchronously first (it works
+        // immediately after SetEditorContent on line numbers without a layout pass) so the
+        // viewport is already close to correct before the frame is painted. Then we post a
+        // precise pixel-offset restore at Background priority — after AvaloniaEdit has
+        // completed its own layout — to land exactly where the user left off.
         EditorTextBox.ScrollToLine(tab.TopLineNumber);
+        var savedOffsetY = tab.ScrollOffsetY;
+        if (savedOffsetY > 0.0)
+        {
+            // Post at Background priority so AvaloniaEdit finishes its own layout pass
+            // before we reposition the viewport. ScrollViewer.Offset is a plain settable
+            // Vector property — no interface cast needed, compiles against all Avalonia versions.
+            Dispatcher.UIThread.Post(() =>
+            {
+                var sv = EditorTextBox.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+                if (sv is not null)
+                    sv.Offset = new Vector(sv.Offset.X, savedOffsetY);
+            }, DispatcherPriority.Background);
+        }
         UpdateCurrentDocumentPresentation();
 
         // Directly set the backing field before NavigateTo so the bail-early
@@ -7340,17 +7409,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 isCorrupted = false;
                 _currentFileEncoding = System.Text.Encoding.UTF8;
             }
-            else if (IsBinaryContent(path))
-            {
-                content = string.Empty;
-                isCorrupted = true;
-                _currentFileEncoding = System.Text.Encoding.UTF8;
-            }
             else
             {
-                _currentFileEncoding = DetectFileEncoding(path);
-                content = await File.ReadAllTextAsync(path, _currentFileEncoding);
-                isCorrupted = false;
+                // Offload both the binary-sniff read and the encoding-BOM read to a
+                // thread-pool thread so the UI stays responsive on large or slow files.
+                var (encoding, corrupted) = await Task.Run(() =>
+                {
+                    if (IsBinaryContent(path))
+                        return (System.Text.Encoding.UTF8, true);
+                    return (DetectFileEncoding(path), false);
+                });
+
+                isCorrupted = corrupted;
+                _currentFileEncoding = encoding;
+                content = isCorrupted ? string.Empty : await File.ReadAllTextAsync(path, encoding);
             }
         }
         catch (Exception ex)
@@ -7447,7 +7519,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SaveSettings(immediate: true);
         }
 
-        _ = RefreshExtensionsDataAsync();
+        _ = RefreshExtensionsAndAutoUpdateAsync();
         _ = RefreshLatestReleaseAsync();
         _ = FetchAnnouncementsAsync();
 
@@ -8330,10 +8402,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (IsFolderOpen)
-            CloseFolder();
-        else
-            IsFileExplorerVisible = !IsFileExplorerVisible;
+        // Only toggle panel visibility — never clear the folder state.
+        // Previously this called CloseFolder() when a project was open, which wiped
+        // _currentFolderPath and FileTreeItems; reopening with Ctrl+B then showed an
+        // empty sidebar because there was nothing left to repopulate from.
+        IsFileExplorerVisible = !IsFileExplorerVisible;
     }
 
     private void SettingsButton_OnClick(object? sender, RoutedEventArgs e) =>
@@ -9682,7 +9755,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void UpdateAllMarketplaceExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (IsUpdatingAllExtensions)
+        if (IsUpdatingAllExtensions || _isAutoUpdatingExtensions)
             return;
 
         var pendingUpdateIds = MarketplaceExtensions
@@ -9731,6 +9804,99 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally
         {
             IsUpdatingAllExtensions = false;
+        }
+    }
+
+    // ── Extension auto-updater ───────────────────────────────────────────────
+    // Starts/stops the periodic background check timer to match the current
+    // value of IsAutoUpdateExtensionsEnabled. Called once at startup and again
+    // every time the setting is toggled in Settings.
+    private void UpdateExtensionAutoUpdateLifecycle()
+    {
+        _extensionAutoUpdateTimer.Stop();
+        if (IsAutoUpdateExtensionsEnabled)
+            _extensionAutoUpdateTimer.Start();
+    }
+
+    // Fires every few hours while Kodo is open and the setting is enabled, so
+    // extensions published mid-session aren't only picked up on next launch.
+    private async void ExtensionAutoUpdateTimer_OnTick(object? sender, EventArgs e)
+    {
+        if (!IsAutoUpdateExtensionsEnabled)
+            return;
+
+        // suppressWatchdog: true - this is a silent background check; a stalled
+        // network shouldn't pop the "Marketplace refresh" timeout dialog while
+        // the user is busy working on something unrelated.
+        await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
+        await AutoUpdateExtensionsIfEnabledAsync();
+    }
+
+    // Used on startup: runs the normal extension/marketplace refresh first
+    // (which computes IsUpdateAvailable for every installed extension), then
+    // silently installs any pending updates if the user has opted in.
+    private async Task RefreshExtensionsAndAutoUpdateAsync()
+    {
+        await RefreshExtensionsDataAsync();
+        await AutoUpdateExtensionsIfEnabledAsync();
+    }
+
+    // Silently installs every pending marketplace update when the user has
+    // opted into "Automatically update extensions" in Settings. Mirrors the
+    // manual "Update All" flow above, but is meant to run unattended (startup,
+    // periodic timer, or right after the setting is switched on) so it guards
+    // against overlapping with itself or with a manual Update All in progress.
+    private async Task AutoUpdateExtensionsIfEnabledAsync()
+    {
+        if (!IsAutoUpdateExtensionsEnabled || _isAutoUpdatingExtensions || IsUpdatingAllExtensions)
+            return;
+
+        var pendingUpdateIds = MarketplaceExtensions
+            .Where(extension => extension.IsUpdateAvailable && extension.IsInstallEnabled)
+            .Select(extension => extension.Id)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (pendingUpdateIds.Count == 0)
+            return;
+
+        _isAutoUpdatingExtensions = true;
+        var successfulUpdates = 0;
+        var failedUpdates = 0;
+
+        try
+        {
+            for (var index = 0; index < pendingUpdateIds.Count; index++)
+            {
+                var extensionId = pendingUpdateIds[index];
+                var marketplaceExtension = MarketplaceExtensions.FirstOrDefault(entry =>
+                    entry.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+
+                if (marketplaceExtension is null || !marketplaceExtension.IsUpdateAvailable || marketplaceExtension.IsInstalling)
+                    continue;
+
+                ExtensionsStatusText = $"Auto-updating {index + 1} of {pendingUpdateIds.Count}: {marketplaceExtension.Name}...";
+                await InstallMarketplaceExtensionAsync(marketplaceExtension);
+
+                var refreshedExtension = MarketplaceExtensions.FirstOrDefault(entry =>
+                    entry.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+
+                if (refreshedExtension is not null && refreshedExtension.IsInstalled && !refreshedExtension.IsUpdateAvailable)
+                    successfulUpdates++;
+                else
+                    failedUpdates++;
+            }
+
+            if (successfulUpdates > 0 || failedUpdates > 0)
+            {
+                ExtensionsStatusText = failedUpdates == 0
+                    ? $"Automatically updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}."
+                    : $"Automatically updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}. {failedUpdates} couldn't be updated.";
+            }
+        }
+        finally
+        {
+            _isAutoUpdatingExtensions = false;
         }
     }
 
@@ -10467,6 +10633,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _autoSaveStatusTimer.Stop();
         _discordReconnectTimer.Stop();
         _extensionsRefreshDebounceTimer.Stop();
+        _extensionAutoUpdateTimer.Stop();
         _wordCountRefreshTimer.Stop();
         _settingsSaveDebounceTimer.Stop();
         _windowsAccentPollTimer.Stop();
@@ -11180,6 +11347,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public int EditorFontSize { get; set; } = 14;
         public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
         public bool RestoreOpenTabsOnLaunchEnabled { get; set; }
+        public bool AutoUpdateExtensionsEnabled { get; set; }
         public string? PreferredTerminalShellId { get; set; }
         public bool TerminalVisible { get; set; }
         public double TerminalPanelHeight { get; set; } = 250;
