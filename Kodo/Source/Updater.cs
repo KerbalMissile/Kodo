@@ -156,7 +156,7 @@ internal static class UpdateService
 
     // ── Settings ──────────────────────────────────────────────────────────────
 
-    // Reads the "Automatically check for and install Kodo updates" toggle
+    // Reads the "Automatically check for Kodo updates" toggle
     // directly from kodosettings.json. Mirrors AccentResolver's approach below:
     // a tiny, best-effort, standalone read so App.axaml.cs's startup check can
     // honour the setting without needing a MainWindow/ViewModel instance to
@@ -185,10 +185,39 @@ internal static class UpdateService
         }
     }
 
+    // Same best-effort standalone read as IsAutoUpdateEnabledInSettings, for the
+    // "Update Kodo in the background" sub-setting. Defaults to false
+    // (matching AppSettings.AutoUpdateAppInBackgroundEnabled's own default) so
+    // App.axaml.cs's launch-time check still shows the UpdateDialog prompt
+    // unless the user has explicitly opted into fully silent installs.
+    public static bool IsAutoUpdateInBackgroundEnabledInSettings()
+    {
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Kodo",
+                "kodosettings.json");
+
+            if (!File.Exists(path)) return false;
+
+            var json = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(json)) return false;
+
+            var settings = JsonSerializer.Deserialize<AutoUpdateSettings>(json);
+            return settings?.AutoUpdateAppInBackgroundEnabled ?? false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     // Minimal subset of MainWindow's AppSettings needed to read this one flag.
     private sealed class AutoUpdateSettings
     {
         public bool AutoUpdateAppEnabled { get; set; } = true;
+        public bool AutoUpdateAppInBackgroundEnabled { get; set; }
     }
 
     // ── Download ──────────────────────────────────────────────────────────────
@@ -267,19 +296,56 @@ internal static class UpdateService
         var startInfo = new ProcessStartInfo
         {
             FileName        = installerPath,
+            // NOTE: no /SKIPIFSILENT. KodoInstaller.iss's [Run] "Launch Kodo"
+            // entry is what actually relaunches the app post-install; that
+            // entry is itself conditioned on a silent run, so /SKIPIFSILENT
+            // was suppressing the one thing that reliably restarts Kodo.
+            // /RESTARTAPPLICATIONS alone isn't sufficient because it depends
+            // on Restart Manager having already recorded this process, which
+            // needs more lead time than we were giving it (see Thread.Sleep
+            // below) before Environment.Exit(0) tears it down.
             Arguments       = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
             UseShellExecute = true,
         };
 
         Process.Start(startInfo);
 
-        // Give the installer a brief moment to spin up its own process tree
-        // before we vanish - avoids a race where Windows momentarily sees no
-        // process holding the file handle and no process having started the
-        // installer either.
-        Thread.Sleep(500);
+        // Give the installer enough time to spin up AND for Restart Manager
+        // to register this process before we exit. 500ms was too tight - the
+        // installer's RM session would sometimes query process state after
+        // we'd already vanished, so it never saw Kodo as "needs restarting"
+        // and the post-update relaunch silently failed.
+        Thread.Sleep(1500);
 
         Environment.Exit(0);
+    }
+
+    // Downloads and installs an update with no UI at all - no dialog, no
+    // "Update Now" prompt, no progress bar. Used in place of UpdateDialog.ShowFor
+    // when the user has opted into "Update Kodo in the background"
+    // (MainWindow's IsAutoUpdateAppInBackgroundEnabled, or the equivalent flag
+    // read via IsAutoUpdateInBackgroundEnabledInSettings for the launch-time
+    // check). Mirrors UpdateDialog.BeginUpdateAsync's download -> launch
+    // sequence, minus anything that needs a window to report progress to.
+    public static async Task SilentlyInstallAsync(UpdateInfo update, CancellationToken ct = default)
+    {
+        try
+        {
+            var installerPath = await DownloadInstallerAsync(update, progress: null, ct).ConfigureAwait(false);
+            LaunchInstallerAndExit(installerPath);
+        }
+        catch (Exception ex)
+        {
+            // Best-effort, like every other step of the update pipeline - log
+            // and move on. The user simply isn't bumped to this version until
+            // the next check picks it up again.
+            KodoDiagnostics.WriteDiagnosticLog(
+                source: "UpdateService.SilentlyInstallAsync",
+                exception: ex,
+                isTerminating: false,
+                severity: "Warning",
+                operation: "AutoUpdate");
+        }
     }
 
     // ── GitHub API DTOs ──────────────────────────────────────────────────────
@@ -342,15 +408,21 @@ internal sealed class UpdateDialog : Window
     private readonly Color _accentForeground;
 
     private readonly UpdateInfo _update;
+    private readonly string? _preDownloadedInstallerPath;
     private readonly TextBlock _statusText;
     private readonly ProgressBar _progressBar;
     private readonly Button _primaryButton;
     private readonly Button _laterButton;
     private readonly StackPanel _content;
 
-    public UpdateDialog(UpdateInfo update)
+    // preDownloadedInstallerPath is set when KodoUpdater (the standalone
+    // background process) already fetched the installer and wrote the
+    // pending-update sentinel - in that case "Update Now" skips straight to
+    // launching it instead of re-downloading.
+    public UpdateDialog(UpdateInfo update, string? preDownloadedInstallerPath = null)
     {
         _update = update;
+        _preDownloadedInstallerPath = preDownloadedInstallerPath;
         (_accentColor, _accentForeground) = AccentResolver.GetCurrentAccent();
 
         Title  = "Kodo - Update Available";
@@ -395,7 +467,9 @@ internal sealed class UpdateDialog : Window
 
         _statusText = new TextBlock
         {
-            Text         = "A new version of Kodo has been published. Update now to get the latest fixes and features.",
+            Text         = preDownloadedInstallerPath is not null
+                ? "A new version of Kodo has already been downloaded and is ready to install."
+                : "A new version of Kodo has been published. Update now to get the latest fixes and features.",
             FontSize     = 13,
             Foreground   = new SolidColorBrush(TextMutedColor),
             TextWrapping = TextWrapping.Wrap,
@@ -472,11 +546,11 @@ internal sealed class UpdateDialog : Window
     // Shows the dialog non-modally if no owner can be safely used, or as a
     // modal dialog over the main window otherwise. Mirrors the crash dialog's
     // owner-safety check (a closing/invisible window throws on ShowDialog).
-    public static void ShowFor(UpdateInfo update)
+    public static void ShowFor(UpdateInfo update, string? installerPath = null)
     {
         Dispatcher.UIThread.Post(() =>
         {
-            var dialog = new UpdateDialog(update);
+            var dialog = new UpdateDialog(update, installerPath);
 
             Window? owner = null;
             if (Application.Current?.ApplicationLifetime
@@ -498,6 +572,18 @@ internal sealed class UpdateDialog : Window
     {
         _primaryButton.IsEnabled = false;
         _laterButton.IsEnabled   = false;
+
+        // Fast path: KodoUpdater already downloaded this installer (sentinel
+        // file case). Skip straight to the restart-and-install step.
+        if (_preDownloadedInstallerPath is not null && File.Exists(_preDownloadedInstallerPath))
+        {
+            _primaryButton.Content = "Restarting…";
+            _statusText.Text       = "Restarting Kodo to finish installing…";
+            await Task.Delay(400);
+            UpdateService.LaunchInstallerAndExit(_preDownloadedInstallerPath);
+            return;
+        }
+
         _primaryButton.Content   = "Downloading…";
         _progressBar.IsVisible   = true;
         _statusText.Text         = "Downloading the update…";
@@ -679,4 +765,61 @@ internal static class AccentResolver
         public string AccentColorMode { get; set; } = "kodo";
         public string CustomAccentHex { get; set; } = DefaultAccentHex;
     }
+}
+
+// ── Pending-update sentinel ──────────────────────────────────────────────────
+// Reads the sentinel file written by the standalone KodoUpdater.exe background
+// process (see KodoUpdater/Program.cs). KodoUpdater runs independently of
+// Kodo - including while Kodo is closed - polling GitHub every 6 hours. When
+// it finds and downloads an update it either installs silently (if the user
+// has "install in background" enabled and Kodo isn't running) or, more
+// commonly, leaves the installer on disk and writes this file so Kodo's own
+// launch-time check can show UpdateDialog pre-loaded with the installer path,
+// skipping the download step entirely.
+internal static class PendingUpdateService
+{
+    private static string FilePath => Path.Combine(Path.GetTempPath(), "Kodo-Update", "pending.json");
+
+    // Returns the pending update only if it's still newer than the running
+    // version and the installer file it points to still exists on disk -
+    // otherwise treats it the same as "no pending update" (and cleans up a
+    // stale/invalid sentinel so it isn't re-checked every launch).
+    public static (string Version, string InstallerPath)? TryGetPendingUpdate()
+    {
+        try
+        {
+            if (!File.Exists(FilePath)) return null;
+
+            var json = File.ReadAllText(FilePath);
+            var record = JsonSerializer.Deserialize<PendingUpdateRecord>(json);
+            if (record is null) { Clear(); return null; }
+
+            if (!File.Exists(record.InstallerPath))
+            {
+                Clear();
+                return null;
+            }
+
+            if (!UpdateService.IsNewerVersion(record.Version, KodoDiagnostics.AppVersion))
+            {
+                // Already on this version or newer (e.g. user updated
+                // manually) - the downloaded installer is now stale.
+                Clear();
+                return null;
+            }
+
+            return (record.Version, record.InstallerPath);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static void Clear()
+    {
+        try { File.Delete(FilePath); } catch { /* best-effort cleanup */ }
+    }
+
+    private sealed record PendingUpdateRecord(string Version, string InstallerPath, DateTime DownloadedAtUtc);
 }

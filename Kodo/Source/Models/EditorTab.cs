@@ -109,6 +109,11 @@ public class EditorTab : INotifyPropertyChanged
     // immediately via ScrollToLine without waiting for a layout pass.
     public int TopLineNumber { get; set; } = 1;
 
+    // Precise vertical scroll offset in device-independent pixels. Saved alongside
+    // TopLineNumber so restoration via IScrollable.SetScrollOffset() is pixel-exact
+    // instead of snapping to the nearest line boundary.
+    public double ScrollOffsetY { get; set; } = 0.0;
+
     public void Rename(string path, string displayName)
     {
         Path = path;

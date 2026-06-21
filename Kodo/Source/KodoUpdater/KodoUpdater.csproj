@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- WinExe, not Exe: this process is launched silently by Kodo and must
+         never flash a console window. It has no UI of its own - it only
+         writes the sentinel file that Kodo reads on next launch, or (when
+         "install in background" is enabled and Kodo isn't running) launches
+         the installer directly. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>KodoUpdater</AssemblyName>
+    <RootNamespace>KodoUpdater</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Single-file, self-contained publish keeps this a standalone background
+         process with no dependency on the main Kodo install folder layout. -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+</Project>

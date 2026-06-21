@@ -3941,7 +3941,20 @@
                                               VerticalAlignment="Center" />
                                     <TextBlock VerticalAlignment="Center"
                                                Foreground="{Binding PrimaryTextBrush}"
-                                               Text="Automatically check for and install Kodo updates" />
+                                               Text="Automatically check for Kodo updates" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
+                                            IsVisible="{Binding IsAutoUpdateAppEnabled}">
+                                    <CheckBox IsChecked="{Binding IsAutoUpdateAppInBackgroundEnabled, Mode=TwoWay}"
+                                              VerticalAlignment="Center" />
+                                    <StackPanel Spacing="2">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Update Kodo in the background" />
+                                        <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                   FontSize="11"
+                                                   Text="Downloads and installs in the background - Kodo restarts briefly to finish, with no prompt beforehand." />
+                                    </StackPanel>
                                 </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
@@ -3952,6 +3965,19 @@
                                     <TextBlock VerticalAlignment="Center"
                                                Foreground="{Binding PrimaryTextBrush}"
                                                Text="Automatically update extensions" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
+                                            IsVisible="{Binding IsAutoUpdateExtensionsEnabled}">
+                                    <CheckBox IsChecked="{Binding IsAutoUpdateExtensionsInBackgroundEnabled, Mode=TwoWay}"
+                                              VerticalAlignment="Center" />
+                                    <StackPanel Spacing="2">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Update without showing progress" />
+                                        <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                   FontSize="11"
+                                                   Text="Installs pending extension updates silently, without changing the status message below while it works." />
+                                    </StackPanel>
                                 </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
@@ -4223,6 +4249,21 @@
 
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            Text="{Binding CopyrightText}" />
+
+                                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                    <Button Classes="chrome"
+                                            Click="CheckForUpdatesButton_OnClick"
+                                            IsEnabled="{Binding !IsCheckingForUpdatesManually}"
+                                            VerticalAlignment="Center"
+                                            ToolTip.Tip="Check GitHub for a newer version of Kodo right now"
+                                            Content="{Binding CheckForUpdatesButtonText}" />
+                                    <TextBlock VerticalAlignment="Center"
+                                               FontSize="12"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               IsVisible="{Binding HasCheckForUpdatesStatus}"
+                                               Text="{Binding CheckForUpdatesStatusText}" />
+                                </StackPanel>
 
                                 <Border IsVisible="{Binding IsNewerVersionAvailable}"
                                         Background="{Binding AccentBrush}"

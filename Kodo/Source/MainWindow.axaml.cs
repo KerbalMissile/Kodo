@@ -641,11 +641,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // so it never overlaps with itself or with the manual "Update All" button.
     private bool _isAutoUpdatingExtensions;
     private bool _isAutoUpdateExtensionsEnabled;
+    // Sub-setting under IsAutoUpdateExtensionsEnabled: when on, the silent
+    // extension-update sweep doesn't touch ExtensionsStatusText while it
+    // works, so nothing visibly changes on the Extensions page either.
+    private bool _isAutoUpdateExtensionsInBackgroundEnabled;
     // Mirrors _isAutoUpdateExtensionsEnabled, but for whole-app updates
     // (downloading and installing newer Kodo releases from GitHub) rather
     // than marketplace extensions. Kept as a separate flag since a user may
     // want one without the other.
     private bool _isAutoUpdateAppEnabled = true;
+    // Sub-setting under _isAutoUpdateAppEnabled: when on, a found update is
+    // downloaded and installed straight away (UpdateService.SilentlyInstallAsync)
+    // instead of showing UpdateDialog's "Update Now" / "Later" prompt.
+    private bool _isAutoUpdateAppInBackgroundEnabled;
+    // Backs the manual "Check for Updates" button in Settings. Separate from
+    // the silent startup check (App.axaml.cs) and from the auto-update toggle
+    // above - clicking the button should always give feedback regardless of
+    // whether automatic checking is on.
+    private bool _isCheckingForUpdatesManually;
+    private string _checkForUpdatesStatusText = string.Empty;
     private bool _isRefreshingLatestRelease;
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
@@ -709,6 +723,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Only runs (see UpdateExtensionAutoUpdateLifecycle) when the user has
     // opted into "Automatically update extensions" in Settings.
     private readonly DispatcherTimer _extensionAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
+    // Periodic background check for new Kodo releases while the app stays
+    // open. Only runs (see UpdateAppAutoUpdateLifecycle) when the user has
+    // opted into "Automatically check for and install Kodo updates" in
+    // Settings. The launch-time check itself still lives in App.axaml.cs
+    // (CheckForUpdatesInBackground) - this timer covers everything after that.
+    private readonly DispatcherTimer _appAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
     private readonly IndentGuideBackgroundRenderer _indentGuideRenderer = new();
     private readonly List<string> _startupOpenTabPaths = [];
     private readonly Dictionary<string, IBrush> _brushCache = new(StringComparer.OrdinalIgnoreCase);
@@ -1094,7 +1114,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
         _isAutoUpdateExtensionsEnabled = settings.AutoUpdateExtensionsEnabled;
+        _isAutoUpdateExtensionsInBackgroundEnabled = settings.AutoUpdateExtensionsInBackgroundEnabled;
         _isAutoUpdateAppEnabled = settings.AutoUpdateAppEnabled;
+        _isAutoUpdateAppInBackgroundEnabled = settings.AutoUpdateAppInBackgroundEnabled;
         _hasCompletedTutorial = settings.HasCompletedTutorial;
         _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom" or "theme"
             ? settings.AccentColorMode : "kodo";
@@ -1129,6 +1151,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         _extensionAutoUpdateTimer.Tick += ExtensionAutoUpdateTimer_OnTick;
+        _appAutoUpdateTimer.Tick += AppAutoUpdateTimer_OnTick;
 
         // ── Pre-DataContext theme bootstrap ────────────────────────────────────
         // Extensions must be loaded before ApplyTheme so custom themes are available.
@@ -1157,6 +1180,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // unless the user has changed settings while offline.
         UpdateDiscordRichPresenceLifecycle();
         UpdateExtensionAutoUpdateLifecycle();
+        UpdateAppAutoUpdateLifecycle();
         ApplyEditorSettings();
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += NetworkChange_OnNetworkAddressChanged;
@@ -4752,6 +4776,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Sub-setting: only takes effect while IsAutoUpdateExtensionsEnabled is on
+    // (see the indented checkbox under it in Settings). Suppresses the
+    // "Auto-updating X of Y..." progress text in AutoUpdateExtensionsIfEnabledAsync
+    // so the silent sweep makes no visible change to the Extensions page at all.
+    public bool IsAutoUpdateExtensionsInBackgroundEnabled
+    {
+        get => _isAutoUpdateExtensionsInBackgroundEnabled;
+        set
+        {
+            if (_isAutoUpdateExtensionsInBackgroundEnabled == value) return;
+            _isAutoUpdateExtensionsInBackgroundEnabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoUpdateExtensionsStatusText));
+            SaveSettings();
+        }
+    }
+
     // Settings toggle: when on, Kodo checks GitHub Releases for a newer build
     // a few seconds after launch and offers to download/install it. Turning
     // this off skips the background check entirely - the app stays on the
@@ -4766,8 +4807,61 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(AutoUpdateAppStatusText));
             SaveSettings();
+            UpdateAppAutoUpdateLifecycle();
         }
     }
+
+    // Sub-setting: only takes effect while IsAutoUpdateAppEnabled is on (see
+    // the indented checkbox under it in Settings). When on, a found update is
+    // downloaded and installed immediately via UpdateService.SilentlyInstallAsync
+    // instead of showing UpdateDialog's "Update Now" / "Later" prompt - across
+    // the launch check, the periodic timer, and the manual "Check for Updates"
+    // button alike.
+    public bool IsAutoUpdateAppInBackgroundEnabled
+    {
+        get => _isAutoUpdateAppInBackgroundEnabled;
+        set
+        {
+            if (_isAutoUpdateAppInBackgroundEnabled == value) return;
+            _isAutoUpdateAppInBackgroundEnabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoUpdateAppStatusText));
+            SaveSettings();
+        }
+    }
+
+    // Drives the "Check for Updates" button in Settings while a manual check
+    // is in flight - disables the button and swaps its label so a slow/rate
+    // limited GitHub response doesn't look like a dead click.
+    public bool IsCheckingForUpdatesManually
+    {
+        get => _isCheckingForUpdatesManually;
+        private set
+        {
+            if (_isCheckingForUpdatesManually == value) return;
+            _isCheckingForUpdatesManually = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CheckForUpdatesButtonText));
+        }
+    }
+
+    public string CheckForUpdatesButtonText => IsCheckingForUpdatesManually ? "Checking…" : "Check for Updates";
+
+    // Result of the most recent manual check ("You're up to date", "vX.Y.Z is
+    // available", or a failure message). Empty until the button is clicked.
+    public string CheckForUpdatesStatusText
+    {
+        get => _checkForUpdatesStatusText;
+        private set
+        {
+            if (_checkForUpdatesStatusText == value) return;
+            _checkForUpdatesStatusText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasCheckForUpdatesStatus));
+        }
+    }
+
+    public bool HasCheckForUpdatesStatus => !string.IsNullOrWhiteSpace(CheckForUpdatesStatusText);
 
     public IEnumerable<LoadedExtension> FilteredInstalledExtensions
     {
@@ -6285,12 +6379,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? "Extensions only update when you click Update in the Marketplace."
             : AvailableExtensionUpdatesCount > 0
                 ? $"Checking periodically and installing updates automatically. {AvailableExtensionUpdatesCount} update{(AvailableExtensionUpdatesCount == 1 ? string.Empty : "s")} pending."
-                : "Checking periodically and installing new extension updates automatically.";
+                : IsAutoUpdateExtensionsInBackgroundEnabled
+                    ? "Checking periodically and installing new extension updates automatically, without showing progress."
+                    : "Checking periodically and installing new extension updates automatically.";
 
     public string AutoUpdateAppStatusText =>
-        IsAutoUpdateAppEnabled
-            ? "Checking for new Kodo versions on launch and prompting to install them automatically."
-            : "Kodo only updates when you download a new installer yourself.";
+        !IsAutoUpdateAppEnabled
+            ? "Kodo only updates when you download a new installer yourself."
+            : IsAutoUpdateAppInBackgroundEnabled
+                ? "Checking for new Kodo versions on launch and every few hours, and installing them automatically without asking."
+                : "Checking for new Kodo versions on launch and every few hours, and prompting to install them.";
 
     public string StatusBarFilePathVisibilityText => IsStatusBarFilePathVisible
         ? "The status bar shows the full path for the current file or folder."
@@ -6927,7 +7025,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
             RestoreOpenTabsOnLaunchEnabled          = IsRestoreOpenTabsOnLaunchEnabled,
             AutoUpdateExtensionsEnabled             = IsAutoUpdateExtensionsEnabled,
+            AutoUpdateExtensionsInBackgroundEnabled = IsAutoUpdateExtensionsInBackgroundEnabled,
             AutoUpdateAppEnabled                    = IsAutoUpdateAppEnabled,
+            AutoUpdateAppInBackgroundEnabled         = IsAutoUpdateAppInBackgroundEnabled,
             PreferredTerminalShellId                = SelectedTerminalShell?.Id,
             TerminalVisible                         = IsTerminalVisible,
             TerminalPanelHeight                     = TerminalPanelHeight,
@@ -8856,6 +8956,57 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = RefreshExtensionsDataAsync(force: forceRefresh);
     }
 
+    private async void CheckForUpdatesButton_OnClick(object? sender, RoutedEventArgs e) =>
+        await CheckForUpdatesManuallyAsync();
+
+    // Explicit, user-initiated update check from the Settings page. Unlike
+    // the silent startup check (App.axaml.cs's CheckForUpdatesInBackground),
+    // this always reports its result - found, not found, or failed - since
+    // the user just asked for one. On finding an update it hands off to the
+    // same UpdateDialog the auto-updater uses, so the download/install flow
+    // is identical either way.
+    private async Task CheckForUpdatesManuallyAsync()
+    {
+        if (IsCheckingForUpdatesManually) return;
+
+        IsCheckingForUpdatesManually = true;
+        CheckForUpdatesStatusText    = "Checking for updates…";
+
+        try
+        {
+            var update = await UpdateService.CheckForUpdateAsync();
+            if (update is not null)
+            {
+                if (IsAutoUpdateAppInBackgroundEnabled)
+                {
+                    CheckForUpdatesStatusText = $"Kodo {update.Version} found - installing in the background…";
+                    await UpdateService.SilentlyInstallAsync(update);
+                }
+                else
+                {
+                    CheckForUpdatesStatusText = $"Kodo {update.Version} is available.";
+                    UpdateDialog.ShowFor(update);
+                }
+            }
+            else
+            {
+                CheckForUpdatesStatusText = $"You're up to date - Kodo {KodoDiagnostics.AppVersion}.";
+            }
+        }
+        catch (Exception ex)
+        {
+            // CheckForUpdateAsync already swallows its own failures and
+            // returns null, but guard here too so a manual click can never
+            // crash the settings page.
+            CheckForUpdatesStatusText = "Couldn't check for updates. Check your connection and try again.";
+            KodoDiagnostics.WriteDebugFallback("Manual check-for-updates failed", ex);
+        }
+        finally
+        {
+            IsCheckingForUpdatesManually = false;
+        }
+    }
+
     private async void OpenReleasesPageButton_OnClick(object? sender, RoutedEventArgs e)
     {
         var button = sender as Button;
@@ -8871,12 +9022,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             // Mirror the silent startup auto-update flow (App.axaml.cs's
             // CheckForUpdatesInBackground): hit GitHub for the actual
-            // downloadable installer asset and hand off to UpdateDialog, which
-            // downloads it and launches the silent install - instead of just
-            // sending the user to the releases page in a browser.
+            // downloadable installer asset, then either hand off to
+            // UpdateDialog (which downloads it and launches the silent
+            // install) or, if "Update automatically without asking" is on,
+            // skip the dialog and install silently - instead of just sending
+            // the user to the releases page in a browser.
             var update = await UpdateService.CheckForUpdateAsync();
             if (update is not null)
-                UpdateDialog.ShowFor(update);
+            {
+                if (IsAutoUpdateAppInBackgroundEnabled)
+                    await UpdateService.SilentlyInstallAsync(update);
+                else
+                    UpdateDialog.ShowFor(update);
+            }
             else
                 // No installer asset could be found (rate-limited, draft
                 // release, no .exe attached, etc.) - fall back to the releases
@@ -10212,6 +10370,47 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _extensionAutoUpdateTimer.Start();
     }
 
+    // ── App auto-updater ──────────────────────────────────────────────────────
+    // Starts/stops the periodic background check timer to match the current
+    // value of IsAutoUpdateAppEnabled. Called once at startup and again every
+    // time the setting is toggled in Settings. Mirrors
+    // UpdateExtensionAutoUpdateLifecycle just above.
+    private void UpdateAppAutoUpdateLifecycle()
+    {
+        _appAutoUpdateTimer.Stop();
+        if (IsAutoUpdateAppEnabled)
+            _appAutoUpdateTimer.Start();
+    }
+
+    // Fires every six hours while Kodo stays open and the setting is enabled,
+    // so a release published mid-session isn't only picked up on next launch.
+    // Skips while a manual check from the Settings page is already in flight,
+    // so the two never race each other or step on the same status text.
+    private async void AppAutoUpdateTimer_OnTick(object? sender, EventArgs e)
+    {
+        if (!IsAutoUpdateAppEnabled || IsCheckingForUpdatesManually)
+            return;
+
+        try
+        {
+            var update = await UpdateService.CheckForUpdateAsync();
+            if (update is null)
+                return;
+
+            // "Update automatically without asking": skip the dialog and
+            // install silently instead.
+            if (IsAutoUpdateAppInBackgroundEnabled)
+                await UpdateService.SilentlyInstallAsync(update);
+            else
+                UpdateDialog.ShowFor(update);
+        }
+        catch (Exception ex)
+        {
+            // Silent background check - this must never surface as a crash.
+            KodoDiagnostics.WriteDebugFallback("Periodic app update check failed", ex);
+        }
+    }
+
     // Fires every few hours while Kodo is open and the setting is enabled, so
     // extensions published mid-session aren't only picked up on next launch.
     private async void ExtensionAutoUpdateTimer_OnTick(object? sender, EventArgs e)
@@ -10269,7 +10468,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (marketplaceExtension is null || !marketplaceExtension.IsUpdateAvailable || marketplaceExtension.IsInstalling)
                     continue;
 
-                ExtensionsStatusText = $"Auto-updating {index + 1} of {pendingUpdateIds.Count}: {marketplaceExtension.Name}...";
+                if (!IsAutoUpdateExtensionsInBackgroundEnabled)
+                    ExtensionsStatusText = $"Auto-updating {index + 1} of {pendingUpdateIds.Count}: {marketplaceExtension.Name}...";
                 await InstallMarketplaceExtensionAsync(marketplaceExtension);
 
                 var refreshedExtension = MarketplaceExtensions.FirstOrDefault(entry =>
@@ -10281,7 +10481,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     failedUpdates++;
             }
 
-            if (successfulUpdates > 0 || failedUpdates > 0)
+            if ((successfulUpdates > 0 || failedUpdates > 0) && !IsAutoUpdateExtensionsInBackgroundEnabled)
             {
                 ExtensionsStatusText = failedUpdates == 0
                     ? $"Automatically updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}."
@@ -11028,6 +11228,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _discordReconnectTimer.Stop();
         _extensionsRefreshDebounceTimer.Stop();
         _extensionAutoUpdateTimer.Stop();
+        _appAutoUpdateTimer.Stop();
         _wordCountRefreshTimer.Stop();
         _settingsSaveDebounceTimer.Stop();
         _windowsAccentPollTimer.Stop();
@@ -11766,10 +11967,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
         public bool RestoreOpenTabsOnLaunchEnabled { get; set; }
         public bool AutoUpdateExtensionsEnabled { get; set; }
+        // Sub-setting under AutoUpdateExtensionsEnabled - see
+        // IsAutoUpdateExtensionsInBackgroundEnabled for what it controls.
+        public bool AutoUpdateExtensionsInBackgroundEnabled { get; set; }
         // Defaults to true: most users want Kodo to keep itself current
         // without thinking about it, mirroring how the auto-update dialog
         // already behaved before this setting existed.
         public bool AutoUpdateAppEnabled { get; set; } = true;
+        // Sub-setting under AutoUpdateAppEnabled - see
+        // IsAutoUpdateAppInBackgroundEnabled for what it controls. Defaults to
+        // false so the "Update Now" / "Later" prompt still shows unless the
+        // user explicitly opts into fully silent installs.
+        public bool AutoUpdateAppInBackgroundEnabled { get; set; }
         public string? PreferredTerminalShellId { get; set; }
         public bool TerminalVisible { get; set; }
         public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;

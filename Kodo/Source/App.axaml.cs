@@ -67,19 +67,66 @@ public partial class App : Application
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             RegisterFileAssociations();
-            CheckForUpdatesInBackground();
         }
 #endif
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            // The pending-update sentinel (written by the standalone
+            // KodoUpdater.exe background process) and the live GitHub check
+            // are independent of file-association registration, so they no
+            // longer live behind the same #if !DEBUG guard - that guard was
+            // why the updater never triggered at all in Debug builds. The
+            // sentinel check in particular is cheap (local file read) and is
+            // exactly the path that needs exercising during dev/testing.
+            if (!CheckPendingUpdateSentinel())
+                CheckForUpdatesInBackground();
+        }
 
         base.OnFrameworkInitializationCompleted();
     }
 
     // ── Auto-update ───────────────────────────────────────────────────────────
 
+    // Checks for a pending-update sentinel left by the standalone KodoUpdater
+    // background process (see KodoUpdater/Program.cs). If one exists and is
+    // still newer than the running version, shows UpdateDialog immediately
+    // with the installer path already filled in - no download needed, no
+    // wait for the 6h in-app check to rediscover the same release.
+    //
+    // Runs before CheckForUpdatesInBackground's live GitHub check so a
+    // pending sentinel always wins over kicking off a redundant download.
+    private static bool CheckPendingUpdateSentinel()
+    {
+        try
+        {
+            var pending = PendingUpdateService.TryGetPendingUpdate();
+            if (pending is null) return false;
+
+            var (version, installerPath) = pending.Value;
+            var update = new UpdateInfo(
+                Version: version,
+                ReleaseNotesUrl: $"https://github.com/SS-YYC/Kodo/releases",
+                AssetDownloadUrl: string.Empty, // unused: installer is already on disk
+                AssetName: Path.GetFileName(installerPath),
+                AssetSizeBytes: 0);
+
+            UpdateDialog.ShowFor(update, installerPath);
+            return true;
+        }
+        catch
+        {
+            // Sentinel handling is best-effort; fall through to the normal
+            // live update check below if anything here goes wrong.
+            return false;
+        }
+    }
+
     // Fires a one-shot, fire-and-forget update check a few seconds after launch
     // so it never competes with startup for CPU/network. Entirely best-effort:
     // any failure here is swallowed by UpdateService itself and never surfaces
     // as a crash or dialog - the user simply won't see an update prompt.
+    // The recurring check after launch (every 6 hours, while Kodo stays open)
+    // is handled separately by MainWindow's _appAutoUpdateTimer.
     private static void CheckForUpdatesInBackground()
     {
         _ = Task.Run(async () =>
@@ -92,7 +139,14 @@ public partial class App : Application
                 await Task.Delay(TimeSpan.FromSeconds(4));
 
                 var update = await UpdateService.CheckForUpdateAsync();
-                if (update is not null)
+                if (update is null)
+                    return;
+
+                // "Update automatically without asking": skip the dialog
+                // entirely and install silently in the background.
+                if (UpdateService.IsAutoUpdateInBackgroundEnabledInSettings())
+                    await UpdateService.SilentlyInstallAsync(update);
+                else
                     UpdateDialog.ShowFor(update);
             }
             catch
