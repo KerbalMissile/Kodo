@@ -8856,8 +8856,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = RefreshExtensionsDataAsync(force: forceRefresh);
     }
 
-    private void OpenReleasesPageButton_OnClick(object? sender, RoutedEventArgs e) =>
-        OpenUrl(ReleasesPageUrl);
+    private async void OpenReleasesPageButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var button = sender as Button;
+        var originalContent = button?.Content;
+
+        if (button is not null)
+        {
+            button.IsEnabled = false;
+            button.Content   = "Checking…";
+        }
+
+        try
+        {
+            // Mirror the silent startup auto-update flow (App.axaml.cs's
+            // CheckForUpdatesInBackground): hit GitHub for the actual
+            // downloadable installer asset and hand off to UpdateDialog, which
+            // downloads it and launches the silent install - instead of just
+            // sending the user to the releases page in a browser.
+            var update = await UpdateService.CheckForUpdateAsync();
+            if (update is not null)
+                UpdateDialog.ShowFor(update);
+            else
+                // No installer asset could be found (rate-limited, draft
+                // release, no .exe attached, etc.) - fall back to the releases
+                // page so the user isn't left stuck.
+                OpenUrl(ReleasesPageUrl);
+        }
+        finally
+        {
+            if (button is not null)
+            {
+                button.Content   = originalContent;
+                button.IsEnabled = true;
+            }
+        }
+    }
 
     private void OpenDiscordButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(DiscordServerUrl);
