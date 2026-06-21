@@ -33,35 +33,63 @@
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
         </Style>
 
+        <Style Selector="Border#TerminalPanelSplitter:pointerover">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Opacity" Value="0.6" />
+        </Style>
+
         <Style Selector="Button.chrome:disabled">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
         </Style>
 
-        <!-- Group header variant: full-row hit-testable via Border-backed template -->
+        <!-- Group header variant: full-row hit-testable via Border-backed template.
+             Avalonia's Fluent theme paints :pointerover directly on
+             ContentPresenter#PART_ContentPresenter, bypassing any wrapper border.
+             We fully override that by: (1) setting PART_ContentPresenter background
+             to Transparent at all times, and (2) targeting our named PART_Border
+             (which carries Margin="4,0") for the hover fill, producing an inset pill. -->
         <Style Selector="Button.chrome.groupheader">
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Padding" Value="12,8" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="14,10" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
             <Setter Property="Template">
                 <ControlTemplate>
-                    <Border Name="PART_Border"
-                            Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="{TemplateBinding CornerRadius}"
-                            Padding="{TemplateBinding Padding}">
-                        <ContentPresenter Name="PART_ContentPresenter"
-                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-                                          Content="{TemplateBinding Content}"
-                                          ContentTemplate="{TemplateBinding ContentTemplate}" />
-                    </Border>
+                    <Panel Background="Transparent">
+                        <Border Name="PART_Border"
+                                Margin="4,0"
+                                Background="Transparent"
+                                CornerRadius="10"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter Name="PART_ContentPresenter"
+                                              Background="Transparent"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}" />
+                        </Border>
+                    </Panel>
                 </ControlTemplate>
             </Setter>
+        </Style>
+        <!-- Keep PART_ContentPresenter transparent in ALL states so Fluent's own
+             :pointerover rule (which targets PART_ContentPresenter directly) cannot
+             paint a full-width background over our inset pill. -->
+        <Style Selector="Button.chrome.groupheader /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.chrome.groupheader:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <!-- Only PART_Border (inset by its Margin) receives the hover colour. -->
+        <Style Selector="Button.chrome.groupheader /template/ Border#PART_Border">
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Background" Value="Transparent" />
         </Style>
         <Style Selector="Button.chrome.groupheader:pointerover /template/ Border#PART_Border">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
@@ -927,8 +955,8 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
-                    <RowDefinition Height="4" />
-                    <RowDefinition Height="Auto" MaxHeight="420" />
+                    <RowDefinition Height="6" />
+                    <RowDefinition Height="Auto" MinHeight="120" MaxHeight="420" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
@@ -1552,13 +1580,17 @@
                                     </Border>
 
                                     <!-- ─ Recently Edited card ─ -->
+                                    <!-- Height is fixed to fit exactly 6 recent-file rows:
+                                         48px card padding + 28px header + 12px spacing + 6×38px rows = 308px -->
                                     <Border Padding="24"
+                                            Height="308"
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
                                             CornerRadius="16">
-                                        <StackPanel Spacing="12">
-                                            <Grid ColumnDefinitions="*,Auto">
+                                        <Grid RowDefinitions="Auto,*">
+                                            <!-- Header row -->
+                                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                                                 <StackPanel Grid.Column="0"
                                                             Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -1579,11 +1611,14 @@
                                                         Content="Clear" />
                                             </Grid>
 
-                                            <!-- Empty state -->
-                                            <StackPanel IsVisible="{Binding !HasRecentFiles}"
+                                            <!-- Content row: empty state OR file list, both in row 1 -->
+
+                                            <!-- Empty state — vertically and horizontally centered in remaining height -->
+                                            <StackPanel Grid.Row="1"
+                                                        IsVisible="{Binding !HasRecentFiles}"
                                                         HorizontalAlignment="Center"
-                                                        Spacing="8"
-                                                        Margin="0,12,0,8">
+                                                        VerticalAlignment="Center"
+                                                        Spacing="8">
                                                 <Viewbox Width="32" Height="32" HorizontalAlignment="Center" Opacity="0.35">
                                                     <Canvas Width="24" Height="24">
                                                         <Path Fill="{Binding MutedTextBrush}"
@@ -1598,8 +1633,10 @@
                                             </StackPanel>
 
                                             <!-- Recent files list -->
-                                            <ItemsControl ItemsSource="{Binding RecentFiles}"
-                                                          IsVisible="{Binding HasRecentFiles}">
+                                            <ItemsControl Grid.Row="1"
+                                                          ItemsSource="{Binding RecentFiles}"
+                                                          IsVisible="{Binding HasRecentFiles}"
+                                                          VerticalAlignment="Top">
                                                 <ItemsControl.ItemContainerTheme>
                                                     <ControlTheme TargetType="ContentPresenter">
                                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -1682,161 +1719,278 @@
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
-                                        </StackPanel>
+                                        </Grid>
                                     </Border>
 
                                 </StackPanel>
 
-                                <!-- RIGHT COLUMN -->
-                                <Border Grid.Column="1"
-                                        Background="{Binding CardBrush}"
-                                        BorderBrush="{Binding SurfaceBorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="16"
-                                        VerticalAlignment="Stretch">
-                                    <Grid RowDefinitions="Auto,Auto,*">
+                                <!-- RIGHT COLUMN: two stacked cards totalling the left column height.
+                                     News (348px) + gap (16px) + What's New (329px) = 693px total,
+                                     matching the left column's Get Started + Marketplace + Recent (308px). -->
+                                <StackPanel Grid.Column="1"
+                                            Spacing="16"
+                                            VerticalAlignment="Top">
 
-                                        <!-- News panel header -->
-                                        <Border Grid.Row="0"
-                                                BorderBrush="{Binding SurfaceBorderBrush}"
-                                                BorderThickness="0,0,0,1"
-                                                Padding="20,14">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <StackPanel Orientation="Horizontal" Spacing="10"
-                                                            VerticalAlignment="Center">
-                                                    <Border Width="3" Height="20" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                                    <TextBlock FontSize="16"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{Binding PrimaryTextBrush}"
-                                                               VerticalAlignment="Center"
-                                                               Text="News" />
-                                                </StackPanel>
-                                                <Button Grid.Column="1"
-                                                        Classes="chrome"
-                                                        Click="RefreshNewsButton_OnClick"
-                                                        IsEnabled="{Binding !IsNewsLoading}"
-                                                        VerticalAlignment="Center"
-                                                        ToolTip.Tip="Refresh news"
-                                                        Content="↻" />
-                                            </Grid>
-                                        </Border>
+                                    <!-- ─ News card (halved height) ─ -->
+                                    <Border Background="{Binding CardBrush}"
+                                            BorderBrush="{Binding SurfaceBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="16"
+                                            Height="348">
+                                        <Grid RowDefinitions="Auto,Auto,*">
 
-                                        <!-- Tutorial shortcut strip -->
-                                        <Border Grid.Row="1"
-                                                BorderBrush="{Binding SurfaceBorderBrush}"
-                                                BorderThickness="0,0,0,1"
-                                                Padding="20,12">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <StackPanel Grid.Column="0" Spacing="2">
-                                                    <TextBlock FontSize="12"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{Binding PrimaryTextBrush}"
-                                                               Text="New to Kodo?" />
-                                                    <TextBlock FontSize="12"
+                                            <!-- News panel header -->
+                                            <Border Grid.Row="0"
+                                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                                    BorderThickness="0,0,0,1"
+                                                    Padding="20,14">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <StackPanel Orientation="Horizontal" Spacing="10"
+                                                                VerticalAlignment="Center">
+                                                        <Border Width="3" Height="20" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                                        <TextBlock FontSize="16"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="News" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1"
+                                                            Classes="chrome"
+                                                            Click="RefreshNewsButton_OnClick"
+                                                            IsEnabled="{Binding !IsNewsLoading}"
+                                                            VerticalAlignment="Center"
+                                                            ToolTip.Tip="Refresh news"
+                                                            Content="↻" />
+                                                </Grid>
+                                            </Border>
+
+                                            <!-- Tutorial shortcut strip -->
+                                            <Border Grid.Row="1"
+                                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                                    BorderThickness="0,0,0,1"
+                                                    Padding="20,12">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <StackPanel Grid.Column="0" Spacing="2">
+                                                        <TextBlock FontSize="12"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                                   Text="New to Kodo?" />
+                                                        <TextBlock FontSize="12"
+                                                                   Foreground="{Binding MutedTextBrush}"
+                                                                   Text="Take the built-in tutorial." />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1"
+                                                            Classes="chrome"
+                                                            Click="OpenTutorialButton_OnClick"
+                                                            VerticalAlignment="Center"
+                                                            ToolTip.Tip="Open the interactive tutorial"
+                                                            Content="Tutorial" />
+                                                </Grid>
+                                            </Border>
+
+                                            <!-- News body -->
+                                            <Border Grid.Row="2"
+                                                    Padding="16,14">
+                                                <Panel ClipToBounds="True">
+                                                    <!-- Loading state -->
+                                                    <StackPanel IsVisible="{Binding IsNewsLoading}"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Spacing="8">
+                                                        <TextBlock FontSize="11"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding MutedTextBrush}"
+                                                                   Opacity="0.5"
+                                                                   Text="Loading news..." />
+                                                    </StackPanel>
+
+                                                    <!-- Error state -->
+                                                    <StackPanel IsVisible="{Binding IsNewsError}"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Spacing="6">
+                                                        <TextBlock FontSize="20"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding MutedTextBrush}"
+                                                                   Opacity="0.25"
+                                                                   Text="&#x26A0;" />
+                                                        <TextBlock FontSize="11"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding MutedTextBrush}"
+                                                                   Opacity="0.5"
+                                                                   Text="Could not load news." />
+                                                    </StackPanel>
+
+                                                    <!-- Empty state -->
+                                                    <StackPanel IsVisible="{Binding IsNewsEmpty}"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Spacing="8">
+                                                        <TextBlock FontSize="26"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding MutedTextBrush}"
+                                                                   Opacity="0.2"
+                                                                   Text="&#x1F4F0;" />
+                                                        <TextBlock FontSize="12"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding MutedTextBrush}"
+                                                                   Opacity="0.45"
+                                                                   TextAlignment="Center"
+                                                                   TextWrapping="Wrap"
+                                                                   MaxWidth="200"
+                                                                   Text="No announcements yet." />
+                                                    </StackPanel>
+
+                                                    <!-- News items -->
+                                                    <ScrollViewer IsVisible="{Binding IsNewsContentVisible}"
+                                                                  VerticalScrollBarVisibility="Auto"
+                                                                  HorizontalScrollBarVisibility="Disabled">
+                                                        <ItemsControl ItemsSource="{Binding NewsItems}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="kodo:NewsItem">
+                                                                    <Border BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                                            BorderThickness="0,0,0,1"
+                                                                            Padding="4,12">
+                                                                        <StackPanel Spacing="6">
+                                                                            <TextBlock FontSize="13"
+                                                                                       FontWeight="SemiBold"
+                                                                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                                       TextWrapping="Wrap"
+                                                                                       IsVisible="{Binding HasTitle}"
+                                                                                       Text="{Binding Title}" />
+                                                                            <TextBlock FontSize="11"
+                                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                                       IsVisible="{Binding HasUpdatedAt}"
+                                                                                       Opacity="0.7"
+                                                                                       Text="{Binding UpdatedAt}" />
+                                                                            <TextBlock FontSize="12"
+                                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                                       TextWrapping="Wrap"
+                                                                                       LineHeight="19"
+                                                                                       IsVisible="{Binding HasBody}"
+                                                                                       Text="{Binding Body}" />
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </ScrollViewer>
+                                                </Panel>
+                                            </Border>
+
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- ─ What's New card (compact home-screen edition) ─ -->
+                                    <Border Background="{Binding CardBrush}"
+                                            BorderBrush="{Binding SurfaceBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="16"
+                                            Height="329">
+                                        <Grid RowDefinitions="Auto,*">
+
+                                            <!-- Header: accent pill + version + action buttons -->
+                                            <Border Grid.Row="0"
+                                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                                    BorderThickness="0,0,0,1"
+                                                    Padding="20,14">
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                                        <Border Width="3"
+                                                                Height="22"
+                                                                CornerRadius="2"
+                                                                Background="{Binding AccentBrush}"
+                                                                VerticalAlignment="Center" />
+                                                        <StackPanel Spacing="1" VerticalAlignment="Center">
+                                                            <TextBlock FontSize="14"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="{Binding PrimaryTextBrush}"
+                                                                       Text="What's New" />
+                                                            <TextBlock FontSize="12"
+                                                                       Foreground="{Binding MutedTextBrush}"
+                                                                       Text="{Binding LatestReleaseDisplayName}" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1"
+                                                                Orientation="Horizontal"
+                                                                Spacing="8"
+                                                                VerticalAlignment="Center">
+                                                        <Button Classes="chrome"
+                                                                Click="RefreshLatestReleaseButton_OnClick"
+                                                                IsEnabled="{Binding !IsRefreshingLatestRelease}"
+                                                                VerticalAlignment="Center"
+                                                                ToolTip.Tip="Check for newer release information"
+                                                                Content="↻" />
+                                                        <Button Classes="chrome"
+                                                                Click="OpenLatestReleaseButton_OnClick"
+                                                                ToolTip.Tip="Open this release on GitHub in your browser"
+                                                                Content="GitHub" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+
+                                            <!-- Release notes body: always visible, scrollable -->
+                                            <Border Grid.Row="1"
+                                                    Padding="20,14">
+                                                <Panel ClipToBounds="True">
+
+                                                    <!-- Status text (loading / error / up-to-date message) -->
+                                                    <TextBlock IsVisible="{Binding !HasLatestRelease}"
                                                                Foreground="{Binding MutedTextBrush}"
-                                                               Text="Take the built-in tutorial." />
-                                                </StackPanel>
-                                                <Button Grid.Column="1"
-                                                        Classes="chrome"
-                                                        Click="OpenTutorialButton_OnClick"
-                                                        VerticalAlignment="Center"
-                                                        ToolTip.Tip="Open the interactive tutorial"
-                                                        Content="Tutorial" />
-                                            </Grid>
-                                        </Border>
+                                                               FontSize="12"
+                                                               TextWrapping="Wrap"
+                                                               VerticalAlignment="Center"
+                                                               HorizontalAlignment="Center"
+                                                               TextAlignment="Center"
+                                                               Text="{Binding LatestReleaseStatusText}" />
 
-                                        <!-- News body -->
-                                        <Border Grid.Row="2"
-                                                Padding="16,14">
-                                            <Panel ClipToBounds="True">
-                                            <!-- Loading spinner -->
-                                            <StackPanel IsVisible="{Binding IsNewsLoading}"
-                                                        HorizontalAlignment="Center"
-                                                        VerticalAlignment="Center"
-                                                        Spacing="8">
-                                                <TextBlock FontSize="11"
-                                                           HorizontalAlignment="Center"
-                                                           Foreground="{Binding MutedTextBrush}"
-                                                           Opacity="0.5"
-                                                           Text="Loading news..." />
-                                            </StackPanel>
+                                                    <!-- Formatted release notes -->
+                                                    <ScrollViewer IsVisible="{Binding HasLatestRelease}"
+                                                                  VerticalScrollBarVisibility="Auto"
+                                                                  HorizontalScrollBarVisibility="Disabled">
+                                                        <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="kodo:FormattedParagraph">
+                                                                    <Grid Margin="{Binding TopMargin}"
+                                                                          ColumnDefinitions="Auto,*">
+                                                                        <TextBlock Grid.Column="0"
+                                                                                   Text="{Binding Marker}"
+                                                                                   Width="{Binding MarkerColumnWidth}"
+                                                                                   FontSize="12"
+                                                                                   LineHeight="19"
+                                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                                   VerticalAlignment="Top" />
+                                                                        <ItemsControl Grid.Column="1"
+                                                                                      ItemsSource="{Binding Runs}">
+                                                                            <ItemsControl.ItemsPanel>
+                                                                                <ItemsPanelTemplate>
+                                                                                    <WrapPanel />
+                                                                                </ItemsPanelTemplate>
+                                                                            </ItemsControl.ItemsPanel>
+                                                                            <ItemsControl.ItemTemplate>
+                                                                                <DataTemplate x:DataType="kodo:FormattedRun">
+                                                                                    <TextBlock Text="{Binding Text}"
+                                                                                               TextWrapping="Wrap"
+                                                                                               FontSize="12"
+                                                                                               LineHeight="19"
+                                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                                               FontWeight="{Binding IsBold, Converter={x:Static kodo:BoolToFontWeightConverter.Instance}}" />
+                                                                                </DataTemplate>
+                                                                            </ItemsControl.ItemTemplate>
+                                                                        </ItemsControl>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </ScrollViewer>
 
-                                            <!-- Error state -->
-                                            <StackPanel IsVisible="{Binding IsNewsError}"
-                                                        HorizontalAlignment="Center"
-                                                        VerticalAlignment="Center"
-                                                        Spacing="6">
-                                                <TextBlock FontSize="20"
-                                                           HorizontalAlignment="Center"
-                                                           Foreground="{Binding MutedTextBrush}"
-                                                           Opacity="0.25"
-                                                           Text="&#x26A0;" />
-                                                <TextBlock FontSize="11"
-                                                           HorizontalAlignment="Center"
-                                                           Foreground="{Binding MutedTextBrush}"
-                                                           Opacity="0.5"
-                                                           Text="Could not load news." />
-                                            </StackPanel>
+                                                </Panel>
+                                            </Border>
 
-                                            <!-- Empty state -->
-                                            <StackPanel IsVisible="{Binding IsNewsEmpty}"
-                                                        HorizontalAlignment="Center"
-                                                        VerticalAlignment="Center"
-                                                        Spacing="8">
-                                                <TextBlock FontSize="26"
-                                                           HorizontalAlignment="Center"
-                                                           Foreground="{Binding MutedTextBrush}"
-                                                           Opacity="0.2"
-                                                           Text="&#x1F4F0;" />
-                                                <TextBlock FontSize="12"
-                                                           HorizontalAlignment="Center"
-                                                           Foreground="{Binding MutedTextBrush}"
-                                                           Opacity="0.45"
-                                                           TextAlignment="Center"
-                                                           TextWrapping="Wrap"
-                                                           MaxWidth="200"
-                                                           Text="No announcements yet." />
-                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
 
-                                            <!-- News items -->
-                                            <ScrollViewer IsVisible="{Binding IsNewsContentVisible}"
-                                                          VerticalScrollBarVisibility="Auto"
-                                                          HorizontalScrollBarVisibility="Disabled">
-                                                <ItemsControl ItemsSource="{Binding NewsItems}">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate x:DataType="kodo:NewsItem">
-                                                            <Border BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                                    BorderThickness="0,0,0,1"
-                                                                    Padding="4,12">
-                                                                <StackPanel Spacing="6">
-                                                                    <TextBlock FontSize="13"
-                                                                               FontWeight="SemiBold"
-                                                                               Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                               TextWrapping="Wrap"
-                                                                               IsVisible="{Binding HasTitle}"
-                                                                               Text="{Binding Title}" />
-                                                                    <TextBlock FontSize="11"
-                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                               IsVisible="{Binding HasUpdatedAt}"
-                                                                               Opacity="0.7"
-                                                                               Text="{Binding UpdatedAt}" />
-                                                                    <TextBlock FontSize="12"
-                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                               TextWrapping="Wrap"
-                                                                               LineHeight="19"
-                                                                               IsVisible="{Binding HasBody}"
-                                                                               Text="{Binding Body}" />
-                                                                </StackPanel>
-                                                            </Border>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </ScrollViewer>
-                                            </Panel>
-                                        </Border>
-
-                                    </Grid>
-                                </Border>
+                                </StackPanel>
 
                             </Grid>
 
@@ -1845,12 +1999,23 @@
 
 
 
+                <Border Grid.Row="3"
+                        x:Name="TerminalPanelSplitter"
+                        Background="Transparent"
+                        IsVisible="{Binding IsTerminalVisible}"
+                        Cursor="SizeNorthSouth"
+                        ToolTip.Tip="Drag to resize the terminal panel"
+                        PointerPressed="TerminalPanelSplitter_OnPointerPressed"
+                        PointerMoved="TerminalPanelSplitter_OnPointerMoved"
+                        PointerReleased="TerminalPanelSplitter_OnPointerReleased"
+                        PointerCaptureLost="TerminalPanelSplitter_OnPointerCaptureLost" />
+
                 <Border Grid.Row="4"
                         IsVisible="{Binding IsTerminalVisible}"
                         Background="{Binding CardBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,1,0,1"
-                        Height="300">
+                        Height="{Binding TerminalPanelHeight}">
                     <Grid RowDefinitions="Auto,Auto,*,Auto">
                         <Border Grid.Row="0"
                                 Background="{Binding TopBarBrush}"
@@ -3756,7 +3921,7 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Extension Updates -->
+                        <!-- Updates -->
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -3769,8 +3934,18 @@
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
                                                VerticalAlignment="Center"
-                                               Text="Extension Updates" />
+                                               Text="Updates" />
                                 </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <CheckBox IsChecked="{Binding IsAutoUpdateAppEnabled, Mode=TwoWay}"
+                                              VerticalAlignment="Center" />
+                                    <TextBlock VerticalAlignment="Center"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Automatically check for and install Kodo updates" />
+                                </StackPanel>
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding AutoUpdateAppStatusText}" />
                                 <StackPanel Orientation="Horizontal" Spacing="12">
                                     <CheckBox IsChecked="{Binding IsAutoUpdateExtensionsEnabled, Mode=TwoWay}"
                                               VerticalAlignment="Center" />
@@ -4177,8 +4352,17 @@
                                             <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="kodo:FormattedParagraph">
-                                                        <WrapPanel Margin="{Binding TopMargin}">
-                                                            <ItemsControl ItemsSource="{Binding Runs}">
+                                                        <Grid Margin="{Binding TopMargin}"
+                                                              ColumnDefinitions="Auto,*">
+                                                            <TextBlock Grid.Column="0"
+                                                                       Text="{Binding Marker}"
+                                                                       Width="{Binding MarkerColumnWidth}"
+                                                                       FontSize="13"
+                                                                       LineHeight="20"
+                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                       VerticalAlignment="Top" />
+                                                            <ItemsControl Grid.Column="1"
+                                                                          ItemsSource="{Binding Runs}">
                                                                 <ItemsControl.ItemsPanel>
                                                                     <ItemsPanelTemplate>
                                                                         <WrapPanel />
@@ -4188,12 +4372,14 @@
                                                                     <DataTemplate x:DataType="kodo:FormattedRun">
                                                                         <TextBlock Text="{Binding Text}"
                                                                                    TextWrapping="Wrap"
+                                                                                   FontSize="13"
+                                                                                   LineHeight="20"
                                                                                    Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                                    FontWeight="{Binding IsBold, Converter={x:Static kodo:BoolToFontWeightConverter.Instance}}" />
                                                                     </DataTemplate>
                                                                 </ItemsControl.ItemTemplate>
                                                             </ItemsControl>
-                                                        </WrapPanel>
+                                                        </Grid>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>

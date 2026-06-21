@@ -34,7 +34,6 @@ public partial class App : Application
     private static readonly Color KodoDarkSurfaceDeep = Color.Parse("#1A1A1A");
     private static readonly Color KodoDarkBorder      = Color.Parse("#3A3A3A");
     private static readonly Color KodoDarkBadgeBg     = Color.Parse("#2B2B2B");
-    private static readonly Color KodoAccent          = Color.Parse("#8C00FF");
     private static readonly Color KodoTextMuted       = Color.Parse("#A0A0A0");
     private static readonly Color KodoTextDim         = Color.Parse("#606060");
     private static readonly Color KodoTokenBlue       = Color.Parse("#9CDCFE");  // source badge
@@ -66,10 +65,41 @@ public partial class App : Application
 
 #if !DEBUG
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
             RegisterFileAssociations();
+            CheckForUpdatesInBackground();
+        }
 #endif
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // ── Auto-update ───────────────────────────────────────────────────────────
+
+    // Fires a one-shot, fire-and-forget update check a few seconds after launch
+    // so it never competes with startup for CPU/network. Entirely best-effort:
+    // any failure here is swallowed by UpdateService itself and never surfaces
+    // as a crash or dialog - the user simply won't see an update prompt.
+    private static void CheckForUpdatesInBackground()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (!UpdateService.IsAutoUpdateEnabledInSettings())
+                    return;
+
+                await Task.Delay(TimeSpan.FromSeconds(4));
+
+                var update = await UpdateService.CheckForUpdateAsync();
+                if (update is not null)
+                    UpdateDialog.ShowFor(update);
+            }
+            catch
+            {
+                // Update checking must never crash the app.
+            }
+        });
     }
 
     // ── Windows file-association registration ────────────────────────────────
@@ -394,13 +424,15 @@ public partial class App : Application
             CornerRadius        = new CornerRadius(8),
         };
 
+        var (accentColor, accentForeground) = AccentResolver.GetCurrentAccent();
+
         var dismissButton = new Button
         {
             Content             = isTerminating ? "Close" : "Dismiss",
             HorizontalAlignment = HorizontalAlignment.Right,
             Padding             = new Thickness(20, 8),
-            Background          = new SolidColorBrush(KodoAccent),
-            Foreground          = Brushes.White,
+            Background          = new SolidColorBrush(accentColor),
+            Foreground          = new SolidColorBrush(accentForeground),
             BorderThickness     = new Thickness(0),
             CornerRadius        = new CornerRadius(8),
         };

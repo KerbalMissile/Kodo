@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net;
 using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
 using System.Net.Http;
@@ -388,13 +389,22 @@ public sealed class FormattedRun
     public bool   IsBold { get; init; }
 }
 
-// One paragraph (or bullet item) in the release notes.
+// One paragraph (or bullet/ordered-list item) in the release notes.
 // Runs are rendered inline (WrapPanel) so bold/normal text flows together.
+// The list marker (bullet glyph or "1.") is kept separate from the runs and
+// rendered in its own fixed-width column so wrapped lines hang-indent and
+// align under the first word instead of sliding back under the marker.
 public sealed class FormattedParagraph
 {
     public IReadOnlyList<FormattedRun> Runs      { get; init; } = [];
     // Extra top margin so paragraphs breathe; bullet items get slightly less.
     public Thickness TopMargin { get; init; } = new Thickness(0, 6, 0, 0);
+    // "•" for bullets, "1." / "2." / ... for ordered items, or empty for a
+    // plain paragraph/heading (in which case MarkerColumnWidth is 0).
+    public string Marker { get; init; } = string.Empty;
+    // Fixed width of the marker column, shared across rows so every bullet's
+    // wrapped text lines up under its own first line instead of under "• ".
+    public double MarkerColumnWidth { get; init; }
 }
 
 public sealed class TerminalShellOption
@@ -557,11 +567,16 @@ public class MarketplaceExtension : INotifyPropertyChanged
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
-    private const int MaxRecentFiles = 5;
+    private const int MaxRecentFiles = 6;
     private const string DefaultDiscordClientId = "1495509170756255744";
     private const string DefaultDiscordLargeImageKey = "kodo_logo";
     private const string DefaultDiscordLargeImageText = "Kodo";
     private const string SettingsFileName = "kodosettings.json";
+    // Bounds for the drag-resizable terminal panel. Kept in sync with the
+    // RowDefinition's MaxHeight in MainWindow.axaml - if one changes, change both.
+    private const double MinTerminalPanelHeight = 120;
+    private const double MaxTerminalPanelHeight = 420;
+    private const double DefaultTerminalPanelHeight = 300;
     private const string DiscordClientIdEnvironmentVariable = "KODO_DISCORD_CLIENT_ID";
     private const string AutoSaveSavedMessage = "Saved.";
     private const string AutoSaveSavingMessage = "Saving...";
@@ -574,7 +589,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // GitHub Contents API endpoint for the extension index JSON.
     // All Kodo-hosted assets (index JSON, extension .kox packages, and repo-hosted
     // icon images) are fetched via the Contents API with the raw+json Accept header,
-    // which makes GitHub return file bytes directly — no base64 unwrapping needed.
+    // which makes GitHub return file bytes directly - no base64 unwrapping needed.
     // Third-party icon URLs (e.g. Wikipedia, Wikimedia) are fetched as plain GETs
     // since the Contents API only applies to files inside this repository.
     private const string DefaultMarketplaceIndexUrl = "https://api.github.com/repos/KerbalMissile/Kodo/contents/Indexs/ExtensionsIndex.json";
@@ -626,6 +641,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // so it never overlaps with itself or with the manual "Update All" button.
     private bool _isAutoUpdatingExtensions;
     private bool _isAutoUpdateExtensionsEnabled;
+    // Mirrors _isAutoUpdateExtensionsEnabled, but for whole-app updates
+    // (downloading and installing newer Kodo releases from GitHub) rather
+    // than marketplace extensions. Kept as a separate flag since a user may
+    // want one without the other.
+    private bool _isAutoUpdateAppEnabled = true;
     private bool _isRefreshingLatestRelease;
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
@@ -715,8 +735,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly TimeSpan WarningDialogCooldown   = TimeSpan.FromSeconds(3);
 
     // Hard ceiling for any GitHub network operation (index fetch, announcements,
-    // release info, icon downloads).  If the operation does not *complete* — both
-    // headers and body — within this window we cancel it, log a warning, and show
+    // release info, icon downloads).  If the operation does not *complete* - both
+    // headers and body - within this window we cancel it, log a warning, and show
     // the standard Kodo error dialog so the user knows the panel is stale.
     private static readonly TimeSpan GitHubOperationTimeout  = TimeSpan.FromSeconds(7);
     private static readonly HashSet<string> ImagePreviewExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -753,6 +773,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int _nextTerminalNumber = 1;
     private bool _isTerminalVisible;
     private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+    private double _terminalPanelHeight = DefaultTerminalPanelHeight;
+    private bool _isResizingTerminalPanel;
+    private double _terminalPanelDragStartPointerY;
+    private double _terminalPanelDragStartHeight;
 
     // Caches compiled KodoHighlightingDefinition instances by LoadedExtension identity.
     // Building one involves compiling multiple Regex objects (RegexOptions.Compiled), which
@@ -1070,6 +1094,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
         _isAutoUpdateExtensionsEnabled = settings.AutoUpdateExtensionsEnabled;
+        _isAutoUpdateAppEnabled = settings.AutoUpdateAppEnabled;
         _hasCompletedTutorial = settings.HasCompletedTutorial;
         _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom" or "theme"
             ? settings.AccentColorMode : "kodo";
@@ -1081,6 +1106,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? "#8C00FF" : settings.CustomAccentHex;
         _tabSize = NormalizeTabSize(settings.TabSize);
         _editorFontSize = settings.EditorFontSize is >= 8 and <= 32 ? settings.EditorFontSize : 14;
+        _terminalPanelHeight = NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
         _userCountry = string.IsNullOrWhiteSpace(settings.UserCountry)
             ? DetectCountryCode()
             : settings.UserCountry.ToUpperInvariant();
@@ -1256,7 +1282,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // ── Refresh watchdog ────────────────────────────────────────────────
         // If the entire refresh (disk scan + marketplace fetch) does not complete
         // within GitHubOperationTimeout (7 s) we fire the standard Kodo warning
-        // dialog so the user knows the panel is stuck — not just silently spinning.
+        // dialog so the user knows the panel is stuck - not just silently spinning.
         //
         // HOW IT WORKS:
         //   A CancellationTokenSource drives a parallel Task.Delay watchdog.
@@ -1272,7 +1298,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // WHY NOT Task.WhenAny + hard cancel on the work task?
         //   The work awaits Dispatcher.UIThread.InvokeAsync in several places.
         //   Cancelling an InvokeAsync continuation from a background token is not
-        //   safe — it can leave the ObservableCollections mid-mutation and corrupt
+        //   safe - it can leave the ObservableCollections mid-mutation and corrupt
         //   the binding state.  The watchdog-only approach lets the work unwind
         //   itself cleanly while giving the user immediate feedback.
         //
@@ -1294,7 +1320,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 catch (OperationCanceledException)
                 {
-                    // Work finished in time — nothing to do.
+                    // Work finished in time - nothing to do.
                     return;
                 }
 
@@ -1361,7 +1387,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         finally
         {
-            // Cancel the watchdog whether we succeeded, timed out, or threw — it
+            // Cancel the watchdog whether we succeeded, timed out, or threw - it
             // must not fire after IsRefreshingExtensions has been cleared.
             await watchdogCts.CancelAsync();
             await Dispatcher.UIThread.InvokeAsync(() => IsRefreshingExtensions = false);
@@ -1486,7 +1512,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState());
 
-        // —— Disk-cache fast path ———————————————————————————
+        // -- Disk-cache fast path ---------------------------
         // Seed the collection from the on-disk cache so the marketplace appears
         // immediately even before the network round-trip completes. Subsequent
         // refreshes in the same session skip this (collection is already populated).
@@ -1496,7 +1522,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            // —— Conditional ETag fetch ——————————————————————————
+            // -- Conditional ETag fetch --------------------------
             // Send If-None-Match with the stored ETag so GitHub can reply 304 Not
             // Modified when the index hasn't changed.  304 responses do NOT count
             // against the 60 req/hr anonymous rate limit, so repeated refreshes
@@ -1523,13 +1549,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (statusCode == 304)
             {
-                // Index unchanged — reuse whatever is already in the collection
+                // Index unchanged - reuse whatever is already in the collection
                 // (disk-cache seed or previous refresh).  No parse, no disk write.
-                KodoDiagnostics.WriteDebugFallback("Marketplace index: 304 Not Modified — reusing cached data.");
+                KodoDiagnostics.WriteDebugFallback("Marketplace index: 304 Not Modified - reusing cached data.");
             }
             else if (remoteJson is not null)
             {
-                // Fresh 200 — parse, update disk cache, store new ETag.
+                // Fresh 200 - parse, update disk cache, store new ETag.
                 marketplaceExtensions.Clear();
                 extensionLoadErrors.Clear();
                 ParseAndApplyMarketplaceIndex(remoteJson, marketplaceExtensions, extensionLoadErrors);
@@ -1545,16 +1571,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (diskJson is not null)
             {
-                // Network failed but a cached copy exists — the marketplace was
+                // Network failed but a cached copy exists - the marketplace was
                 // already seeded above, so stay usable.  Log without a dialog.
-                extensionLoadErrors.Add($"Marketplace index fetch failed (using cached copy): {ex.Message}");
+                extensionLoadErrors.Add($"Marketplace index fetch failed (using cached copy): {DescribeFetchFailure(ex)}");
                 KodoDiagnostics.WriteDebugFallback("Marketplace index fetch failed; using disk cache.", ex);
                 await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
             }
             else
             {
-                // No cache at all — propagate so the caller shows the error dialog.
-                extensionLoadErrors.Add($"Failed to load remote marketplace index: {ex.Message}");
+                // No cache at all - propagate so the caller shows the error dialog.
+                extensionLoadErrors.Add($"Failed to load remote marketplace index: {DescribeFetchFailure(ex)}");
                 await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
                 throw;
             }
@@ -1677,8 +1703,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         await Task.WhenAll(tasks);
 
-        // Log a warning if every icon fetch failed — suggests a network or rate-limit
-        // problem — but don't surface a dialog: icons are decorative and a modal here
+        // Log a warning if every icon fetch failed - suggests a network or rate-limit
+        // problem - but don't surface a dialog: icons are decorative and a modal here
         // would block the marketplace from appearing while extensions loaded fine.
         if (iconAttempts > 0 && iconFailures == iconAttempts && lastIconException is not null)
         {
@@ -1720,8 +1746,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 // Per-request timeout so a single stalled icon fetch cannot hold
                 // up the entire FetchMarketplaceIconsAsync Task.WhenAll.
-                // Uses GitHubOperationTimeout (7 s) — the same ceiling applied to
-                // every other GitHub operation — so icon fetches are consistent.
+                // Uses GitHubOperationTimeout (7 s) - the same ceiling applied to
+                // every other GitHub operation - so icon fetches are consistent.
                 using var cts = new CancellationTokenSource(GitHubOperationTimeout);
 
                 // Kodo-hosted icon URLs use the GitHub Contents API
@@ -1821,7 +1847,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             LatestRelease = null;
-            LatestReleaseStatusText = $"Could not load release info: {ex.Message}";
+            LatestReleaseStatusText = $"Could not load release info: {DescribeFetchFailure(ex)}";
 
             // Log and surface the Kodo warning dialog so the user knows why the
             // release panel is empty (timeout, rate-limit, no connectivity, etc.).
@@ -1847,7 +1873,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // Use the GitHub Contents API with the raw+json Accept header so GitHub
             // returns the file bytes directly (no base64 wrapping) at the same
             // generous rate limits as the marketplace index fetch.
-            // The entire operation — headers + body — must complete within
+            // The entire operation - headers + body - must complete within
             // GitHubOperationTimeout (7 s); a stall past that point throws
             // TimeoutException and surfaces the standard Kodo error dialog.
             using var request = new HttpRequestMessage(HttpMethod.Get, AnnouncementsUrl);
@@ -2385,7 +2411,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await File.WriteAllBytesAsync(outputPath, bytes);
             NormalizeKoxManifestVersion(outputPath);
 
-            // suppressWatchdog: true — the download above already carried its own
+            // suppressWatchdog: true - the download above already carried its own
             // RunWithGitHubTimeoutAsync guard. A second independent watchdog here
             // would race the outer install handler and emit a misleading
             // "Marketplace refresh" dialog for what was actually an install timeout.
@@ -2464,7 +2490,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     File.Delete(resolvedPath);
             }
 
-            // suppressWatchdog: true — uninstall is a local disk operation with its
+            // suppressWatchdog: true - uninstall is a local disk operation with its
             // own error handling above; the watchdog is not meaningful here.
             await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
             ExtensionsStatusText = $"{extension.Name} uninstalled.";
@@ -2643,7 +2669,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     /// Contents API (https://api.github.com/repos/{owner}/{repo}/contents/{path})
     /// so it can be fetched as raw bytes.  Raw CDN URLs
     /// (raw.githubusercontent.com), Contents API URLs, and all other URLs are
-    /// returned unchanged — this rewrite is only needed for blob viewer links,
+    /// returned unchanged - this rewrite is only needed for blob viewer links,
     /// which return an HTML page rather than file bytes when fetched directly.
     /// </summary>
     private static string NormalizeGitHubBlobViewerUrl(string url)
@@ -2654,7 +2680,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return url;
 
-        // Only rewrite github.com /blob/ viewer URLs — everything else is already fetchable.
+        // Only rewrite github.com /blob/ viewer URLs - everything else is already fetchable.
         if (!uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
             return url;
 
@@ -2667,7 +2693,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
         }
 
-        return url; // non-blob github.com URL (e.g. releases page) — leave alone
+        return url; // non-blob github.com URL (e.g. releases page) - leave alone
     }
 
     /// <summary>
@@ -4348,13 +4374,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             line = line.Trim();
             if (string.IsNullOrEmpty(line)) continue;
 
-            // Split the line into bold/normal runs.
+            // Split the line into bold/normal runs. The list marker (if any)
+            // is tracked separately rather than injected as a leading run, so
+            // it can be rendered in its own fixed-width column and wrapped
+            // lines hang-indent under the first word, not under the marker.
             var runs = new List<FormattedRun>();
 
-            if (isBullet)
-                runs.Add(new FormattedRun { Text = "• ", IsBold = false });
-            else if (isOrdered && orderedPrefix is not null)
-                runs.Add(new FormattedRun { Text = orderedPrefix + " ", IsBold = false });
+            var marker = isBullet ? "•"
+                : isOrdered && orderedPrefix is not null ? orderedPrefix
+                : string.Empty;
+
+            // Bullets need a narrow column; ordered markers ("1." .. "99.")
+            // need a little more room so two-digit numbers don't clip.
+            var markerColumnWidth = isBullet ? 18.0
+                : isOrdered ? 28.0
+                : 0.0;
 
             var pos = 0;
             foreach (Match m in MdInlineBoldRegex.Matches(line))
@@ -4379,8 +4413,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             paragraphs.Add(new FormattedParagraph
             {
-                Runs      = runs,
-                TopMargin = isBullet || isOrdered ? new Thickness(0, 2, 0, 0) : new Thickness(0, 6, 0, 0),
+                Runs              = runs,
+                TopMargin         = isBullet || isOrdered ? new Thickness(0, 2, 0, 0) : new Thickness(0, 6, 0, 0),
+                Marker            = marker,
+                MarkerColumnWidth = markerColumnWidth,
             });
         }
 
@@ -4716,6 +4752,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Settings toggle: when on, Kodo checks GitHub Releases for a newer build
+    // a few seconds after launch and offers to download/install it. Turning
+    // this off skips the background check entirely - the app stays on the
+    // installed version until the user updates manually.
+    public bool IsAutoUpdateAppEnabled
+    {
+        get => _isAutoUpdateAppEnabled;
+        set
+        {
+            if (_isAutoUpdateAppEnabled == value) return;
+            _isAutoUpdateAppEnabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoUpdateAppStatusText));
+            SaveSettings();
+        }
+    }
+
     public IEnumerable<LoadedExtension> FilteredInstalledExtensions
     {
         get
@@ -4808,7 +4861,76 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public double TerminalPanelHeight => 250;
+    public double TerminalPanelHeight
+    {
+        get => _terminalPanelHeight;
+        set
+        {
+            var normalized = NormalizeTerminalPanelHeight(value);
+            if (_terminalPanelHeight == normalized) return;
+            _terminalPanelHeight = normalized;
+            OnPropertyChanged();
+            SaveSettings();
+        }
+    }
+
+    // ── Terminal panel resize splitter ───────────────────────────────────────
+    // Manual drag handling (rather than Avalonia's GridSplitter) so the dragged
+    // value flows straight through the TerminalPanelHeight property - which is
+    // what gets persisted to settings.json and is the same value the AXAML
+    // binds the panel's Height to. The actual ConPTY/grid resize underneath
+    // needs no special handling here: PseudoConsoleTerminal.ArrangeOverride
+    // already reacts to any bounds change (this one included) by recalculating
+    // rows/cols and calling Resize(), which resizes both the cell buffer and
+    // the native pseudo console via ResizePseudoConsole.
+    private void TerminalPanelSplitter_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not InputElement element) return;
+        if (!e.GetCurrentPoint(element).Properties.IsLeftButtonPressed) return;
+
+        _isResizingTerminalPanel = true;
+        _terminalPanelDragStartPointerY = e.GetPosition(this).Y;
+        _terminalPanelDragStartHeight = TerminalPanelHeight;
+        e.Pointer.Capture(element);
+        e.Handled = true;
+    }
+
+    private void TerminalPanelSplitter_OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_isResizingTerminalPanel) return;
+
+        // The splitter sits above the terminal panel, so dragging it up (toward
+        // smaller Y) should grow the panel and dragging it down should shrink it -
+        // the inverse of the pointer's own delta.
+        var deltaY = _terminalPanelDragStartPointerY - e.GetPosition(this).Y;
+        TerminalPanelHeight = _terminalPanelDragStartHeight + deltaY;
+        e.Handled = true;
+    }
+
+    private void TerminalPanelSplitter_OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isResizingTerminalPanel) return;
+
+        _isResizingTerminalPanel = false;
+        e.Pointer.Capture(null);
+        // Flush the final height to disk right away instead of waiting on the
+        // debounce timer, so a quick resize-then-close can't lose the change to
+        // the same shutdown race the immediate/synchronous save guards against.
+        SaveSettings(immediate: true);
+        e.Handled = true;
+    }
+
+    // Defends against a stray PointerCaptureLost (e.g. dragging the splitter past
+    // the window edge, or the window losing focus mid-drag) leaving the panel
+    // permanently in "resizing" mode, which would make it keep tracking pointer
+    // moves anywhere in the window after the drag should have ended.
+    private void TerminalPanelSplitter_OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (!_isResizingTerminalPanel) return;
+
+        _isResizingTerminalPanel = false;
+        SaveSettings(immediate: true);
+    }
 
 
     public TerminalSession? ActiveTerminalSession
@@ -5058,6 +5180,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_userCountry == value) return;
             _userCountry = value.ToUpperInvariant();
             _welcomeMessagesCache = null;
+            _selectedWelcomeMessage = null;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsAmericanEnglish));
             OnPropertyChanged(nameof(LabelAccentColour));
@@ -5100,6 +5223,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_userHemisphere == value) return;
             _userHemisphere = value;
             _welcomeMessagesCache = null;
+            _selectedWelcomeMessage = null;
             OnPropertyChanged();
             SaveSettings();
         }
@@ -5117,6 +5241,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_userTimezoneOffset == value) return;
             _userTimezoneOffset = value;
             _welcomeMessagesCache = null;
+            _selectedWelcomeMessage = null;
             OnPropertyChanged();
             SaveSettings();
         }
@@ -5135,6 +5260,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_userName == trimmed) return;
             _userName = trimmed;
             _welcomeMessagesCache = null;
+            _selectedWelcomeMessage = null;
             OnPropertyChanged();
             SaveSettings();
         }
@@ -5675,6 +5801,192 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return GetHolidayEntry(date.AddDays(-1), country) is not null;
     }
 
+    // ── Real-world sporting events ──────────────────────────────────────────
+    // Adds tournament-themed welcome messages (e.g. "World Cup fever!") to the
+    // Home screen greeting pool. Two layers, so the feature degrades gracefully:
+    //   1. A hardcoded table of major tournament date windows - always works,
+    //      even fully offline, and is what actually satisfies "FIFA World Cup"
+    //      style theming for the duration of the event.
+    //   2. A best-effort live lookup against TheSportsDB's free public API
+    //      (test key "3" - no signup/API key required, see
+    //      https://www.thesportsdb.com/free_sports_api) for today's specific
+    //      fixture, so the message can name the actual teams playing today.
+    // Any network/parse failure is swallowed; the hardcoded messages from (1)
+    // are still added, so the themed greeting keeps working either way.
+    //
+    // Dates below are the best publicly-known schedule as of when this was
+    // written. Single-day events (finals) get a small +/- buffer window so
+    // the message shows for the build-up, not just the exact date. Since
+    // these are mostly annual/biennial/quadrennial, this table needs a yearly
+    // top-up - past entries are harmless (they just never match) but won't
+    // auto-roll to next year's dates on their own.
+    private static readonly (string Name, DateTime Start, DateTime End, string LeagueQuery, string[] Messages)[] MajorTournaments =
+    {
+        ("FIFA World Cup", new DateTime(2026, 6, 11), new DateTime(2026, 7, 19), "FIFA_World_Cup", new[]
+        {
+            "World Cup fever! Quick coding session before kickoff?",
+            "It's World Cup season - code now, cheer later.",
+            "The World Cup is on. Ship something before the next match!",
+            "World Cup energy: fast breaks, fast builds.",
+        }),
+
+        ("Winter Olympics", new DateTime(2026, 2, 6), new DateTime(2026, 2, 22), "", new[]
+        {
+            "The Winter Olympics are on - go for gold on this codebase.",
+            "Olympic season! Stick the landing on this feature.",
+        }),
+
+        ("Super Bowl", new DateTime(2027, 2, 11), new DateTime(2027, 2, 14), "NFL", new[]
+        {
+            "Super Bowl weekend! One more commit before kickoff.",
+            "It's Super Bowl season - let's run up the score on this codebase.",
+        }),
+
+        ("The Masters", new DateTime(2026, 4, 8), new DateTime(2026, 4, 12), "", new[]
+        {
+            "It's Masters week - chase that green jacket, one commit at a time.",
+        }),
+
+        ("NBA Finals", new DateTime(2026, 6, 3), new DateTime(2026, 6, 19), "NBA", new[]
+        {
+            "NBA Finals season! Clutch code for crunch time.",
+            "Finals fever - let's close this out like Game 7.",
+        }),
+
+        ("UEFA Champions League Final", new DateTime(2027, 6, 2), new DateTime(2027, 6, 5), "UEFA_Champions_League", new[]
+        {
+            "Champions League final week! One more commit before kickoff.",
+        }),
+
+        ("Wimbledon", new DateTime(2026, 6, 29), new DateTime(2026, 7, 12), "", new[]
+        {
+            "Wimbledon's on - strawberries, cream, and clean code.",
+            "Grass court season. Let's keep this build serving aces.",
+        }),
+
+        ("Stanley Cup Final", new DateTime(2026, 6, 1), new DateTime(2026, 6, 26), "NHL", new[]
+        {
+            "Stanley Cup Final season! Let's skate through this sprint.",
+        }),
+
+        ("World Series", new DateTime(2026, 10, 20), new DateTime(2026, 11, 1), "MLB", new[]
+        {
+            "World Series time! Swing for the fences on this feature.",
+        }),
+
+        ("US Open Tennis", new DateTime(2026, 8, 24), new DateTime(2026, 9, 13), "", new[]
+        {
+            "US Open season - let's ace this build.",
+        }),
+
+        // Add future tournaments here, e.g.:
+        // ("UEFA Euro Championship", new DateTime(2028, 6, 1), new DateTime(2028, 7, 1), "UEFA_Euro_Championship", new[] { "..." }),
+        // ("Summer Olympics", new DateTime(2028, 7, 14), new DateTime(2028, 7, 30), "", new[] { "..." }),
+    };
+
+    private List<string>? _sportingEventMessages;
+
+    // Minimal shape of TheSportsDB's eventsday.php response - only the fields
+    // we actually use are mapped, everything else in the JSON is ignored.
+    private sealed class TsdbEventsResponse
+    {
+        public List<TsdbEvent>? events { get; set; }
+    }
+
+    private sealed class TsdbEvent
+    {
+        public string? strHomeTeam { get; set; }
+        public string? strAwayTeam { get; set; }
+        public string? strTime { get; set; }
+    }
+
+    private async Task FetchSportingEventMessagesAsync()
+    {
+        try
+        {
+            var now = DateTime.Now;
+            var today = now.ToString("yyyy-MM-dd");
+            var messages = new List<string>();
+
+            foreach (var tournament in MajorTournaments)
+            {
+                if (now.Date < tournament.Start.Date || now.Date > tournament.End.Date)
+                    continue;
+
+                // Generic tournament-themed messages always apply for the whole
+                // window, regardless of whether the live match lookup below
+                // succeeds - this is what guarantees the feature "works".
+                messages.AddRange(tournament.Messages);
+
+                if (string.IsNullOrWhiteSpace(tournament.LeagueQuery))
+                    continue;
+
+                try
+                {
+                    var url = "https://www.thesportsdb.com/api/v1/json/3/eventsday.php"
+                        + $"?d={today}&l={Uri.EscapeDataString(tournament.LeagueQuery)}";
+
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+                    using var response = await MarketplaceHttpClient.GetAsync(url, cts.Token);
+                    if (!response.IsSuccessStatusCode)
+                        continue;
+
+                    var json = await response.Content.ReadAsStringAsync(cts.Token);
+                    var parsed = JsonSerializer.Deserialize<TsdbEventsResponse>(json);
+
+                    if (parsed?.events is { Count: > 0 } events)
+                    {
+                        // Cap at 3 so one heavy match-day doesn't drown out
+                        // every other greeting in the pool.
+                        foreach (var ev in events.Take(3))
+                        {
+                            if (string.IsNullOrWhiteSpace(ev.strHomeTeam) || string.IsNullOrWhiteSpace(ev.strAwayTeam))
+                                continue;
+
+                            var timeText = string.IsNullOrWhiteSpace(ev.strTime) ? "" : $" at {ev.strTime} UTC";
+                            var line = $"{ev.strHomeTeam} vs {ev.strAwayTeam} today{timeText} - quick build before kickoff?";
+
+                            // Weighted x2 over the generic tournament lines:
+                            // a real match today is more specific and exciting.
+                            messages.Add(line);
+                            messages.Add(line);
+                        }
+                    }
+                }
+                catch
+                {
+                    // Live fixture lookup is best-effort only - the generic
+                    // tournament messages added above already cover us.
+                }
+            }
+
+            if (messages.Count == 0)
+                return;
+
+            _sportingEventMessages = messages;
+
+            // Only rebuild the pool if the Home screen hasn't actually shown a
+            // greeting yet. If it has, the greeting is already on screen and
+            // resetting the cache here would make the WelcomeMessage binding
+            // re-roll a *different* random message a moment after launch -
+            // a visible flicker from one greeting to another. Leaving the
+            // already-chosen message in place means the sporting-themed lines
+            // simply join the pool the next time it's genuinely rebuilt
+            // (e.g. a personalization setting change, or the next launch).
+            if (_selectedWelcomeMessage is null)
+            {
+                _welcomeMessagesCache = null;
+                OnPropertyChanged(nameof(WelcomeMessage));
+            }
+        }
+        catch (Exception ex)
+        {
+            // Should be unreachable (everything above is already guarded),
+            // but keep this feature from ever being able to crash startup.
+            KodoDiagnostics.WriteDebugFallback("Failed to build sporting event welcome messages", ex);
+        }
+    }
+
     // ── Welcome message construction ──────────────────────────────────────────
 
     private string[] BuildWelcomeMessages()
@@ -5733,6 +6045,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             messages.Add(holiday.Greeting);
             messages.Add(holiday.Greeting);
         }
+
+        // ── 1b. Real-world sporting events (e.g. FIFA World Cup) ───────────────
+        // Populated asynchronously by FetchSportingEventMessagesAsync via
+        // TheSportsDB's free API, with a hardcoded tournament-window fallback
+        // so themed messages still appear even if the API call hasn't
+        // completed yet or is unreachable. Weighting is baked in at the
+        // source (specific live matches are added more times than generic
+        // tournament lines), so we just add the whole pool here.
+        if (_sportingEventMessages is { Count: > 0 })
+            messages.AddRange(_sportingEventMessages);
 
         // ── 2. Long weekend hints ─────────────────────────────────────────────
         // Also weighted up so long-weekend messages feel timely when applicable.
@@ -5881,6 +6203,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // which are read from settings before DataContext is set.
     private string[]? _welcomeMessagesCache;
 
+    // The single message picked for this "generation" of the pool. Cached so that
+    // repeated reads of WelcomeMessage (multiple binding evaluations, layout passes,
+    // etc.) all return the same text instead of each landing on a different random
+    // pick - which is what caused the greeting to visibly flicker right after launch.
+    // Reset alongside _welcomeMessagesCache whenever the pool genuinely needs to be
+    // re-rolled (e.g. a personalization setting change).
+    private string? _selectedWelcomeMessage;
+
     // Evaluated once per launch: true one in a thousand times, showing the "Code fast. Stay light" tagline.
     private readonly bool _isTaglineGreeting = Random.Shared.Next(1_000) == 0;
     public bool IsTaglineGreeting => _isTaglineGreeting;
@@ -5890,7 +6220,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get
         {
             _welcomeMessagesCache ??= BuildWelcomeMessages();
-            return _welcomeMessagesCache[Random.Shared.Next(_welcomeMessagesCache.Length)];
+            _selectedWelcomeMessage ??= _welcomeMessagesCache[Random.Shared.Next(_welcomeMessagesCache.Length)];
+            return _selectedWelcomeMessage;
         }
     }
 
@@ -5955,6 +6286,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : AvailableExtensionUpdatesCount > 0
                 ? $"Checking periodically and installing updates automatically. {AvailableExtensionUpdatesCount} update{(AvailableExtensionUpdatesCount == 1 ? string.Empty : "s")} pending."
                 : "Checking periodically and installing new extension updates automatically.";
+
+    public string AutoUpdateAppStatusText =>
+        IsAutoUpdateAppEnabled
+            ? "Checking for new Kodo versions on launch and prompting to install them automatically."
+            : "Kodo only updates when you download a new installer yourself.";
 
     public string StatusBarFilePathVisibilityText => IsStatusBarFilePathVisible
         ? "The status bar shows the full path for the current file or folder."
@@ -6539,6 +6875,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList() ?? [];
             settings.TabSize = NormalizeTabSize(settings.TabSize);
+            settings.TerminalPanelHeight = NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
             return settings;
         }
         catch (Exception ex)
@@ -6548,7 +6885,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void SaveSettings(bool immediate = false)
+    private void SaveSettings(bool immediate = false, bool synchronous = false)
     {
         if (_suppressSettingsSave) return;
 
@@ -6560,7 +6897,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         _settingsSaveDebounceTimer.Stop();
-        PersistSettingsSnapshot(BuildSettingsSnapshot());
+        PersistSettingsSnapshot(BuildSettingsSnapshot(), synchronous);
     }
 
     private void SettingsSaveDebounceTimer_OnTick(object? sender, EventArgs e)
@@ -6590,6 +6927,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
             RestoreOpenTabsOnLaunchEnabled          = IsRestoreOpenTabsOnLaunchEnabled,
             AutoUpdateExtensionsEnabled             = IsAutoUpdateExtensionsEnabled,
+            AutoUpdateAppEnabled                    = IsAutoUpdateAppEnabled,
             PreferredTerminalShellId                = SelectedTerminalShell?.Id,
             TerminalVisible                         = IsTerminalVisible,
             TerminalPanelHeight                     = TerminalPanelHeight,
@@ -6615,9 +6953,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
     }
 
-    private void PersistSettingsSnapshot(AppSettings snapshot)
+    private void PersistSettingsSnapshot(AppSettings snapshot, bool synchronous = false)
     {
-        Task.Run(() =>
+        void WriteToDisk()
         {
             try
             {
@@ -6632,7 +6970,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 File.Move(tempPath, SettingsFilePath, overwrite: true);
             }
             catch (Exception ex) { KodoDiagnostics.WriteDiagnosticLog("MainWindow.PersistSettingsSnapshot", ex, false, "Warning", $"Failed to save settings to '{SettingsFilePath}'"); }
-        });
+        }
+
+        // The "synchronous" path exists for shutdown: PersistSettingsSnapshot used to
+        // always hand the write off to Task.Run, which schedules it on a background
+        // thread-pool thread. On window close, Main() returns right after
+        // StartWithClassicDesktopLifetime, and the process exits as soon as it does -
+        // .NET does not wait for background thread-pool work to finish. That created a
+        // race where the very last settings save (the one that matters most) could be
+        // dropped silently if the process tore down before the background write landed.
+        // Writing synchronously on the UI thread during shutdown guarantees the file is
+        // on disk before the app exits; it's a small, fast JSON write so this adds no
+        // perceptible delay.
+        if (synchronous)
+        {
+            WriteToDisk();
+            return;
+        }
+
+        Task.Run(WriteToDisk);
     }
 
     private IBrush GetCachedBrush(string colorValue)
@@ -7259,15 +7615,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Restore scroll position. ScrollToLine is applied synchronously first (it works
         // immediately after SetEditorContent on line numbers without a layout pass) so the
         // viewport is already close to correct before the frame is painted. Then we post a
-        // precise pixel-offset restore at Background priority — after AvaloniaEdit has
-        // completed its own layout — to land exactly where the user left off.
+        // precise pixel-offset restore at Background priority - after AvaloniaEdit has
+        // completed its own layout - to land exactly where the user left off.
         EditorTextBox.ScrollToLine(tab.TopLineNumber);
         var savedOffsetY = tab.ScrollOffsetY;
         if (savedOffsetY > 0.0)
         {
             // Post at Background priority so AvaloniaEdit finishes its own layout pass
             // before we reposition the viewport. ScrollViewer.Offset is a plain settable
-            // Vector property — no interface cast needed, compiles against all Avalonia versions.
+            // Vector property - no interface cast needed, compiles against all Avalonia versions.
             Dispatcher.UIThread.Post(() =>
             {
                 var sv = EditorTextBox.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
@@ -7522,6 +7878,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = RefreshExtensionsAndAutoUpdateAsync();
         _ = RefreshLatestReleaseAsync();
         _ = FetchAnnouncementsAsync();
+        _ = FetchSportingEventMessagesAsync();
 
         // Show the What's New splash once per upgrade. Uses the same version parser
         // as IsNewerVersionAvailable so v-prefixes, -BETA, and -DEV suffixes are all
@@ -7766,16 +8123,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var validEntries = (recentFiles ?? [])
             .Where(entry => entry.IsFolder ? Directory.Exists(entry.Path) : File.Exists(entry.Path))
             .ToList();
-        var recentFolders = validEntries
-            .Where(entry => entry.IsFolder)
-            .Select(entry => entry.Path)
-            .ToArray();
 
+        // Note: we deliberately do NOT filter out files whose path happens to fall
+        // under a recent folder's directory tree here. AddRecentFile already
+        // collapses a file into its parent folder entry at write time, but only
+        // when that file was actually opened while that folder was the active
+        // project (_currentFolderPath). A file opened standalone (e.g. via
+        // File > Open with no folder open, or with a different folder open) that
+        // happens to physically live inside some other recent folder's tree is a
+        // distinct, legitimate recent entry and must not be dropped on load -
+        // doing so previously caused standalone-opened and newly-created files to
+        // silently vanish from Recent Files after a restart.
         foreach (var entry in validEntries)
         {
-            if (!entry.IsFolder && recentFolders.Any(folder => IsPathInsideDirectory(entry.Path, folder)))
-                continue;
-
             RecentFiles.Add(new RecentFileItem(entry.Path, entry.IsFolder, entry.LastOpened));
             if (RecentFiles.Count >= MaxRecentFiles)
                 break;
@@ -8402,7 +8762,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        // Only toggle panel visibility — never clear the folder state.
+        // Only toggle panel visibility - never clear the folder state.
         // Previously this called CloseFolder() when a project was open, which wiped
         // _currentFolderPath and FileTreeItems; reopening with Ctrl+B then showed an
         // empty sidebar because there was nothing left to repopulate from.
@@ -10628,7 +10988,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_OnClosed(object? sender, EventArgs e)
     {
-        SaveSettings(immediate: true);
+        SaveSettings(immediate: true, synchronous: true);
         _autoSaveTimer.Stop();
         _autoSaveStatusTimer.Stop();
         _discordReconnectTimer.Stop();
@@ -10682,6 +11042,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static bool IsConnectivityFailure(Exception exception) =>
         exception is HttpRequestException or TaskCanceledException;
 
+    // GitHub answers an over-quota request with 403 (anonymous "60 req/hr" limit)
+    // or 429 (secondary rate limit, e.g. too many requests in a short burst).
+    // EnsureSuccessStatusCode() turns either into an HttpRequestException whose
+    // .Message is a generic, unhelpful "Response status code does not indicate
+    // success: 403 (Forbidden)." Recognize those two status codes specifically
+    // and swap in a tight, actionable message instead of showing that verbatim.
+    private static bool IsGitHubRateLimitException(Exception exception) =>
+        exception is HttpRequestException { StatusCode: HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests };
+
+    private static string DescribeFetchFailure(Exception exception) =>
+        IsGitHubRateLimitException(exception)
+            ? "GitHub's API rate limit was hit. Wait a few minutes, then try again."
+            : exception.Message;
+
     private void RefreshMarketplaceConnectivityState(string? operation = null, Exception? exception = null)
     {
         var hasWirelessConnection = HasActiveWirelessConnection();
@@ -10697,13 +11071,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else if (exception is not null)
         {
-            // Show a message for any exception when internet is available — not just
+            // Show a message for any exception when internet is available - not just
             // known connectivity failures. This covers rate-limit responses, JSON parse
             // errors, unexpected HTTP status codes, and other non-network failures that
             // would otherwise be silent.
-            message = hasWirelessConnection
-                ? "Couldn't reach the marketplace. Your connection may be unstable — try again in a moment."
-                : "No Wi-Fi detected. If you're expecting a connection, reconnect first. Marketplace downloads may fail while offline.";
+            message = IsGitHubRateLimitException(exception)
+                ? "GitHub's API rate limit was hit. Marketplace refreshes will resume once it resets."
+                : hasWirelessConnection
+                    ? "Couldn't reach the marketplace. Your connection may be unstable - try again in a moment."
+                    : "No Wi-Fi detected. If you're expecting a connection, reconnect first. Marketplace downloads may fail while offline.";
         }
 
         if (!string.IsNullOrWhiteSpace(operation) && !string.IsNullOrWhiteSpace(message))
@@ -10947,6 +11323,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static int NormalizeTabSize(int value) => value is 2 or 4 or 8 ? value : 4;
 
+    // Guards against NaN/Infinity (which Math.Clamp does not reject) coming from a
+    // hand-edited or corrupted settings.json, in addition to clamping to the
+    // draggable range.
+    private static double NormalizeTerminalPanelHeight(double value) =>
+        double.IsFinite(value)
+            ? Math.Clamp(value, MinTerminalPanelHeight, MaxTerminalPanelHeight)
+            : DefaultTerminalPanelHeight;
+
     private async Task<UnsavedTabAction> ShowUnsavedTabDialogAsync(EditorTab tab)
     {
         var result = UnsavedTabAction.Cancel;
@@ -11146,7 +11530,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 Text         = string.IsNullOrWhiteSpace(exception.Message)
                                    ? "An unexpected error occurred."
-                                   : exception.Message,
+                                   : DescribeFetchFailure(exception),
                 FontSize     = 13,
                 Foreground   = PrimaryTextBrush,
                 TextWrapping = TextWrapping.Wrap,
@@ -11348,9 +11732,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
         public bool RestoreOpenTabsOnLaunchEnabled { get; set; }
         public bool AutoUpdateExtensionsEnabled { get; set; }
+        // Defaults to true: most users want Kodo to keep itself current
+        // without thinking about it, mirroring how the auto-update dialog
+        // already behaved before this setting existed.
+        public bool AutoUpdateAppEnabled { get; set; } = true;
         public string? PreferredTerminalShellId { get; set; }
         public bool TerminalVisible { get; set; }
-        public double TerminalPanelHeight { get; set; } = 250;
+        public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
         public List<string> OpenTabPaths { get; set; } = [];
         public string? ActiveTabPath { get; set; }
         public List<RecentFileEntry> RecentFiles { get; set; } = [];
