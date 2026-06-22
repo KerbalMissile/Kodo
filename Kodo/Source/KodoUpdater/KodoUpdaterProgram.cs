@@ -26,7 +26,7 @@ namespace KodoUpdater;
 // enough to show a Windows error dialog, since nobody is watching it.
 internal static class Program
 {
-    private const string RepoOwner = "SS-YYC";
+    private const string RepoOwner = "KerbalMissile";
     private const string RepoName = "Kodo";
     private const string LatestReleaseUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
     private static readonly TimeSpan PollInterval = TimeSpan.FromHours(6);
