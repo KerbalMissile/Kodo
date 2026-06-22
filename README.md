@@ -21,7 +21,7 @@ Kodo is built by [KerbalMissile](https://github.com/KerbalMissile) and [SS-YYC](
 
 Released under the [Kodo Public License v1.1](LICENSE.md).
 
-**[▶ Watch the Demo](https://youtu.be/jYXhelB9CfM)  ·  [🌐 Website](https://kerbalmissile.github.io/Kodo-Website/)  ·  [💬 Join The Discord](https://discord.gg/cUQ6C88Z9C)**
+**[▶ Watch the Demo (this is from a Beta version)](https://youtu.be/jYXhelB9CfM)  ·  [🌐 Website](https://kerbalmissile.github.io/Kodo-Website/)  ·  [💬 Join The Discord](https://discord.gg/cUQ6C88Z9C)**
 
 ---
 
