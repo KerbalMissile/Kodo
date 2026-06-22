@@ -3643,7 +3643,7 @@
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
                                                VerticalAlignment="Center"
-                                               Text="Accent Colour" />
+                                               Text="{Binding LabelAccentColour}" />
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Spacing="10">
