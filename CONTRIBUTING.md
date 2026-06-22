@@ -27,8 +27,6 @@ If something's broken, open an [Issue](https://github.com/KerbalMissile/Kodo/iss
 - What actually happened
 - Your OS and .NET version if relevant
 
-We're in Beta, so expect bugs; but that also means bug reports are especially valuable right now.
-
 ### Submitting Changes
 
 1. Fork the repo
