@@ -4017,7 +4017,7 @@
                                     <StackPanel Spacing="2">
                                         <TextBlock VerticalAlignment="Center"
                                                    Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Improved RPC [EXPERIMENTAL]" />
+                                                   Text="Detailed RPC" />
                                         <TextBlock Foreground="{Binding MutedTextBrush}"
                                                    FontSize="11"
                                                    Text="Shows language, dirty state, page context, and open tab count." />
