@@ -37,11 +37,10 @@ class Program
             if (e.ExceptionObject is not Exception ex) return;
             try
             {
-                KodoDiagnostics.WriteDiagnosticLog(
+                KodoDiagnostics.LogCritical(
                     "Program.Main.UnhandledException",
                     ex,
                     isTerminating: e.IsTerminating,
-                    severity: "Crash",
                     operation: "Startup");
             }
             catch { /* cannot crash the crash handler */ }

@@ -1,4 +1,5 @@
 // Licensed under the Kodo Public License v1.1
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -210,22 +211,27 @@ public partial class App : Application
     {
         if (e.ExceptionObject is not Exception exception) return;
 
-        KodoDiagnostics.WriteDiagnosticLog("AppDomain.UnhandledException", exception, e.IsTerminating, "Crash");
+        // Critical: unhandled AppDomain exception - may terminate the process.
+        KodoDiagnostics.LogCritical("AppDomain.UnhandledException", exception, e.IsTerminating);
         ShowCrashDialog("AppDomain.UnhandledException", exception, isTerminating: e.IsTerminating);
     }
 
     private static void TaskScheduler_OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        KodoDiagnostics.WriteDiagnosticLog("TaskScheduler.UnobservedTaskException", e.Exception, false, "Crash");
+        // Warning: unobserved Task exception - recoverable, process keeps running.
+        // Logged to warnings.log rather than crash.log since the app is not crashing.
+        KodoDiagnostics.LogWarning("TaskScheduler.UnobservedTaskException", e.Exception, operation: "Background task");
         // Mark as observed first so the runtime does not re-throw it after we return.
         e.SetObserved();
-        // This source is never IsTerminating, so the user can dismiss and keep working.
+        // Show the crash-style dialog but marked as non-terminating so the user
+        // knows the app is still alive and they can keep working.
         ShowCrashDialog("TaskScheduler.UnobservedTaskException", e.Exception, isTerminating: false);
     }
 
     private static void DispatcherUiThread_OnUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
     {
-        KodoDiagnostics.WriteDiagnosticLog("Dispatcher.UIThread.UnhandledException", e.Exception, false, "Crash");
+        // Critical: exception on the UI thread - may leave the UI in a broken state.
+        KodoDiagnostics.LogCritical("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
         ShowCrashDialog("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
         e.Handled = true;
     }
@@ -431,7 +437,7 @@ public partial class App : Application
         // --- Exception details (scrollable, selectable) ---
         var exceptionText = new SelectableTextBlock
         {
-            Text       = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, "Crash"),
+            Text       = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical),
             FontSize   = 12,
             FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
             Foreground = new SolidColorBrush(KodoTokenOrange),
@@ -480,6 +486,19 @@ public partial class App : Application
 
         var (accentColor, accentForeground) = AccentResolver.GetCurrentAccent();
 
+        var reportButton = new Button
+        {
+            Content             = "Report on GitHub",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Padding             = new Thickness(16, 8),
+            Background          = new SolidColorBrush(KodoDarkBadgeBg),
+            Foreground          = new SolidColorBrush(KodoTextMuted),
+            BorderBrush         = new SolidColorBrush(KodoDarkBorder),
+            BorderThickness     = new Thickness(1),
+            CornerRadius        = new CornerRadius(8),
+            Margin              = new Thickness(8, 0, 0, 0),
+        };
+
         var dismissButton = new Button
         {
             Content             = isTerminating ? "Close" : "Dismiss",
@@ -491,8 +510,15 @@ public partial class App : Application
             CornerRadius        = new CornerRadius(8),
         };
 
+        // Left side: Copy + Report. Right side: Dismiss.
+        var leftButtons = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Children    = { copyButton, reportButton },
+        };
+
         var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        buttonRow.Children.Add(copyButton);
+        buttonRow.Children.Add(leftButtons);
         Grid.SetColumn(dismissButton, 1);
         buttonRow.Children.Add(dismissButton);
 
@@ -540,15 +566,33 @@ public partial class App : Application
                 var clip = TopLevel.GetTopLevel(dialog)?.Clipboard;
                 if (clip is not null)
                 {
-                    var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, "Crash");
+                    var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical);
                     await clip.SetTextAsync(text);
-                    copyButton.Content  = "Copied!";
+                    copyButton.Content   = "Copied!";
                     copyButton.Foreground = Brushes.White;
                 }
             }
             catch
             {
                 // Clipboard failures must not crash the crash dialog.
+            }
+        };
+
+        reportButton.Click += (_, _) =>
+        {
+            try
+            {
+                // Pre-fill a GitHub issue with the exception type as the title.
+                // The user can paste the clipboard payload into the body.
+                var title = Uri.EscapeDataString($"[Crash] {exception.GetType().Name}: {exception.Message}"
+                    .Replace("\r", "").Replace("\n", " ").Trim());
+                var url = $"https://github.com/KerbalMissile/Kodo/issues/new?title={title}" +
+                          $"&labels=bug&template=bug_report.md";
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch
+            {
+                // Opening the browser must not crash the crash dialog.
             }
         };
 

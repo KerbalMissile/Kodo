@@ -956,7 +956,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                     <RowDefinition Height="6" />
-                    <RowDefinition Height="Auto" MinHeight="120" MaxHeight="420" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
@@ -1613,7 +1613,7 @@
 
                                             <!-- Content row: empty state OR file list, both in row 1 -->
 
-                                            <!-- Empty state — vertically and horizontally centered in remaining height -->
+                                            <!-- Empty state - vertically and horizontally centered in remaining height -->
                                             <StackPanel Grid.Row="1"
                                                         IsVisible="{Binding !HasRecentFiles}"
                                                         HorizontalAlignment="Center"
@@ -2015,6 +2015,8 @@
                         Background="{Binding CardBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,1,0,1"
+                        MinHeight="120"
+                        MaxHeight="420"
                         Height="{Binding TerminalPanelHeight}">
                     <Grid RowDefinitions="Auto,Auto,*,Auto">
                         <Border Grid.Row="0"
@@ -2208,7 +2210,7 @@
                         <Grid Grid.Row="2"
                               Focusable="False"
                               IsVisible="{Binding HasActiveTerminal}">
-                            <kodo:PseudoConsoleTerminal x:Name="TerminalHostControl" />
+                            <kodo:ConsoleTerminal x:Name="TerminalHostControl" />
                         </Grid>
 
                         <Border Grid.Row="2"
@@ -3855,6 +3857,7 @@
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding StatusBarFilePathVisibilityText}" />
+
                             </StackPanel>
                         </Border>
 

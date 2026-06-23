@@ -729,6 +729,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Settings. The launch-time check itself still lives in App.axaml.cs
     // (CheckForUpdatesInBackground) - this timer covers everything after that.
     private readonly DispatcherTimer _appAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
+    // Refreshes the marketplace listing (not extension auto-install) once an
+    // hour while Kodo stays open. Always runs - unlike _extensionAutoUpdateTimer
+    // this isn't gated by IsAutoUpdateExtensionsEnabled, since it only refreshes
+    // what's shown in the Marketplace tab rather than installing anything.
+    private readonly DispatcherTimer _marketplaceRefreshTimer = new() { Interval = TimeSpan.FromHours(1) };
     private readonly IndentGuideBackgroundRenderer _indentGuideRenderer = new();
     private readonly List<string> _startupOpenTabPaths = [];
     private readonly Dictionary<string, IBrush> _brushCache = new(StringComparer.OrdinalIgnoreCase);
@@ -1152,6 +1157,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         _extensionAutoUpdateTimer.Tick += ExtensionAutoUpdateTimer_OnTick;
         _appAutoUpdateTimer.Tick += AppAutoUpdateTimer_OnTick;
+        _marketplaceRefreshTimer.Tick += MarketplaceRefreshTimer_OnTick;
 
         // ── Pre-DataContext theme bootstrap ────────────────────────────────────
         // Extensions must be loaded before ApplyTheme so custom themes are available.
@@ -1181,6 +1187,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         UpdateDiscordRichPresenceLifecycle();
         UpdateExtensionAutoUpdateLifecycle();
         UpdateAppAutoUpdateLifecycle();
+        _marketplaceRefreshTimer.Start();
         ApplyEditorSettings();
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += NetworkChange_OnNetworkAddressChanged;
@@ -1356,11 +1363,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     "This may indicate a slow or stalled network connection, " +
                     "a slow disk scan, or a hung extension operation.");
 
-                KodoDiagnostics.WriteDiagnosticLog(
+                KodoDiagnostics.LogWarning(
                     source: "MainWindow.RefreshExtensionsDataAsync.Watchdog",
                     exception: timeoutEx,
-                    isTerminating: false,
-                    severity: "Warning",
                     operation: "Marketplace refresh watchdog");
 
                 await Dispatcher.UIThread.InvokeAsync(async () =>
@@ -1575,7 +1580,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 // Index unchanged - reuse whatever is already in the collection
                 // (disk-cache seed or previous refresh).  No parse, no disk write.
-                KodoDiagnostics.WriteDebugFallback("Marketplace index: 304 Not Modified - reusing cached data.");
+                KodoDiagnostics.LogDebug("Marketplace index: 304 Not Modified - reusing cached data.");
             }
             else if (remoteJson is not null)
             {
@@ -1598,7 +1603,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 // Network failed but a cached copy exists - the marketplace was
                 // already seeded above, so stay usable.  Log without a dialog.
                 extensionLoadErrors.Add($"Marketplace index fetch failed (using cached copy): {DescribeFetchFailure(ex)}");
-                KodoDiagnostics.WriteDebugFallback("Marketplace index fetch failed; using disk cache.", ex);
+                KodoDiagnostics.LogDebug("Marketplace index fetch failed; using disk cache.", ex);
                 await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
             }
             else
@@ -1662,7 +1667,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 catch (Exception ex)
                 {
                     // Network failure for this icon - leave the kox icon (or abbreviation) in place.
-                    KodoDiagnostics.WriteDebugFallback($"Icon fetch failed for installed extension '{pair.ext.Id}': {pair.iconUrl}", ex);
+                    KodoDiagnostics.LogDebug($"Icon fetch failed for installed extension '{pair.ext.Id}': {pair.iconUrl}", ex);
                 }
             });
 
@@ -1707,7 +1712,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var icon = await GetCachedIconAsync(marketplaceIconMap[entry.Id]);
                     if (!icon.HasValue)
                     {
-                        KodoDiagnostics.WriteDebugFallback($"Icon fetch returned no data for marketplace extension '{entry.Id}': {marketplaceIconMap[entry.Id]}");
+                        KodoDiagnostics.LogDebug($"Icon fetch returned no data for marketplace extension '{entry.Id}': {marketplaceIconMap[entry.Id]}");
                         Interlocked.Increment(ref iconFailures);
                         return;
                     }
@@ -1719,7 +1724,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 catch (Exception ex)
                 {
-                    KodoDiagnostics.WriteDebugFallback($"Icon fetch failed for marketplace extension '{entry.Id}': {marketplaceIconMap[entry.Id]}", ex);
+                    KodoDiagnostics.LogDebug($"Icon fetch failed for marketplace extension '{entry.Id}': {marketplaceIconMap[entry.Id]}", ex);
                     Interlocked.Increment(ref iconFailures);
                     Interlocked.Exchange(ref lastIconException, ex);
                 }
@@ -1732,7 +1737,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // would block the marketplace from appearing while extensions loaded fine.
         if (iconAttempts > 0 && iconFailures == iconAttempts && lastIconException is not null)
         {
-            KodoDiagnostics.WriteDebugFallback(
+            KodoDiagnostics.LogDebug(
                 $"All {iconAttempts} marketplace icon fetch(es) failed; icons will show abbreviations.",
                 lastIconException);
         }
@@ -1875,7 +1880,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             // Log and surface the Kodo warning dialog so the user knows why the
             // release panel is empty (timeout, rate-limit, no connectivity, etc.).
-            KodoDiagnostics.WriteDebugFallback("Failed to fetch latest release info", ex);
+            KodoDiagnostics.LogDebug("Failed to fetch latest release info", ex);
             await ShowWarningDialogAsync("Latest release info fetch", ex);
         }
         finally
@@ -1922,7 +1927,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            KodoDiagnostics.WriteDebugFallback("Failed to fetch announcements", ex);
+            KodoDiagnostics.LogDebug("Failed to fetch announcements", ex);
             IsNewsError = true;
 
             // Show the Kodo warning dialog so the user knows the news panel is stale
@@ -2121,7 +2126,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 var entryId = item.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "?" : "?";
                 extensionLoadErrors.Add($"Skipped malformed marketplace entry '{entryId}': {itemEx.Message}");
-                KodoDiagnostics.WriteDebugFallback($"Skipped malformed marketplace entry '{entryId}'", itemEx);
+                KodoDiagnostics.LogDebug($"Skipped malformed marketplace entry '{entryId}'", itemEx);
             }
         }
     }
@@ -2129,7 +2134,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? TryReadMarketplaceIndexCache()
     {
         try { return File.Exists(MarketplaceIndexCachePath) ? File.ReadAllText(MarketplaceIndexCachePath, System.Text.Encoding.UTF8) : null; }
-        catch (Exception ex) { KodoDiagnostics.WriteDebugFallback("Could not read marketplace index cache.", ex); return null; }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("Could not read marketplace index cache.", ex); return null; }
     }
 
     private void TryWriteMarketplaceIndexCache(string json)
@@ -2139,7 +2144,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Directory.CreateDirectory(Path.GetDirectoryName(MarketplaceIndexCachePath)!);
             File.WriteAllText(MarketplaceIndexCachePath, json, System.Text.Encoding.UTF8);
         }
-        catch (Exception ex) { KodoDiagnostics.WriteDebugFallback("Could not write marketplace index cache.", ex); }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("Could not write marketplace index cache.", ex); }
     }
 
     private string? TryReadMarketplaceIndexETag()
@@ -2155,7 +2160,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Directory.CreateDirectory(Path.GetDirectoryName(MarketplaceIndexETagPath)!);
             File.WriteAllText(MarketplaceIndexETagPath, etag);
         }
-        catch (Exception ex) { KodoDiagnostics.WriteDebugFallback("Could not write marketplace index ETag.", ex); }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("Could not write marketplace index ETag.", ex); }
     }
 
     private static MarketplaceExtension ParseMarketplaceExtension(JsonElement item)
@@ -3765,63 +3770,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return score;
     }
 
-    private LoadedExtension? ResolveInlineCodeLanguageExtension(string codeSnippet)
-    {
-        if (string.IsNullOrWhiteSpace(codeSnippet))
-            return null;
-
-        var snippet = codeSnippet.Trim();
-        if (snippet.Length < 2)
-            return null;
-
-        var bestMatch = LoadedExtensions
-            .Where(extension =>
-                extension.Type == "language" &&
-                !string.Equals(extension.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase))
-            .Select(extension => new { Extension = extension, Score = ScoreInlineCodeLanguage(extension, snippet) })
-            .Where(result => result.Score > 0)
-            .OrderByDescending(result => result.Score)
-            .ThenBy(result => result.Extension.Name, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
-
-        return bestMatch?.Extension;
-    }
-
-    private static int ScoreInlineCodeLanguage(LoadedExtension extension, string snippet)
-    {
-        var score = 0;
-        score += ScoreTokenMatches(snippet, extension.Keywords, 5);
-        score += ScoreTokenMatches(snippet, extension.Types, 4);
-        score += ScoreTokenMatches(snippet, extension.Functions, 4);
-        score += ScoreTokenMatches(snippet, extension.Properties, 3);
-        score += ScoreTokenMatches(snippet, extension.Namespaces, 3);
-
-        if (!string.IsNullOrWhiteSpace(extension.CommentLine) &&
-            snippet.Contains(extension.CommentLine, StringComparison.Ordinal))
-        {
-            score += 2;
-        }
-
-        if (extension.DisableSingleQuoteStrings && snippet.Contains("=>", StringComparison.Ordinal))
-            score += 2;
-
-        return score;
-    }
-
-    private static int ScoreTokenMatches(string snippet, IEnumerable<string> tokens, int weight)
-    {
-        var total = 0;
-
-        foreach (var token in tokens.Where(token => !string.IsNullOrWhiteSpace(token)).Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var escaped = Regex.Escape(token);
-            var regex = new Regex($@"(?<![\p{{L}}\p{{Nd}}_]){escaped}(?![\p{{L}}\p{{Nd}}_])", RegexOptions.IgnoreCase);
-            if (regex.IsMatch(snippet))
-                total += weight;
-        }
-
-        return total;
-    }
+    // Inline-code language detection now lives in SyntaxColorEngine.cs
+    // (InlineCodeLanguageDetector) so all syntax-matching logic stays in the
+    // engine rather than the window's code-behind. This wrapper just supplies
+    // the currently loaded extensions.
+    private LoadedExtension? ResolveInlineCodeLanguageExtension(string codeSnippet) =>
+        InlineCodeLanguageDetector.Resolve(LoadedExtensions, codeSnippet);
 
     // Sets the corrupted/unsupported state and fires all dependent property notifications.
     private void SetFileCorrupted(bool corrupted)
@@ -4973,7 +4927,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // value flows straight through the TerminalPanelHeight property - which is
     // what gets persisted to settings.json and is the same value the AXAML
     // binds the panel's Height to. The actual ConPTY/grid resize underneath
-    // needs no special handling here: PseudoConsoleTerminal.ArrangeOverride
+    // needs no special handling here: ConsoleTerminal.ArrangeOverride
     // already reacts to any bounds change (this one included) by recalculating
     // rows/cols and calling Resize(), which resizes both the cell buffer and
     // the native pseudo console via ResizePseudoConsole.
@@ -6077,7 +6031,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             // Should be unreachable (everything above is already guarded),
             // but keep this feature from ever being able to crash startup.
-            KodoDiagnostics.WriteDebugFallback("Failed to build sporting event welcome messages", ex);
+            KodoDiagnostics.LogDebug("Failed to build sporting event welcome messages", ex);
         }
     }
 
@@ -6978,7 +6932,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            KodoDiagnostics.WriteDiagnosticLog("MainWindow.LoadSettings", ex, false, "Warning", $"Failed to load settings from '{SettingsFilePath}'");
+            KodoDiagnostics.LogWarning("MainWindow.LoadSettings", ex, operation: $"Failed to load settings from '{SettingsFilePath}'");
             return new AppSettings();
         }
     }
@@ -7069,7 +7023,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 File.WriteAllText(tempPath, JsonSerializer.Serialize(snapshot));
                 File.Move(tempPath, SettingsFilePath, overwrite: true);
             }
-            catch (Exception ex) { KodoDiagnostics.WriteDiagnosticLog("MainWindow.PersistSettingsSnapshot", ex, false, "Warning", $"Failed to save settings to '{SettingsFilePath}'"); }
+            catch (Exception ex) { KodoDiagnostics.LogWarning("MainWindow.PersistSettingsSnapshot", ex, operation: $"Failed to save settings to '{SettingsFilePath}'"); }
         }
 
         // The "synchronous" path exists for shutdown: PersistSettingsSnapshot used to
@@ -8220,9 +8174,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void LoadRecentFiles(IEnumerable<RecentFileEntry>? recentFiles)
     {
         RecentFiles.Clear();
-        var validEntries = (recentFiles ?? [])
-            .Where(entry => entry.IsFolder ? Directory.Exists(entry.Path) : File.Exists(entry.Path))
-            .ToList();
 
         // Note: we deliberately do NOT filter out files whose path happens to fall
         // under a recent folder's directory tree here. AddRecentFile already
@@ -8234,7 +8185,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // distinct, legitimate recent entry and must not be dropped on load -
         // doing so previously caused standalone-opened and newly-created files to
         // silently vanish from Recent Files after a restart.
-        foreach (var entry in validEntries)
+        //
+        // We also deliberately do NOT filter by File.Exists / Directory.Exists here.
+        // A path that is currently unreachable (USB drive unplugged, network share
+        // offline, file temporarily moved) is still a valid recent entry - it should
+        // reappear as soon as the path becomes available again. Existence is checked
+        // at open time in RecentFileButton_OnClick; entries are only removed when the
+        // user explicitly clears them, not automatically on load.
+        var entries = (recentFiles ?? [])
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Path))
+            .ToList();
+
+        foreach (var entry in entries)
         {
             RecentFiles.Add(new RecentFileItem(entry.Path, entry.IsFolder, entry.LastOpened));
             if (RecentFiles.Count >= MaxRecentFiles)
@@ -8883,11 +8845,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsMarketplaceTabSelected = false;
 
-    // Used by the tab strip inside the Extensions page - only switches the tab
+    // Used by the tab strip inside the Extensions page - switches the tab and
+    // refreshes the marketplace listing (respects the normal cooldown, so rapid
+    // tab-switching doesn't spam the GitHub API).
     private void MarketplaceTabButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsMarketplaceTabSelected = true;
         RefreshMarketplaceConnectivityState();
+        _ = RefreshExtensionsDataAsync();
     }
 
     // Used by the "Visit Marketplace" button on the home screen -
@@ -8999,7 +8964,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // returns null, but guard here too so a manual click can never
             // crash the settings page.
             CheckForUpdatesStatusText = "Couldn't check for updates. Check your connection and try again.";
-            KodoDiagnostics.WriteDebugFallback("Manual check-for-updates failed", ex);
+            KodoDiagnostics.LogDebug("Manual check-for-updates failed", ex);
         }
         finally
         {
@@ -9308,7 +9273,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (item.IsFolder)
         {
-            if (!Directory.Exists(item.Path)) { RemoveRecentFile(item.Path); return; }
+            if (!Directory.Exists(item.Path))
+            {
+                await ShowNotFoundDialogAsync(item.Path, isFolder: true);
+                return;
+            }
             _currentFolderPath = item.Path;
             AddRecentFolder(item.Path);
             await PopulateFileTreeAsync(item.Path);
@@ -9317,7 +9286,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else
         {
-            if (!File.Exists(item.Path)) { RemoveRecentFile(item.Path); return; }
+            if (!File.Exists(item.Path))
+            {
+                await ShowNotFoundDialogAsync(item.Path, isFolder: false);
+                return;
+            }
             await OpenFileFromPathAsync(item.Path);
         }
     }
@@ -10407,7 +10380,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             // Silent background check - this must never surface as a crash.
-            KodoDiagnostics.WriteDebugFallback("Periodic app update check failed", ex);
+            KodoDiagnostics.LogDebug("Periodic app update check failed", ex);
         }
     }
 
@@ -10423,6 +10396,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // the user is busy working on something unrelated.
         await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
         await AutoUpdateExtensionsIfEnabledAsync();
+    }
+
+    // Fires once an hour while Kodo stays open so the Marketplace tab's listing
+    // (new extensions, version bumps) stays current during long sessions, even
+    // when "Automatically update extensions" is switched off. Unlike
+    // ExtensionAutoUpdateTimer_OnTick above, this never installs anything - it
+    // only refreshes the data shown in the marketplace.
+    private async void MarketplaceRefreshTimer_OnTick(object? sender, EventArgs e)
+    {
+        // suppressWatchdog: true for the same reason as the extension auto-update
+        // sweep - a slow network shouldn't pop a timeout dialog over a silent
+        // hourly background refresh.
+        await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
     }
 
     // Used on startup: runs the normal extension/marketplace refresh first
@@ -11229,6 +11215,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _extensionsRefreshDebounceTimer.Stop();
         _extensionAutoUpdateTimer.Stop();
         _appAutoUpdateTimer.Stop();
+        _marketplaceRefreshTimer.Stop();
         _wordCountRefreshTimer.Stop();
         _settingsSaveDebounceTimer.Stop();
         _windowsAccentPollTimer.Stop();
@@ -11692,37 +11679,143 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Shows a non-fatal warning dialog that mirrors the crash dialog in App.axaml.cs
     // but uses softer wording. Call this from any recoverable error path where the
     // user needs to know something went wrong.
-    private async Task ShowWarningDialogAsync(string context, Exception exception)
+    // Shown when a recent file/folder path is unreachable at open time.
+    // Unlike ShowWarningDialogAsync, this is not an error - the path may simply
+    // be on a drive that isn't currently connected. The entry is kept in recents
+    // so it reappears automatically when the path becomes available again.
+    // A "Remove from recents" button is offered as an explicit opt-in to deletion.
+    private async Task ShowNotFoundDialogAsync(string path, bool isFolder)
     {
-        var source = "MainWindow.Warning";
-        KodoDiagnostics.WriteDiagnosticLog(source, exception, false, "Warning", context);
-
-        if (ShouldSuppressWarningDialog(context, exception))
-        {
-            KodoDiagnostics.WriteDebugFallback($"Suppressed duplicate warning dialog for '{context}'.", exception);
-            return;
-        }
-
         try
         {
-            // Determine whether this context is file-critical (data may be at risk).
-            var isFileOperation = context.StartsWith("File save", StringComparison.OrdinalIgnoreCase)
-                               || context.StartsWith("Auto-save", StringComparison.OrdinalIgnoreCase);
- 
-            var subtitleMessage = isFileOperation
-                ? "Kodo could not complete this file operation. Your in-editor content is still intact - try saving again or use Save As to choose a different location."
-                : "Kodo ran into a problem with this operation. No data was lost - you can try again.";
- 
-            // --- Header ---
+            var kind = isFolder ? "Folder" : "File";
+
             var titleText = new TextBlock
             {
-                Text         = "Something went wrong",
+                Text         = $"{kind} Not Found",
                 FontSize     = 16,
                 FontWeight   = FontWeight.SemiBold,
                 Foreground   = PrimaryTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
- 
+
+            var bodyText = new TextBlock
+            {
+                Text         = $"This {kind.ToLowerInvariant()} couldn't be opened because it isn't currently accessible. " +
+                               $"It may be on a drive that isn't connected, or it may have been moved or deleted.\n\n{path}",
+                FontSize     = 13,
+                Foreground   = MutedTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+            };
+
+            var removeButton = new Button
+            {
+                Content             = "Remove from Recents",
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Padding             = new Thickness(16, 8),
+                Background          = ButtonBrush,
+                Foreground          = MutedTextBrush,
+                BorderBrush         = SurfaceBorderBrush,
+                BorderThickness     = new Thickness(1),
+                CornerRadius        = new CornerRadius(8),
+            };
+
+            var dismissButton = new Button
+            {
+                Content             = "OK",
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Padding             = new Thickness(28, 8),
+                Background          = AccentBrush,
+                Foreground          = AccentForegroundBrush,
+                BorderThickness     = new Thickness(0),
+                CornerRadius        = new CornerRadius(8),
+            };
+
+            var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            buttonRow.Children.Add(removeButton);
+            Grid.SetColumn(dismissButton, 1);
+            buttonRow.Children.Add(dismissButton);
+
+            var content = new StackPanel
+            {
+                Spacing  = 12,
+                Margin   = new Thickness(20),
+                Children = { titleText, bodyText, buttonRow },
+            };
+
+            Window? dialog = null;
+            dialog = new Window
+            {
+                Title                 = "Kodo - Not Found",
+                Width                 = 480,
+                SizeToContent         = SizeToContent.Height,
+                MinWidth              = 360,
+                MaxHeight             = 400,
+                CanResize             = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background            = CardBrush,
+                Content               = content,
+            };
+
+            removeButton.Click += (_, _) => { RemoveRecentFile(path); dialog!.Close(); };
+            dismissButton.Click += (_, _) => dialog!.Close();
+            await dialog.ShowDialog(this);
+        }
+        catch (Exception dialogEx)
+        {
+            KodoDiagnostics.LogDebug("ShowNotFoundDialogAsync failed to display.", dialogEx);
+        }
+    }
+
+    // ── Two-tier warning dialog ───────────────────────────────────────────────
+    //
+    // Critical (isCritical = true):  file-save failures and any operation where
+    //   data may be at risk.  Shown with an amber warning banner, logged to
+    //   warnings.log, and the title reads "Kodo - Warning".
+    //
+    // Non-critical (default):  network/marketplace/update failures and other
+    //   recoverable errors.  No banner, softer subtitle, same log destination.
+    //   Title reads "Kodo - Notice".
+    //
+    // Both tiers share the same visual structure as the crash dialog (source
+    // badge, metadata line, scrollable stack trace, Copy button) so the UI
+    // language is consistent across all error surfaces.
+    private async Task ShowWarningDialogAsync(string context, Exception exception, bool isCritical = false)
+    {
+        // Classify automatically: file-save and auto-save failures always
+        // get the critical tier since unsaved data may be at risk.
+        isCritical = isCritical
+            || context.StartsWith("File save", StringComparison.OrdinalIgnoreCase)
+            || context.StartsWith("Auto-save", StringComparison.OrdinalIgnoreCase);
+
+        var source = isCritical ? "MainWindow.Warning.Critical" : "MainWindow.Warning";
+        KodoDiagnostics.LogWarning(source, exception, operation: context);
+
+        if (ShouldSuppressWarningDialog(context, exception))
+        {
+            KodoDiagnostics.LogDebug($"Suppressed duplicate warning dialog for '{context}'.", exception);
+            return;
+        }
+
+        try
+        {
+            var titleLabel   = isCritical ? "Action required" : "Something went wrong";
+            var subtitleMessage = isCritical
+                ? "Kodo could not complete this file operation. Your in-editor content is still intact - try saving again or use Save As to choose a different location."
+                : "Kodo ran into a problem with this operation. No data was lost - you can try again.";
+            var windowTitle  = isCritical ? "Kodo - Warning" : "Kodo - Notice";
+            var logPath      = KodoDiagnostics.WarningsLogFilePath;
+
+            // --- Header ---
+            var titleText = new TextBlock
+            {
+                Text         = titleLabel,
+                FontSize     = 16,
+                FontWeight   = FontWeight.SemiBold,
+                Foreground   = PrimaryTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+            };
+
             var subtitleText = new TextBlock
             {
                 Text         = subtitleMessage,
@@ -11731,7 +11824,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 4, 0, 0),
             };
- 
+
+            // Amber banner - only shown for critical tier so the visual weight
+            // matches the severity (mirrors the terminating-crash amber banner).
+            var criticalBanner = new Border
+            {
+                IsVisible       = isCritical,
+                Background      = new SolidColorBrush(Color.Parse("#2D1F00")),
+                BorderBrush     = new SolidColorBrush(Color.Parse("#6B4800")),
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
+                Padding         = new Thickness(10, 6),
+                Child = new TextBlock
+                {
+                    Text        = "⚠ This operation affects file data. Check the log if the problem persists.",
+                    FontSize    = 12,
+                    Foreground  = new SolidColorBrush(Color.Parse("#FFA040")),
+                    TextWrapping = TextWrapping.Wrap,
+                },
+            };
+
             // Context badge (e.g. "File save", "Extension install - MyLang")
             var contextBadge = new Border
             {
@@ -11758,9 +11870,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Foreground   = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
- 
-            // Human-readable error message - shown above the raw stack trace so the
-            // user gets an immediate plain-English explanation before seeing the detail.
+
+            // Human-readable error message above the raw stack trace.
             var errorMessageText = new TextBlock
             {
                 Text         = string.IsNullOrWhiteSpace(exception.Message)
@@ -11770,17 +11881,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Foreground   = PrimaryTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
- 
-            // Collapsible stack trace - SelectableTextBlock so users can copy it.
+
+            // Scrollable, selectable stack trace.
             var exceptionText = new SelectableTextBlock
             {
-                Text         = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, "Warning", context),
+                Text         = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context),
                 FontSize     = 12,
                 FontFamily   = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
                 Foreground   = new SolidColorBrush(Color.Parse("#CE9178")),
                 TextWrapping = TextWrapping.Wrap,
             };
- 
+
             var exceptionScroll = new ScrollViewer
             {
                 Content  = exceptionText,
@@ -11788,8 +11899,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 VerticalScrollBarVisibility   = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             };
- 
-            // Uses CardBrush so the background honours the active theme (Light/Dark/extension).
+
             var exceptionBorder = new Border
             {
                 Background      = CardBrush,
@@ -11802,12 +11912,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var logPathText = new TextBlock
             {
-                Text         = $"Full log written to: {KodoDiagnostics.LogFilePath}",
+                Text         = $"Log written to: {logPath}",
                 FontSize     = 11,
                 Foreground   = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
- 
+
             // --- Action buttons ---
             var copyButton = new Button
             {
@@ -11820,7 +11930,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 BorderThickness     = new Thickness(1),
                 CornerRadius        = new CornerRadius(8),
             };
- 
+
             var dismissButton = new Button
             {
                 Content             = "Dismiss",
@@ -11831,12 +11941,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 BorderThickness     = new Thickness(0),
                 CornerRadius        = new CornerRadius(8),
             };
- 
+
             var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
             buttonRow.Children.Add(copyButton);
             Grid.SetColumn(dismissButton, 1);
             buttonRow.Children.Add(dismissButton);
- 
+
             var content = new StackPanel
             {
                 Spacing  = 12,
@@ -11845,6 +11955,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     titleText,
                     subtitleText,
+                    criticalBanner,
                     contextBadge,
                     metadataText,
                     errorMessageText,
@@ -11853,23 +11964,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     buttonRow,
                 },
             };
- 
+
             Window? dialog = null;
             dialog = new Window
             {
-                // Em-dash consistent with the crash dialog title.
-                Title  = "Kodo - Error",
-                Width  = 520,
+                Title         = windowTitle,
+                Width         = 520,
                 SizeToContent = SizeToContent.Height,
-                MinWidth  = 380,
-                MinHeight = 180,
-                MaxHeight = 660,
-                CanResize = true,
+                MinWidth      = 380,
+                MinHeight     = 180,
+                MaxHeight     = 660,
+                CanResize     = true,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Background = CardBrush,
-                Content    = content,
+                Background    = CardBrush,
+                Content       = content,
             };
- 
+
             copyButton.Click += async (_, _) =>
             {
                 try
@@ -11877,7 +11987,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var clip = TopLevel.GetTopLevel(dialog)?.Clipboard;
                     if (clip is not null)
                     {
-                        var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, "Warning", context);
+                        var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context);
                         await clip.SetTextAsync(text);
                         copyButton.Content   = "Copied!";
                         copyButton.Foreground = PrimaryTextBrush;
@@ -11888,14 +11998,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     // Clipboard failures must not crash the error dialog.
                 }
             };
- 
+
             dismissButton.Click += (_, _) => dialog!.Close();
             await dialog.ShowDialog(this);
         }
         catch (Exception dialogEx)
         {
-            KodoDiagnostics.WriteDiagnosticLog(source, dialogEx, false, "Warning Dialog Failure", context);
-            KodoDiagnostics.WriteDebugFallback($"ShowWarningDialogAsync failed to display for context '{context}'.", dialogEx);
+            KodoDiagnostics.LogWarning(source, dialogEx, operation: $"Warning dialog failed to display for context '{context}'");
+            KodoDiagnostics.LogDebug($"ShowWarningDialogAsync failed to display for context '{context}'.", dialogEx);
         }
     }
 
@@ -13596,7 +13706,23 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             return;
         }
 
-        ApplyBrush(lineOffset, content.Index, content.Index + content.Length, _stringBrush);
+        // Try to recognise the snippet's language from installed .kox language
+        // extensions and colourise it the same way that language's own files
+        // are coloured. Falls back to the flat string colour (previous
+        // behaviour) when no installed extension's keywords/types/etc. match.
+        var profile = ResolveInlineEmbeddedProfile(content.Value);
+        if (profile is null)
+        {
+            ApplyBrush(lineOffset, content.Index, content.Index + content.Length, _stringBrush);
+            return;
+        }
+
+        profile.Colorize(
+            content.Value,
+            lineOffset + content.Index,
+            EmbeddedSyntaxState.Empty,
+            (start, end, brush) => ApplyBrush(0, start, end, brush),
+            GetRainbowBrush);
     }
 
     private EmbeddedSyntaxProfile? ResolveEmbeddedProfile(string? languageLabel)
@@ -13622,6 +13748,30 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         return profile;
     }
 
+    // Detects the inline code snippet's language from actual installed .kox
+    // language extensions (see InlineCodeLanguageDetector in
+    // SyntaxColorEngine.cs for the scoring/heuristics) and resolves it to the
+    // same kind of EmbeddedSyntaxProfile that fenced blocks use, so a one-liner
+    // like `var x = 5;` is colourised with that language's actual
+    // keyword/type/string/comment colours instead of one flat colour.
+    private EmbeddedSyntaxProfile? ResolveInlineEmbeddedProfile(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content) || _inlineLanguageResolver is null)
+            return null;
+
+        var extension = _inlineLanguageResolver(content);
+        if (extension is null || IsMarkdownExtension(extension))
+            return null;
+
+        var cacheKey = $"{extension.Id}|{extension.Version}";
+        if (_embeddedProfileCache.TryGetValue(cacheKey, out var cached))
+            return cached;
+
+        var profile = EmbeddedSyntaxProfile.Create(CompiledSyntaxProfile.Create(extension));
+        _embeddedProfileCache[cacheKey] = profile;
+        return profile;
+    }
+
     private List<MarkdownHtmlSegment> BuildMarkdownHtmlSegments(string line, ref MarkdownHtmlBlock? active)
     {
         var segments = new List<MarkdownHtmlSegment>();
@@ -13635,9 +13785,20 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
                 var segmentEnd = closeMatch.Success ? closeMatch.Index : line.Length;
                 if (active.Profile is not null && segmentEnd > cursor)
                 {
-                    var segmentText = line[cursor..segmentEnd];
-                    segments.Add(new MarkdownHtmlSegment(cursor, segmentEnd, active.Profile, active.State));
-                    active = active with { State = active.Profile.Advance(segmentText, active.State) };
+                    if (EmbeddedTagContent.TryExtract(line, cursor, segmentEnd, active.ContentMode, out var contentStart, out var contentEnd, out var nextContentMode))
+                    {
+                        var segmentText = line[contentStart..contentEnd];
+                        segments.Add(new MarkdownHtmlSegment(contentStart, contentEnd, active.Profile, active.State));
+                        active = active with
+                        {
+                            State = active.Profile.Advance(segmentText, active.State),
+                            ContentMode = nextContentMode
+                        };
+                    }
+                    else
+                    {
+                        active = active with { ContentMode = nextContentMode };
+                    }
                 }
 
                 if (!closeMatch.Success)
@@ -13659,19 +13820,33 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
             if (inlineCloseMatch.Success)
             {
-                if (profile is not null && inlineCloseMatch.Index > openEnd)
-                    segments.Add(new MarkdownHtmlSegment(openEnd, inlineCloseMatch.Index, profile, EmbeddedSyntaxState.Empty));
+                if (profile is not null && inlineCloseMatch.Index > openEnd &&
+                    EmbeddedTagContent.TryExtract(line, openEnd, inlineCloseMatch.Index, EmbeddedBlockContentMode.AwaitingContent, out var inlineContentStart, out var inlineContentEnd, out _))
+                {
+                    segments.Add(new MarkdownHtmlSegment(inlineContentStart, inlineContentEnd, profile, EmbeddedSyntaxState.Empty));
+                }
 
                 cursor = inlineCloseMatch.Index + inlineCloseMatch.Length;
                 continue;
             }
 
-            active = new MarkdownHtmlBlock(tagName, profile, EmbeddedSyntaxState.Empty);
+            active = new MarkdownHtmlBlock(tagName, profile, EmbeddedSyntaxState.Empty, EmbeddedBlockContentMode.AwaitingContent);
             if (profile is not null && openEnd < line.Length)
             {
-                var segmentText = line[openEnd..];
-                segments.Add(new MarkdownHtmlSegment(openEnd, line.Length, profile, EmbeddedSyntaxState.Empty));
-                active = active with { State = profile.Advance(segmentText, EmbeddedSyntaxState.Empty) };
+                if (EmbeddedTagContent.TryExtract(line, openEnd, line.Length, active.ContentMode, out var contentStart, out var contentEnd, out var nextContentMode))
+                {
+                    var segmentText = line[contentStart..contentEnd];
+                    segments.Add(new MarkdownHtmlSegment(contentStart, contentEnd, profile, EmbeddedSyntaxState.Empty));
+                    active = active with
+                    {
+                        State = profile.Advance(segmentText, EmbeddedSyntaxState.Empty),
+                        ContentMode = nextContentMode
+                    };
+                }
+                else
+                {
+                    active = active with { ContentMode = nextContentMode };
+                }
             }
             break;
         }
@@ -13859,7 +14034,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     private readonly record struct FenceDelimiterInfo(char MarkerChar, int MarkerLength, string? LanguageLabel);
     private sealed record FenceState(char MarkerChar, int MarkerLength, string? LanguageLabel, EmbeddedSyntaxProfile? Profile, EmbeddedSyntaxState State, MarkdownHtmlBlock? HtmlBlock);
     private sealed record MarkdownHtmlSegment(int Start, int End, EmbeddedSyntaxProfile? Profile, EmbeddedSyntaxState State);
-    private sealed record MarkdownHtmlBlock(string TagName, EmbeddedSyntaxProfile? Profile, EmbeddedSyntaxState State);
+    private sealed record MarkdownHtmlBlock(string TagName, EmbeddedSyntaxProfile? Profile, EmbeddedSyntaxState State, EmbeddedBlockContentMode ContentMode);
 }
 
 internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
@@ -13980,7 +14155,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
 
                 if (active.Profile is not null && segmentEnd > cursor)
                 {
-                    if (TryExtractEmbeddableContent(line, cursor, segmentEnd, active.ContentMode, out var contentStart, out var contentEnd, out var nextContentMode))
+                    if (EmbeddedTagContent.TryExtract(line, cursor, segmentEnd, active.ContentMode, out var contentStart, out var contentEnd, out var nextContentMode))
                     {
                         var segmentText = line[contentStart..contentEnd];
                         segments.Add(new HtmlEmbeddedSegment(
@@ -14020,11 +14195,12 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
 
             if (inlineCloseMatch.Success)
             {
-                if (profile is not null && inlineCloseMatch.Index > openEnd)
+                if (profile is not null && inlineCloseMatch.Index > openEnd &&
+                    EmbeddedTagContent.TryExtract(line, openEnd, inlineCloseMatch.Index, EmbeddedBlockContentMode.AwaitingContent, out var inlineContentStart, out var inlineContentEnd, out _))
                 {
                     segments.Add(new HtmlEmbeddedSegment(
-                        openEnd,
-                        inlineCloseMatch.Index,
+                        inlineContentStart,
+                        inlineContentEnd,
                         profile,
                         EmbeddedSyntaxState.Empty));
                 }
@@ -14036,7 +14212,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
             active = new ActiveHtmlBlock(tagName, profile, EmbeddedSyntaxState.Empty, EmbeddedBlockContentMode.AwaitingContent);
             if (profile is not null && openEnd < line.Length)
             {
-                if (TryExtractEmbeddableContent(line, openEnd, line.Length, active.ContentMode, out var contentStart, out var contentEnd, out var nextContentMode))
+                if (EmbeddedTagContent.TryExtract(line, openEnd, line.Length, active.ContentMode, out var contentStart, out var contentEnd, out var nextContentMode))
                 {
                     var segmentText = line[contentStart..contentEnd];
                     segments.Add(new HtmlEmbeddedSegment(
@@ -14104,64 +14280,6 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
             string.Equals(ext, ".xaml", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ext, ".axaml", StringComparison.OrdinalIgnoreCase));
 
-    private static bool TryExtractEmbeddableContent(
-        string line,
-        int start,
-        int end,
-        EmbeddedBlockContentMode mode,
-        out int contentStart,
-        out int contentEnd,
-        out EmbeddedBlockContentMode nextMode)
-    {
-        contentStart = start;
-        contentEnd = start;
-        nextMode = mode;
-
-        if (start >= end)
-            return false;
-
-        var currentStart = start;
-        if (mode != EmbeddedBlockContentMode.InCData)
-        {
-            var nonWhitespace = currentStart;
-            while (nonWhitespace < end && char.IsWhiteSpace(line[nonWhitespace]))
-                nonWhitespace++;
-
-            if (nonWhitespace >= end)
-            {
-                nextMode = EmbeddedBlockContentMode.AwaitingContent;
-                return false;
-            }
-
-            const string cdataStart = "<![CDATA[";
-            if (nonWhitespace + cdataStart.Length <= end &&
-                string.CompareOrdinal(line, nonWhitespace, cdataStart, 0, cdataStart.Length) == 0)
-            {
-                currentStart = nonWhitespace + cdataStart.Length;
-                nextMode = EmbeddedBlockContentMode.InCData;
-            }
-            else
-            {
-                currentStart = start;
-                nextMode = EmbeddedBlockContentMode.Raw;
-            }
-        }
-
-        const string cdataEnd = "]]>";
-        var cdataEndIndex = line.IndexOf(cdataEnd, currentStart, StringComparison.Ordinal);
-        if (cdataEndIndex >= 0 && cdataEndIndex < end)
-        {
-            contentStart = currentStart;
-            contentEnd = cdataEndIndex;
-            nextMode = EmbeddedBlockContentMode.Raw;
-            return contentEnd > contentStart;
-        }
-
-        contentStart = currentStart;
-        contentEnd = end;
-        return contentEnd > contentStart;
-    }
-
     private static string? ExtractTypeAttribute(string attrs)
     {
         var match = TypeAttributeRegex.Match(attrs);
@@ -14197,12 +14315,6 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
     private sealed record HtmlLineState(IReadOnlyList<HtmlEmbeddedSegment> Segments);
     private sealed record HtmlEmbeddedSegment(int Start, int End, EmbeddedSyntaxProfile? Profile, EmbeddedSyntaxState State);
     private sealed record ActiveHtmlBlock(string TagName, EmbeddedSyntaxProfile? Profile, EmbeddedSyntaxState State, EmbeddedBlockContentMode ContentMode);
-    private enum EmbeddedBlockContentMode
-    {
-        AwaitingContent,
-        Raw,
-        InCData
-    }
 }
 
 // ── Syntax highlighting ──────────────────────────────────────────────────────
@@ -14409,8 +14521,25 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
         if (ext.DisableSingleQuoteStrings && ext.StringDelimiters.Contains("\""))
         {
-            mainRuleSet.Spans.Add(CreateRegexStringSpan(@"(?:\$@|@\$)""", @"""(?!"")", stringColor, emptyRuleSet, allowEndOfLineFallback: false));
+            // $@"..."/@$"...": interpolated verbatim. Escaping is via a
+            // doubled "" (handled by the (?!"") lookahead below), never via
+            // backslash - isVerbatim:true so a literal trailing backslash
+            // (e.g. $@"C:\Users\") doesn't get mistaken for an escape and
+            // swallow the rest of the file.
+            mainRuleSet.Spans.Add(CreateRegexStringSpan(@"(?:\$@|@\$)""", @"""(?!"")", stringColor, emptyRuleSet, allowEndOfLineFallback: false, isVerbatim: true));
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"\$""", @"""", stringColor, emptyRuleSet, allowEndOfLineFallback: true));
+
+            // Bare verbatim string (@"..."): no backslash escaping at all, can
+            // span multiple lines, and a literal quote is written as a
+            // doubled "" rather than \". There was previously no standalone-
+            // file equivalent of this at all - a verbatim string in a .cs
+            // file fell through to the ordinary backslash-escaped '"' span
+            // below, so e.g. @"C:\Users\" (a literal trailing backslash) would
+            // be misread as an escaped delimiter and the string would never
+            // close. This mirrors TryMatchCSharpStringPrefix's "@\"" case in
+            // EmbeddedSyntaxProfile so a verbatim string looks the same in a
+            // .cs file as it does inside a fenced ```cs block.
+            mainRuleSet.Spans.Add(CreateRegexStringSpan(@"@""", @"""(?!"")", stringColor, emptyRuleSet, allowEndOfLineFallback: false, isVerbatim: true));
         }
 
         foreach (var delimiter in ext.MultiLineStringDelimiters.Where(d => !string.IsNullOrEmpty(d)).Distinct())
@@ -14485,11 +14614,31 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         string endDelimiterPattern,
         HighlightingColor stringColor,
         HighlightingRuleSet emptyRuleSet,
-        bool allowEndOfLineFallback)
+        bool allowEndOfLineFallback,
+        bool isVerbatim = false)
     {
+        // For backslash-escaped strings, a closing delimiter only actually
+        // closes the string when it's preceded by an *even* number of
+        // backslashes - an odd run means the last backslash escapes the
+        // delimiter itself (e.g. \"), not the other way around. The old
+        // "(?<!\\)" guard only ever looked one character back, so it got this
+        // wrong for any string ending in an escaped backslash followed by the
+        // delimiter - e.g. a perfectly ordinary "C:\\Users\\" path literal -
+        // and would keep scanning past the real end of the string. This
+        // mirrors the correct counting done by IsEscaped/IsStringTerminator in
+        // EmbeddedSyntaxProfile (SyntaxColorEngine.cs) so a string literal
+        // looks the same whether it's in a standalone file or inside a fenced
+        // code block / embedded <script>/<style> tag.
+        //
+        // Verbatim-style strings (e.g. C#'s @"...") don't use backslash
+        // escapes at all - a doubled delimiter is the escape, which the
+        // caller already encodes as a lookahead in endDelimiterPattern - so
+        // no backslash guard is applied for those; a backslash right before
+        // the closing delimiter is just a literal character.
+        var unescapedDelimiterGuard = isVerbatim ? string.Empty : @"(?<=(?:^|[^\\])(?:\\\\)*)";
         var endPattern = allowEndOfLineFallback
-            ? $@"(?<!\\){endDelimiterPattern}|$"
-            : $@"(?<!\\){endDelimiterPattern}";
+            ? $@"{unescapedDelimiterGuard}{endDelimiterPattern}|$"
+            : $@"{unescapedDelimiterGuard}{endDelimiterPattern}";
 
         return new HighlightingSpan
         {

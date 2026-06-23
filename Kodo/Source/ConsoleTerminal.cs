@@ -20,7 +20,7 @@ namespace Kodo;
 /// Pseudo Console (ConPTY) and renders its VT/ANSI output directly.
 /// Drop it into AXAML exactly where EmbeddedTerminalHost used to live.
 /// </summary>
-public sealed class PseudoConsoleTerminal : Control
+public sealed class ConsoleTerminal : Control
 {
     // ── Standard 16-colour ANSI palette ──────────────────────────────────────
     private static readonly Color[] AnsiPalette =
@@ -89,7 +89,7 @@ public sealed class PseudoConsoleTerminal : Control
     private bool _cursorBlinkOn = true;
 
     // ── Constructor ───────────────────────────────────────────────────────────
-    public PseudoConsoleTerminal()
+    public ConsoleTerminal()
     {
         Focusable = true;
         ClipToBounds = true;
@@ -909,7 +909,7 @@ public readonly record struct TermCell(
 
 // ── Screen snapshot ───────────────────────────────────────────────────────────
 /// <summary>
-/// Immutable capture of a <see cref="PseudoConsoleTerminal"/> screen buffer.
+/// Immutable capture of a <see cref="ConsoleTerminal"/> screen buffer.
 /// Stored on <see cref="Kodo.Models.TerminalSession"/> so that switching
 /// between sessions restores each session's last-visible output.
 /// </summary>
@@ -918,7 +918,7 @@ public sealed class TerminalSnapshot(
     int rows, int cols,
     int cursorRow, int cursorCol, bool cursorVisible,
     Color fg, Color bg, bool bold, bool underline, bool reverse,
-    PseudoConsoleTerminal.ParseState parseState, string csiParam)
+    ConsoleTerminal.ParseState parseState, string csiParam)
 {
     internal TermCell[,] Cells         { get; } = cells;
     public   int         Rows          { get; } = rows;
@@ -931,7 +931,7 @@ public sealed class TerminalSnapshot(
     internal bool        Bold          { get; } = bold;
     internal bool        Underline     { get; } = underline;
     internal bool        Reverse       { get; } = reverse;
-    internal PseudoConsoleTerminal.ParseState ParseState { get; } = parseState;
+    internal ConsoleTerminal.ParseState ParseState { get; } = parseState;
     internal string      CsiParam      { get; } = csiParam;
 }
 
