@@ -29,6 +29,12 @@ internal static class KodoDiagnostics
     public static string AppVersion { get; } = ResolveAppVersion();
     private static readonly string CurrentAppVersion = AppVersion;
 
+    // When enabled (via the Developer Options panel), Debug-level traces that
+    // would normally only go to the Debug output are also appended to
+    // warnings.log, even when no exception is attached. Off by default so
+    // normal usage doesn't spam the log file.
+    public static bool VerboseLoggingEnabled { get; set; }
+
     private static string ResolveAppVersion()
     {
         var raw = Assembly.GetExecutingAssembly()
@@ -158,8 +164,19 @@ internal static class KodoDiagnostics
 
             if (exception is not null)
                 WriteToLog("KodoDiagnostics.Debug", exception, false, KodoSeverity.Debug, message);
+            else if (VerboseLoggingEnabled)
+                WriteVerboseTrace(message);
         }
         catch { /* never throw from a debug trace */ }
+    }
+
+    // Appends a plain, exception-free trace line to warnings.log. Only called
+    // when VerboseLoggingEnabled is on; kept lightweight since it can fire
+    // frequently while verbose logging is active.
+    private static void WriteVerboseTrace(string message)
+    {
+        var timestamp = UtcNow().ToString("yyyy-MM-dd HH:mm:ss") + " UTC";
+        WritePayloadToDisk($"[{timestamp}] VERBOSE  {message}", WarningsLogFilePath);
     }
 
     // ── Legacy API (kept for backward-compat; delegates to typed methods) ─────

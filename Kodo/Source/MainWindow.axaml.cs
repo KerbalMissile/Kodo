@@ -19,6 +19,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Win32;
 using Avalonia;
 using Avalonia.Controls;
@@ -660,6 +661,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // whether automatic checking is on.
     private bool _isCheckingForUpdatesManually;
     private string _checkForUpdatesStatusText = string.Empty;
+    private string _developerOptionsStatusText = string.Empty;
     private bool _isRefreshingLatestRelease;
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
@@ -686,6 +688,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // overwrite the just-loaded settings before the window is fully initialised.
     private bool _suppressSettingsSave;
     private bool _isDeveloperOptionsVisible;
+    private bool _isVerboseLoggingEnabled;
     private int _tabSize = 4;
     private int _editorFontSize = 14;
     private string _accentColorMode = "kodo";   // "kodo" | "windows" | "custom"
@@ -724,11 +727,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // opted into "Automatically update extensions" in Settings.
     private readonly DispatcherTimer _extensionAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
     // Periodic background check for new Kodo releases while the app stays
-    // open. Only runs (see UpdateAppAutoUpdateLifecycle) when the user has
-    // opted into "Automatically check for and install Kodo updates" in
-    // Settings. The launch-time check itself still lives in App.axaml.cs
-    // (CheckForUpdatesInBackground) - this timer covers everything after that.
-    private readonly DispatcherTimer _appAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
+    // open. Encapsulated in AppUpdateScheduler (Updater.cs), which owns its
+    // own DispatcherTimer and start/stop lifecycle gated by
+    // IsAutoUpdateAppEnabled. The launch-time check itself still lives in
+    // App.axaml.cs (CheckForUpdatesInBackground) - this covers everything
+    // after that. Constructed in the constructor body (needs settings-backed
+    // properties to already exist), not here as a field initializer.
+    private readonly AppUpdateScheduler _appUpdateScheduler;
     // Refreshes the marketplace listing (not extension auto-install) once an
     // hour while Kodo stays open. Always runs - unlike _extensionAutoUpdateTimer
     // this isn't gated by IsAutoUpdateExtensionsEnabled, since it only refreshes
@@ -847,7 +852,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             "Home is your launchpad",
             "Open recent files and folders in one click.",
             "Start fresh work quickly with New File or Open Folder.",
-            "Jump back here anytime from the activity bar."
+            "Use the keyboard shortcut chips on Home for quick access to the most common actions."
         ),
         new(
             "Editing",
@@ -1114,6 +1119,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
         _isDiscordImprovedRpcEnabled  = settings.DiscordImprovedRpcEnabled;
         _isDeveloperOptionsVisible = settings.DeveloperOptionsVisible;
+        _isVerboseLoggingEnabled = settings.VerboseLoggingEnabled;
+        KodoDiagnostics.VerboseLoggingEnabled = _isVerboseLoggingEnabled;
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
         _isWordWrapEnabled = settings.WordWrapEnabled;
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
@@ -1156,7 +1163,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         _extensionAutoUpdateTimer.Tick += ExtensionAutoUpdateTimer_OnTick;
-        _appAutoUpdateTimer.Tick += AppAutoUpdateTimer_OnTick;
+        _appUpdateScheduler = new AppUpdateScheduler(
+            isEnabled: () => IsAutoUpdateAppEnabled,
+            isManualCheckInProgress: () => IsCheckingForUpdatesManually,
+            installInBackground: () => IsAutoUpdateAppInBackgroundEnabled);
         _marketplaceRefreshTimer.Tick += MarketplaceRefreshTimer_OnTick;
 
         // ── Pre-DataContext theme bootstrap ────────────────────────────────────
@@ -1186,7 +1196,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // unless the user has changed settings while offline.
         UpdateDiscordRichPresenceLifecycle();
         UpdateExtensionAutoUpdateLifecycle();
-        UpdateAppAutoUpdateLifecycle();
+        _appUpdateScheduler.UpdateLifecycle();
         _marketplaceRefreshTimer.Start();
         ApplyEditorSettings();
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
@@ -4587,6 +4597,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// When on, Debug-level traces are also appended to warnings.log (not just
+    /// the Debug output), which is useful when diagnosing an issue but noisy
+    /// enough that it stays off by default.
+    /// </summary>
+    public bool IsVerboseLoggingEnabled
+    {
+        get => _isVerboseLoggingEnabled;
+        set
+        {
+            if (_isVerboseLoggingEnabled == value) return;
+            _isVerboseLoggingEnabled = value;
+            KodoDiagnostics.VerboseLoggingEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+        }
+    }
+
+    // Feedback shown under the Developer Options buttons after an action like
+    // "Copy Diagnostic Info" or "Clear Logs" completes. Empty until used.
+    public string DeveloperOptionsStatusText
+    {
+        get => _developerOptionsStatusText;
+        private set
+        {
+            if (_developerOptionsStatusText == value) return;
+            _developerOptionsStatusText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasDeveloperOptionsStatus));
+        }
+    }
+
+    public bool HasDeveloperOptionsStatus => !string.IsNullOrWhiteSpace(DeveloperOptionsStatusText);
+
+    /// <summary>Path to crash.log, shown in the button tooltip.</summary>
+    public string CrashLogFilePath => KodoDiagnostics.CrashLogFilePath;
+
+    /// <summary>Path to warnings.log, shown in the button tooltip.</summary>
+    public string WarningsLogFilePath => KodoDiagnostics.WarningsLogFilePath;
+
     /// <summary>Path to the folder that contains crash.log, shown in the button tooltip.</summary>
     public string CrashLogFolderPath => KodoDiagnostics.LogDirectoryPath;
 
@@ -4761,7 +4811,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(AutoUpdateAppStatusText));
             SaveSettings();
-            UpdateAppAutoUpdateLifecycle();
+            _appUpdateScheduler.UpdateLifecycle();
         }
     }
 
@@ -5331,920 +5381,41 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { return string.Empty; }
     }
 
-    // ── Holiday / calendar helpers ────────────────────────────────────────────
-
-    private record HolidayEntry(string Name, string? Greeting);
-
-    /// <summary>
-    /// Returns a <see cref="HolidayEntry"/> when <paramref name="date"/> is a
-    /// public holiday (or its eve) that is relevant for <paramref name="country"/>.
-    /// Returns <c>null</c> when no match is found.
-    /// </summary>
-    private static HolidayEntry? GetHolidayEntry(DateTime date, string country)
-    {
-        var m = date.Month;
-        var d = date.Day;
-        var dow = date.DayOfWeek;
-        var y = date.Year;
-
-        // ── Universal / very widely observed ──────────────────────────────────
-        if (m == 1  && d == 1)  return new("New Year's Day", "Happy New Year!");
-        if (m == 12 && d == 31) return new("New Year's Eve", "Happy New Year's Eve!");
-        if (m == 12 && d == 25) return new("Christmas Day", "Merry Christmas!");
-        if (m == 12 && d == 24) return new("Christmas Eve", "Happy Christmas Eve!");
-        if (m == 12 && d == 26 && country is "CA" or "GB" or "AU" or "NZ" or "ZA")
-            return new("Boxing Day", "Happy Boxing Day!");
-        if (m == 12 && d == 26) return new("Kwanzaa", "Happy Kwanzaa!");
-        if (m == 10 && d == 31) return new("Halloween", "Happy Halloween!");
-        if (m == 2  && d == 14) return new("Valentine's Day", "Happy Valentine's Day!");
-        if (m == 4  && d == 1)  return new("April Fools' Day", "Happy April Fools'! (Or is it?)");
-        if (m == 3  && d == 8)  return new("International Women's Day", "Happy International Women's Day!");
-        if (m == 4  && d == 22) return new("Earth Day", "Happy Earth Day!");
-        if (m == 5  && d == 5)  return new("Cinco de Mayo", "¡Feliz Cinco de Mayo!");
-        if (m == 6  && d == 5)  return new("World Environment Day", "Happy World Environment Day!");
-        if (m == 9  && d == 21) return new("International Day of Peace", "Happy International Day of Peace.");
-        if (m == 12 && d == 10) return new("International Human Rights Day", "Happy Human Rights Day.");
-
-        // ── Mother's Day: second Sunday of May ────────────────────────────────
-        if (m == 5 && dow == DayOfWeek.Sunday && d >= 8 && d <= 14)
-            return new("Mother's Day", "Happy Mother's Day!");
-
-        // ── Father's Day: third Sunday of June ────────────────────────────────
-        if (m == 6 && dow == DayOfWeek.Sunday && d >= 15 && d <= 21)
-            return new("Father's Day", "Happy Father's Day!");
-
-        // ── Easter (Anonymous Gregorian algorithm) ────────────────────────────
-        var easter = ComputeEaster(y);
-        if (m == easter.Month && d == easter.Day)
-            return new("Easter Sunday", "Happy Easter!");
-        if (date == easter.AddDays(-2))
-            return new("Good Friday", "Good Friday - enjoy the long weekend!");
-        if (date == easter.AddDays(1) && country is "CA" or "GB" or "AU" or "NZ")
-            return new("Easter Monday", "Happy Easter Monday!");
-
-        // ── Lunar New Year (Chinese/Vietnamese/Korean) ────────────────────────
-        if (LunarNewYear(y) is { } lny && m == lny.Month && d == lny.Day)
-            return new("Lunar New Year", "Happy Lunar New Year!");
-
-        // ── Holi (full moon of Phalguna) ──────────────────────────────────────
-        if (HoliDate(y) is { } holi && m == holi.Month && d == holi.Day)
-            return new("Holi", "Happy Holi!");
-
-        // ── Vesak / Buddha Day (full moon of Vaisakha) ───────────────────────
-        if (VesakDate(y) is { } vesak && m == vesak.Month && d == vesak.Day)
-            return new("Vesak", "Happy Vesak!");
-
-        // ── Eid al-Fitr (1 Shawwal) ───────────────────────────────────────────
-        if (EidAlFitr(y) is { } eidFitr && m == eidFitr.Month && d == eidFitr.Day)
-            return new("Eid al-Fitr", "Eid Mubarak!");
-
-        // ── Eid al-Adha (10 Dhu al-Hijjah) ───────────────────────────────────
-        if (EidAlAdha(y) is { } eidAdha && m == eidAdha.Month && d == eidAdha.Day)
-            return new("Eid al-Adha", "Eid Mubarak!");
-
-        // ── Rosh Hashanah (1 Tishrei) ─────────────────────────────────────────
-        if (RoshHashanah(y) is { } rosh && m == rosh.Month && d == rosh.Day)
-            return new("Rosh Hashanah", "Shana Tova! Happy New Year!");
-
-        // ── Yom Kippur (10 Tishrei) ───────────────────────────────────────────
-        if (YomKippur(y) is { } yk && m == yk.Month && d == yk.Day)
-            return new("Yom Kippur", "G'mar Chatima Tova. Easy fast.");
-
-        // ── Navratri / Sharad Navratri (day after new moon of Ashwin) ────────
-        if (NavratriDate(y) is { } nav && m == nav.Month && d == nav.Day)
-            return new("Navratri", "Happy Navratri!");
-
-        // ── Diwali (new moon of Kartika) ──────────────────────────────────────
-        if (DiwaliDate(y) is { } diwali && m == diwali.Month && d == diwali.Day)
-            return new("Diwali", "Happy Diwali!");
-
-        // ── Hanukkah (25 Kislev) ──────────────────────────────────────────────
-        if (HanukkahDate(y) is { } hanukkah && m == hanukkah.Month && d == hanukkah.Day)
-            return new("Hanukkah", "Happy Hanukkah!");
-
-        // ── Canada ────────────────────────────────────────────────────────────
-        if (country == "CA")
-        {
-            if (m == 7  && d == 1)  return new("Canada Day", "Happy Canada Day!");
-            if (m == 11 && d == 11) return new("Remembrance Day", "Lest we forget. Happy coding.");
-            // Victoria Day: last Monday before May 25
-            if (m == 5 && dow == DayOfWeek.Monday && d >= 18 && d <= 24)
-                return new("Victoria Day", "Happy Victoria Day! Enjoy the long weekend.");
-            // Labour Day: first Monday of September
-            if (m == 9 && dow == DayOfWeek.Monday && d <= 7)
-                return new("Labour Day", "Happy Labour Day! Enjoy the long weekend.");
-            // Thanksgiving: second Monday of October
-            if (m == 10 && dow == DayOfWeek.Monday && d >= 8 && d <= 14)
-                return new("Thanksgiving", "Happy Thanksgiving!");
-            // Family Day: third Monday of February (most provinces)
-            if (m == 2 && dow == DayOfWeek.Monday && d >= 15 && d <= 21)
-                return new("Family Day", "Happy Family Day! Enjoy the long weekend.");
-        }
-
-        // ── United States ─────────────────────────────────────────────────────
-        if (country == "US")
-        {
-            if (m == 7  && d == 4)  return new("Independence Day", "Happy Fourth of July!");
-            if (m == 11 && d == 11) return new("Veterans Day", "Thank you to all veterans. Happy coding.");
-            // Thanksgiving: fourth Thursday of November
-            if (m == 11 && dow == DayOfWeek.Thursday && d >= 22 && d <= 28)
-                return new("Thanksgiving", "Happy Thanksgiving! (and happy coding after dinner)");
-            // Memorial Day: last Monday of May
-            if (m == 5 && dow == DayOfWeek.Monday && d >= 25)
-                return new("Memorial Day", "Happy Memorial Day! Enjoy the long weekend.");
-            // Labor Day: first Monday of September
-            if (m == 9 && dow == DayOfWeek.Monday && d <= 7)
-                return new("Labor Day", "Happy Labor Day! Enjoy the long weekend.");
-            // MLK Day: third Monday of January
-            if (m == 1 && dow == DayOfWeek.Monday && d >= 15 && d <= 21)
-                return new("MLK Day", "Happy Martin Luther King Jr. Day!");
-            // Presidents' Day: third Monday of February
-            if (m == 2 && dow == DayOfWeek.Monday && d >= 15 && d <= 21)
-                return new("Presidents' Day", "Happy Presidents' Day! Enjoy the long weekend!");
-        }
-
-        // ── United Kingdom ────────────────────────────────────────────────────
-        if (country == "GB")
-        {
-            if (m == 8 && dow == DayOfWeek.Monday && d >= 25)
-                return new("August Bank Holiday", "Happy Bank Holiday! Enjoy the long weekend!");
-            if (m == 5 && dow == DayOfWeek.Monday && d >= 1 && d <= 7)
-                return new("Early May Bank Holiday", "Happy May Bank Holiday! Enjoy the long weekend!");
-            if (m == 5 && dow == DayOfWeek.Monday && d >= 25)
-                return new("Spring Bank Holiday", "Happy Spring Bank Holiday! Enjoy the long weekend!");
-            if (m == 11 && d == 5)
-                return new("Bonfire Night", "Remember, remember the 5th of November!");
-        }
-
-        // ── Australia ─────────────────────────────────────────────────────────
-        if (country == "AU")
-        {
-            if (m == 1  && d == 26) return new("Australia Day", "Happy Australia Day!");
-            if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget. Happy ANZAC Day.");
-            if (m == 6  && dow == DayOfWeek.Monday && d >= 8 && d <= 14)
-                return new("King's Birthday (AU)", "Happy King's Birthday long weekend!");
-        }
-
-        // ── New Zealand ───────────────────────────────────────────────────────
-        if (country == "NZ")
-        {
-            if (m == 2  && d == 6)  return new("Waitangi Day", "Happy Waitangi Day!");
-            if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget. Happy ANZAC Day.");
-        }
-
-        // ── Germany ───────────────────────────────────────────────────────────
-        if (country == "DE")
-        {
-            if (m == 10 && d == 3) return new("German Unity Day", "Happy German Unity Day!");
-            if (m == 5  && d == 1) return new("Labour Day", "Happy Labour Day!");
-        }
-
-        // ── France ────────────────────────────────────────────────────────────
-        if (country == "FR")
-        {
-            if (m == 7  && d == 14) return new("Bastille Day", "Bonne fête nationale!");
-            if (m == 5  && d == 1)  return new("Fête du Travail", "Bonne Fête du Travail!");
-        }
-
-        // ── Japan ─────────────────────────────────────────────────────────────
-        if (country == "JP")
-        {
-            if (m == 1  && d == 1) return new("Shōgatsu", "あけましておめでとうございます！Happy New Year!");
-            if (m == 11 && d == 3) return new("Culture Day", "Happy Culture Day!");
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Computes Easter Sunday for a given year using the Anonymous Gregorian algorithm.
-    /// </summary>
-    private static DateTime ComputeEaster(int year)
-    {
-        int a = year % 19, b = year / 100, c = year % 100;
-        int d2 = b / 4, e = b % 4, f = (b + 8) / 25;
-        int g = (b - f + 1) / 3, h = (19 * a + b - d2 - g + 15) % 30;
-        int i = c / 4, k = c % 4;
-        int l = (32 + 2 * e + 2 * i - h - k) % 7;
-        int m2 = (a + 11 * h + 22 * l) / 451;
-        int month = (h + l - 7 * m2 + 114) / 31;
-        int day = ((h + l - 7 * m2 + 114) % 31) + 1;
-        return new DateTime(year, month, day);
-    }
-
-    // ── Astronomical calendar helpers ─────────────────────────────────────────
-    // These compute floating-date holidays algorithmically so they remain correct
-    // through 2100 without needing lookup tables.
-
-    /// <summary>
-    /// Julian Day Number of the kth new moon since J2000 (Meeus ch.49).
-    /// Pass k+0.5 for the corresponding full moon.
-    /// </summary>
-    private static double MoonPhaseJdn(double k)
-    {
-        double T   = k / 1236.85;
-        double jde = 2451550.09766
-                   + 29.530588861 * k
-                   + 0.00015437   * T * T
-                   - 0.000000150  * T * T * T
-                   + 0.00000000073 * T * T * T * T;
-        double M  = Rad(2.5534   + 29.10535670  * k - 0.0000014 * T * T);
-        double Mp = Rad(201.5643 + 385.81693528 * k + 0.0107582 * T * T);
-        double F  = Rad(160.7108 + 390.67050284 * k - 0.0016118 * T * T);
-        double Om = Rad(124.7746 -  1.56375588  * k + 0.0020672 * T * T);
-        double E  = 1 - 0.002516 * T - 0.0000074 * T * T;
-        return jde
-            + (-0.40720 * Math.Sin(Mp))
-            + ( 0.17241 * E * Math.Sin(M))
-            + ( 0.01608 * Math.Sin(2 * Mp))
-            + ( 0.01039 * Math.Sin(2 * F))
-            + ( 0.00739 * E * Math.Sin(Mp - M))
-            + (-0.00514 * E * Math.Sin(Mp + M))
-            + ( 0.00208 * E * E * Math.Sin(2 * M))
-            + (-0.00111 * Math.Sin(Mp - 2 * F))
-            + (-0.00057 * Math.Sin(Mp + 2 * F))
-            + ( 0.00056 * E * Math.Sin(2 * Mp + M))
-            + (-0.00042 * Math.Sin(3 * Mp))
-            + ( 0.00042 * E * Math.Sin(M + 2 * F))
-            + ( 0.00038 * E * Math.Sin(M - 2 * F))
-            + (-0.00024 * E * Math.Sin(2 * Mp - M))
-            + (-0.00017 * Math.Sin(Om))
-            + (-0.00007 * Math.Sin(Mp + 2 * M))
-            + ( 0.00004 * Math.Sin(2 * Mp - 2 * F))
-            + ( 0.00004 * Math.Sin(3 * M))
-            + ( 0.00003 * Math.Sin(Mp + M - 2 * F))
-            + ( 0.00003 * Math.Sin(2 * Mp + 2 * F))
-            + (-0.00003 * Math.Sin(Mp + M + 2 * F))
-            + ( 0.00003 * Math.Sin(Mp - M + 2 * F))
-            + (-0.00002 * Math.Sin(Mp - M - 2 * F))
-            + (-0.00002 * Math.Sin(3 * Mp + M))
-            + ( 0.00002 * Math.Sin(4 * Mp));
-    }
-
-    private static double Rad(double deg) => deg * Math.PI / 180.0;
-
-    /// <summary>Converts a Julian Day Number to a Gregorian DateTime (UTC noon).</summary>
-    private static DateTime JdnToDateTime(double jdn)
-    {
-        int j = (int)(jdn + 0.5);
-        int a = j + 32044;
-        int b = (4 * a + 3) / 146097;
-        int c = a - 146097 * b / 4;
-        int d = (4 * c + 3) / 1461;
-        int e = c - 1461 * d / 4;
-        int mo = (5 * e + 2) / 153;
-        int day   = e - (153 * mo + 2) / 5 + 1;
-        int month = mo + 3 - 12 * (mo / 10);
-        int year  = 100 * b + d - 4800 + mo / 10;
-        return new DateTime(year, month, day);
-    }
-
-    /// <summary>
-    /// Finds the new moon (or full moon when fullMoon=true) that falls in the
-    /// given Gregorian year and month. Returns null if none falls in that month.
-    /// </summary>
-    private static DateTime? MoonInMonth(int year, int month, bool fullMoon = false)
-    {
-        double kApprox = (year - 2000) * 12.3685 + month - 1;
-        for (int offset = -2; offset <= 3; offset++)
-        {
-            double k   = Math.Floor(kApprox) + offset + (fullMoon ? 0.5 : 0.0);
-            double jdn = MoonPhaseJdn(k);
-            var    dt  = JdnToDateTime(jdn);
-            if (dt.Year == year && dt.Month == month)
-                return dt;
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Lunar New Year: the new moon that falls between Jan 20 and Feb 20
-    /// (in China Standard Time, UTC+8). This is the first new moon after the
-    /// Sun enters Aquarius (~Jan 20), which is the standard Chinese calendar rule.
-    /// </summary>
-    private static DateTime? LunarNewYear(int year)
-    {
-        double kApprox = (year - 2000) * 12.3685;
-        for (int offset = -2; offset <= 3; offset++)
-        {
-            double k      = Math.Floor(kApprox) + offset;
-            double jdn    = MoonPhaseJdn(k) + 8.0 / 24.0; // shift to UTC+8
-            var    dt     = JdnToDateTime(jdn);
-            if (dt.Year == year && ((dt.Month == 1 && dt.Day >= 20) || (dt.Month == 2 && dt.Day <= 20)))
-                return dt;
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Holi: the full moon of the Hindu month Phalguna, which falls in March
-    /// (or occasionally very late February).
-    /// </summary>
-    private static DateTime? HoliDate(int year)
-    {
-        var march = MoonInMonth(year, 3, fullMoon: true);
-        if (march != null) return march;
-        var feb = MoonInMonth(year, 2, fullMoon: true);
-        return feb?.Day >= 20 ? feb : null;
-    }
-
-    /// <summary>
-    /// Vesak (Buddha Day): the full moon of the month of Vaisakha, observed
-    /// on the full moon in May by Theravada countries.
-    /// </summary>
-    private static DateTime? VesakDate(int year) =>
-        MoonInMonth(year, 5, fullMoon: true);
-
-    /// <summary>
-    /// Converts an Islamic (Hijri) civil date to a Gregorian DateTime,
-    /// using the standard tabular (Kuwaiti algorithmic) calendar.
-    /// Accurate to ±1 day vs actual moon-sighting dates.
-    /// </summary>
-    private static DateTime IslamicToGregorian(int iy, int im, int id)
-    {
-        int jdn = id
-                + (int)Math.Ceiling(29.5 * (im - 1))
-                + (iy - 1) * 354
-                + (3 + 11 * iy) / 30
-                + 1948438;
-        return JdnToDateTime(jdn);
-    }
-
-    private static int ApproxHijriYear(int gregorianYear) =>
-        (int)((gregorianYear - 622) * 1.030685);
-
-    /// <summary>Eid al-Fitr: 1 Shawwal (Islamic month 10).</summary>
-    private static DateTime? EidAlFitr(int year)
-    {
-        int hy = ApproxHijriYear(year);
-        for (int h = hy - 1; h <= hy + 1; h++)
-        {
-            var dt = IslamicToGregorian(h, 10, 1);
-            if (dt.Year == year) return dt;
-        }
-        return null;
-    }
-
-    /// <summary>Eid al-Adha: 10 Dhu al-Hijjah (Islamic month 12).</summary>
-    private static DateTime? EidAlAdha(int year)
-    {
-        int hy = ApproxHijriYear(year);
-        for (int h = hy - 1; h <= hy + 1; h++)
-        {
-            var dt = IslamicToGregorian(h, 12, 10);
-            if (dt.Year == year) return dt;
-        }
-        return null;
-    }
-
-    // ── Hebrew calendar (Rosh Hashanah / Yom Kippur / Hanukkah) ──────────────
-    // Uses the traditional molad-based calculation (Maimonides / standard
-    // rabbinical algorithm). Exact for the proleptic Hebrew calendar.
-
-    private static bool IsHebrewLeapYear(int hy) => (7 * hy + 1) % 19 < 7;
-
-    private static int HebrewElapsedDays(int hy)
-    {
-        int monthsElapsed = 235 * ((hy - 1) / 19)
-                          + 12  * ((hy - 1) % 19)
-                          + (7  * ((hy - 1) % 19) + 1) / 19;
-        int parts = 204 + 793 * (monthsElapsed % 1080);
-        int hours = 5 + 12 * monthsElapsed + 793 * (monthsElapsed / 1080) + parts / 1080;
-        int day   = 1 + 29 * monthsElapsed + hours / 24;
-        int pMod  = 1080 * (hours % 24) + parts % 1080;
-
-        int alt = day;
-        if (pMod >= 19440
-            || (day % 7 == 2 && pMod >= 9924  && !IsHebrewLeapYear(hy))
-            || (day % 7 == 1 && pMod >= 16789 &&  IsHebrewLeapYear(hy - 1)))
-            alt++;
-
-        if (alt % 7 == 0 || alt % 7 == 3 || alt % 7 == 5) alt++;
-        return alt;
-    }
-
-    private static int HebrewYearDays(int hy) =>
-        HebrewElapsedDays(hy + 1) - HebrewElapsedDays(hy);
-
-    private static int HebrewMonthLength(int hy, int hm)
-    {
-        int yd = HebrewYearDays(hy);
-        // Cheshvan (2): 30 only in complete years
-        if (hm == 2) return yd % 10 == 5 ? 30 : 29;
-        // Kislev (3): 29 only in deficient years
-        if (hm == 3) return yd % 10 == 3 ? 29 : 30;
-        // Adar (6) is 30 days in leap years, 29 in regular
-        if (hm == 6) return IsHebrewLeapYear(hy) ? 30 : 29;
-        return hm is 1 or 5 or 7 or 10 or 12 ? 30 : 29;
-    }
-
-    /// <summary>
-    /// Converts a Hebrew date to a Gregorian DateTime.
-    /// Month numbering: Tishrei=1, Cheshvan=2, Kislev=3, Tevet=4, Shevat=5,
-    /// Adar(I)=6, [AdarII=7 in leap years], Nisan=7(8), … Elul=12(13).
-    /// </summary>
-    private static DateTime HebrewToGregorian(int hy, int hm, int hd)
-    {
-        const int HebrewEpoch = 347997; // JDN of 1 Tishrei AM 1
-        int elapsed = HebrewElapsedDays(hy);
-        int doy = hd;
-        for (int mo = 1; mo < hm; mo++)
-            doy += HebrewMonthLength(hy, mo);
-        return JdnToDateTime(HebrewEpoch + elapsed + doy - 1);
-    }
-
-    private static int ApproxHebrewYear(int gregorianYear) => gregorianYear + 3760;
-
-    /// <summary>Rosh Hashanah: 1 Tishrei of the Hebrew year beginning in <paramref name="year"/>.</summary>
-    private static DateTime? RoshHashanah(int year)
-    {
-        int hy0 = ApproxHebrewYear(year);
-        for (int hy = hy0 - 1; hy <= hy0 + 1; hy++)
-        {
-            var dt = HebrewToGregorian(hy, 1, 1);
-            if (dt.Year == year) return dt;
-        }
-        return null;
-    }
-
-    /// <summary>Yom Kippur: 10 Tishrei.</summary>
-    private static DateTime? YomKippur(int year)
-    {
-        int hy0 = ApproxHebrewYear(year);
-        for (int hy = hy0 - 1; hy <= hy0 + 1; hy++)
-        {
-            var dt = HebrewToGregorian(hy, 1, 10);
-            if (dt.Year == year) return dt;
-        }
-        return null;
-    }
-
-    /// <summary>Hanukkah: 25 Kislev (first day/night).</summary>
-    private static DateTime? HanukkahDate(int year)
-    {
-        // 25 Kislev of Hebrew year ~(Gregorian + 3761) falls in Nov/Dec.
-        int hy0 = ApproxHebrewYear(year) + 1;
-        for (int hy = hy0 - 1; hy <= hy0 + 1; hy++)
-        {
-            var dt = HebrewToGregorian(hy, 3, 25);
-            if (dt.Year == year) return dt;
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Diwali: the new moon (Amavasya) of Kartika, falling in October or
-    /// early November.
-    /// </summary>
-    private static DateTime? DiwaliDate(int year)
-    {
-        // Try October new moon first; accept it if day >= 14 (Kartika new moon
-        // is always in the second half of October or early November).
-        var oct = MoonInMonth(year, 10, fullMoon: false);
-        if (oct != null && oct.Value.Day >= 14) return oct;
-        var nov = MoonInMonth(year, 11, fullMoon: false);
-        if (nov != null && nov.Value.Day <= 15) return nov;
-        return oct; // fallback
-    }
-
-    /// <summary>
-    /// Sharad Navratri: begins on the day after the new moon of Ashwin
-    /// (Shukla Pratipada), which falls in September or early October.
-    /// </summary>
-    private static DateTime? NavratriDate(int year)
-    {
-        // Ashwin new moon falls in Sep (day >= 15) or early Oct (day <= 10).
-        var sep = MoonInMonth(year, 9, fullMoon: false);
-        if (sep != null && sep.Value.Day >= 15) return sep.Value.AddDays(1);
-        var oct = MoonInMonth(year, 10, fullMoon: false);
-        if (oct != null && oct.Value.Day <= 10) return oct.Value.AddDays(1);
-        return null;
-    }
-
-    /// <summary>
-    /// Returns true when <paramref name="date"/> falls on a Saturday or Sunday
-    /// or is sandwiched into a long weekend (i.e. Friday before a Monday holiday
-    /// or Tuesday after a Monday holiday, etc.).
-    /// </summary>
-    private static bool IsWeekend(DateTime date) =>
-        date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-
-    /// <summary>
-    /// Returns true when <paramref name="date"/> is a Friday before a long weekend
-    /// (i.e. the following Monday is a public holiday for the given country).
-    /// </summary>
-    private static bool IsLongWeekendEve(DateTime date, string country)
-    {
-        if (date.DayOfWeek != DayOfWeek.Friday) return false;
-        return GetHolidayEntry(date.AddDays(3), country) is not null;
-    }
-
-    /// <summary>
-    /// Returns true when <paramref name="date"/> is the Tuesday after a long weekend
-    /// (i.e. the preceding Monday was a public holiday).
-    /// </summary>
-    private static bool IsPostLongWeekend(DateTime date, string country)
-    {
-        if (date.DayOfWeek != DayOfWeek.Tuesday) return false;
-        return GetHolidayEntry(date.AddDays(-1), country) is not null;
-    }
-
-    // ── Real-world sporting events ──────────────────────────────────────────
-    // Adds tournament-themed welcome messages (e.g. "World Cup fever!") to the
-    // Home screen greeting pool. Two layers, so the feature degrades gracefully:
-    //   1. A hardcoded table of major tournament date windows - always works,
-    //      even fully offline, and is what actually satisfies "FIFA World Cup"
-    //      style theming for the duration of the event.
-    //   2. A best-effort live lookup against TheSportsDB's free public API
-    //      (test key "3" - no signup/API key required, see
-    //      https://www.thesportsdb.com/free_sports_api) for today's specific
-    //      fixture, so the message can name the actual teams playing today.
-    // Any network/parse failure is swallowed; the hardcoded messages from (1)
-    // are still added, so the themed greeting keeps working either way.
-    //
-    // Dates below are the best publicly-known schedule as of when this was
-    // written. Single-day events (finals) get a small +/- buffer window so
-    // the message shows for the build-up, not just the exact date. Since
-    // these are mostly annual/biennial/quadrennial, this table needs a yearly
-    // top-up - past entries are harmless (they just never match) but won't
-    // auto-roll to next year's dates on their own.
-    private static readonly (string Name, DateTime Start, DateTime End, string LeagueQuery, string[] Messages)[] MajorTournaments =
-    {
-        ("FIFA World Cup", new DateTime(2026, 6, 11), new DateTime(2026, 7, 19), "FIFA_World_Cup", new[]
-        {
-            "World Cup fever! Quick coding session before kickoff?",
-            "It's World Cup season - code now, cheer later.",
-            "The World Cup is on. Ship something before the next match!",
-            "World Cup energy: fast breaks, fast builds.",
-        }),
-
-        ("Winter Olympics", new DateTime(2026, 2, 6), new DateTime(2026, 2, 22), "", new[]
-        {
-            "The Winter Olympics are on - go for gold on this codebase.",
-            "Olympic season! Stick the landing on this feature.",
-        }),
-
-        ("Super Bowl", new DateTime(2027, 2, 11), new DateTime(2027, 2, 14), "NFL", new[]
-        {
-            "Super Bowl weekend! One more commit before kickoff.",
-            "It's Super Bowl season - let's run up the score on this codebase.",
-        }),
-
-        ("The Masters", new DateTime(2026, 4, 8), new DateTime(2026, 4, 12), "", new[]
-        {
-            "It's Masters week - chase that green jacket, one commit at a time.",
-        }),
-
-        ("NBA Finals", new DateTime(2026, 6, 3), new DateTime(2026, 6, 19), "NBA", new[]
-        {
-            "NBA Finals season! Clutch code for crunch time.",
-            "Finals fever - let's close this out like Game 7.",
-        }),
-
-        ("UEFA Champions League Final", new DateTime(2027, 6, 2), new DateTime(2027, 6, 5), "UEFA_Champions_League", new[]
-        {
-            "Champions League final week! One more commit before kickoff.",
-        }),
-
-        ("Wimbledon", new DateTime(2026, 6, 29), new DateTime(2026, 7, 12), "", new[]
-        {
-            "Wimbledon's on - strawberries, cream, and clean code.",
-            "Grass court season. Let's keep this build serving aces.",
-        }),
-
-        ("Stanley Cup Final", new DateTime(2026, 6, 1), new DateTime(2026, 6, 26), "NHL", new[]
-        {
-            "Stanley Cup Final season! Let's skate through this sprint.",
-        }),
-
-        ("World Series", new DateTime(2026, 10, 20), new DateTime(2026, 11, 1), "MLB", new[]
-        {
-            "World Series time! Swing for the fences on this feature.",
-        }),
-
-        ("US Open Tennis", new DateTime(2026, 8, 24), new DateTime(2026, 9, 13), "", new[]
-        {
-            "US Open season - let's ace this build.",
-        }),
-
-        // Add future tournaments here, e.g.:
-        // ("UEFA Euro Championship", new DateTime(2028, 6, 1), new DateTime(2028, 7, 1), "UEFA_Euro_Championship", new[] { "..." }),
-        // ("Summer Olympics", new DateTime(2028, 7, 14), new DateTime(2028, 7, 30), "", new[] { "..." }),
-    };
-
+    // ── Welcome message ──────────────────────────────────────────────────────
+    // Holiday/calendar detection, real-world sporting-event theming, and the
+    // greeting-pool builder itself all live in WelcomeMessageBuilder.cs.
+
+    // Populated by FetchSportingEventMessagesAsync; passed into
+    // WelcomeMessageBuilder.BuildMessages so sporting-event lines can join
+    // the greeting pool once they're available.
     private List<string>? _sportingEventMessages;
 
-    // Minimal shape of TheSportsDB's eventsday.php response - only the fields
-    // we actually use are mapped, everything else in the JSON is ignored.
-    private sealed class TsdbEventsResponse
-    {
-        public List<TsdbEvent>? events { get; set; }
-    }
-
-    private sealed class TsdbEvent
-    {
-        public string? strHomeTeam { get; set; }
-        public string? strAwayTeam { get; set; }
-        public string? strTime { get; set; }
-    }
-
+    /// <summary>
+    /// Best-effort fetch of sporting-event-themed welcome messages via
+    /// WelcomeMessageBuilder. Invalidates the welcome-message cache only if
+    /// the Home screen hasn't shown a greeting yet, to avoid a visible
+    /// flicker right after launch.
+    /// </summary>
     private async Task FetchSportingEventMessagesAsync()
     {
-        try
+        var messages = await WelcomeMessageBuilder.FetchSportingEventMessagesAsync(MarketplaceHttpClient);
+        if (messages is null) return;
+
+        _sportingEventMessages = messages;
+
+        // Only rebuild the pool if the Home screen hasn't actually shown a
+        // greeting yet. If it has, the greeting is already on screen and
+        // resetting the cache here would make the WelcomeMessage binding
+        // re-roll a *different* random message a moment after launch -
+        // a visible flicker from one greeting to another. Leaving the
+        // already-chosen message in place means the sporting-themed lines
+        // simply join the pool the next time it's genuinely rebuilt
+        // (e.g. a personalization setting change, or the next launch).
+        if (_selectedWelcomeMessage is null)
         {
-            var now = DateTime.Now;
-            var today = now.ToString("yyyy-MM-dd");
-            var messages = new List<string>();
-
-            foreach (var tournament in MajorTournaments)
-            {
-                if (now.Date < tournament.Start.Date || now.Date > tournament.End.Date)
-                    continue;
-
-                // Generic tournament-themed messages always apply for the whole
-                // window, regardless of whether the live match lookup below
-                // succeeds - this is what guarantees the feature "works".
-                messages.AddRange(tournament.Messages);
-
-                if (string.IsNullOrWhiteSpace(tournament.LeagueQuery))
-                    continue;
-
-                try
-                {
-                    var url = "https://www.thesportsdb.com/api/v1/json/3/eventsday.php"
-                        + $"?d={today}&l={Uri.EscapeDataString(tournament.LeagueQuery)}";
-
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
-                    using var response = await MarketplaceHttpClient.GetAsync(url, cts.Token);
-                    if (!response.IsSuccessStatusCode)
-                        continue;
-
-                    var json = await response.Content.ReadAsStringAsync(cts.Token);
-                    var parsed = JsonSerializer.Deserialize<TsdbEventsResponse>(json);
-
-                    if (parsed?.events is { Count: > 0 } events)
-                    {
-                        // Cap at 3 so one heavy match-day doesn't drown out
-                        // every other greeting in the pool.
-                        foreach (var ev in events.Take(3))
-                        {
-                            if (string.IsNullOrWhiteSpace(ev.strHomeTeam) || string.IsNullOrWhiteSpace(ev.strAwayTeam))
-                                continue;
-
-                            var timeText = string.IsNullOrWhiteSpace(ev.strTime) ? "" : $" at {ev.strTime} UTC";
-                            var line = $"{ev.strHomeTeam} vs {ev.strAwayTeam} today{timeText} - quick build before kickoff?";
-
-                            // Weighted x2 over the generic tournament lines:
-                            // a real match today is more specific and exciting.
-                            messages.Add(line);
-                            messages.Add(line);
-                        }
-                    }
-                }
-                catch
-                {
-                    // Live fixture lookup is best-effort only - the generic
-                    // tournament messages added above already cover us.
-                }
-            }
-
-            if (messages.Count == 0)
-                return;
-
-            _sportingEventMessages = messages;
-
-            // Only rebuild the pool if the Home screen hasn't actually shown a
-            // greeting yet. If it has, the greeting is already on screen and
-            // resetting the cache here would make the WelcomeMessage binding
-            // re-roll a *different* random message a moment after launch -
-            // a visible flicker from one greeting to another. Leaving the
-            // already-chosen message in place means the sporting-themed lines
-            // simply join the pool the next time it's genuinely rebuilt
-            // (e.g. a personalization setting change, or the next launch).
-            if (_selectedWelcomeMessage is null)
-            {
-                _welcomeMessagesCache = null;
-                OnPropertyChanged(nameof(WelcomeMessage));
-            }
+            _welcomeMessagesCache = null;
+            OnPropertyChanged(nameof(WelcomeMessage));
         }
-        catch (Exception ex)
-        {
-            // Should be unreachable (everything above is already guarded),
-            // but keep this feature from ever being able to crash startup.
-            KodoDiagnostics.LogDebug("Failed to build sporting event welcome messages", ex);
-        }
-    }
-
-    // ── Welcome message construction ──────────────────────────────────────────
-
-    private string[] BuildWelcomeMessages()
-    {
-        // Resolve effective local time, honouring the user's timezone override when set.
-        DateTime now;
-        if (!string.IsNullOrWhiteSpace(_userTimezoneOffset) &&
-            double.TryParse(_userTimezoneOffset.Replace("+", ""), out var offsetHours))
-        {
-            var offset = TimeSpan.FromHours(offsetHours);
-            now = DateTime.UtcNow + offset;
-        }
-        else
-        {
-            now = DateTime.Now;
-        }
-
-        var tod     = TimeOfDay(now.Hour);
-        var country = _userCountry;
-        var dow     = now.DayOfWeek;
-        var dayName = now.ToString("dddd");   // e.g. "Monday"
-
-        var messages = new List<string>();
-
-        // Personalised name prefix: when a name is set, prepend it to a subset
-        // of the greeting pool so they feel personal without being repetitive.
-        var name = _userName;
-        if (!string.IsNullOrWhiteSpace(name))
-        {
-            var tod2 = TimeOfDay(now.Hour);
-
-            messages.Add($"Good {tod2}, {name}!");
-            messages.Add($"Hey {name}! Ready to build?");
-            messages.Add($"Welcome back, {name}!");
-            messages.Add($"Let's go, {name}!");
-
-            // Additional personalised greetings
-            messages.Add($"Great to see you again, {name}!");
-            messages.Add($"Ready for another session, {name}?");
-            messages.Add($"Time to be productive, {name}!");
-            messages.Add($"Time to build something great, {name}!");
-            messages.Add($"Locked in and ready, {name}?");
-            messages.Add($"Good to have you back, {name}.");
-            messages.Add($"Let's ship something great today, {name}!");
-            messages.Add($"Your workspace is ready, {name}.");
-        }
-
-        // ── 1. Holiday / special day ──────────────────────────────────────────
-        // Added multiple times so that on a special day the relevant greeting
-        // has a meaningfully higher chance of being shown than any single
-        // generic message, without making it a certainty.
-        var holiday = GetHolidayEntry(now, country);
-        if (holiday?.Greeting is not null)
-        {
-            messages.Add(holiday.Greeting);
-            messages.Add(holiday.Greeting);
-            messages.Add(holiday.Greeting);
-        }
-
-        // ── 1b. Real-world sporting events (e.g. FIFA World Cup) ───────────────
-        // Populated asynchronously by FetchSportingEventMessagesAsync via
-        // TheSportsDB's free API, with a hardcoded tournament-window fallback
-        // so themed messages still appear even if the API call hasn't
-        // completed yet or is unreachable. Weighting is baked in at the
-        // source (specific live matches are added more times than generic
-        // tournament lines), so we just add the whole pool here.
-        if (_sportingEventMessages is { Count: > 0 })
-            messages.AddRange(_sportingEventMessages);
-
-        // ── 2. Long weekend hints ─────────────────────────────────────────────
-        // Also weighted up so long-weekend messages feel timely when applicable.
-        if (IsLongWeekendEve(now, country))
-        {
-            messages.Add("Long weekend starts tomorrow - one more push!");
-            messages.Add("Long weekend starts tomorrow - one more push!");
-            messages.Add("Almost there! Long weekend is just around the corner.");
-            messages.Add("Almost there! Long weekend is just around the corner.");
-            messages.Add($"Happy {dayName}! The long weekend is almost here.");
-            messages.Add($"Happy {dayName}! The long weekend is almost here.");
-        }
-
-        if (IsPostLongWeekend(now, country))
-        {
-            messages.Add("Back from the long weekend - fresh start!");
-            messages.Add("Back from the long weekend - fresh start!");
-            messages.Add("Post-long-weekend. Let's ease back in.");
-            messages.Add("Post-long-weekend. Let's ease back in.");
-            messages.Add("Hope the long weekend recharged you. Ready to build?");
-            messages.Add("Hope the long weekend recharged you. Ready to build?");
-        }
-
-        // ── 3. Day-of-week personality ────────────────────────────────────────
-        messages.Add(dow switch
-        {
-            DayOfWeek.Monday    => "Monday? Let's make it count.",
-            DayOfWeek.Tuesday   => "Tuesday momentum - keep it going!",
-            DayOfWeek.Wednesday => "Midweek check-in - still crushing it?",
-            DayOfWeek.Thursday  => "Almost Friday - don't stop now!",
-            DayOfWeek.Friday    => "Happy Friday! Let's finish strong.",
-            DayOfWeek.Saturday  => "Coding on a Saturday - respect.",
-            DayOfWeek.Sunday    => "Sunday coding session - the quiet grind.",
-            _                   => $"Happy {dayName}!"
-        });
-
-        if (dow == DayOfWeek.Friday)
-        {
-            messages.Add("It's Friday - let's ship something before the weekend!");
-            messages.Add("Friday energy. Let's make the most of it.");
-        }
-        if (dow is DayOfWeek.Saturday or DayOfWeek.Sunday)
-        {
-            messages.Add("Weekend warrior mode: activated.");
-            messages.Add("No meetings on weekends. Just code.");
-        }
-        if (dow == DayOfWeek.Monday)
-        {
-            messages.Add("New week, new bugs to squash.");
-            messages.Add("Monday's for the brave. Welcome back.");
-        }
-
-        // ── 4. Time-of-day flavour ────────────────────────────────────────────
-        if (tod != "night")
-        {
-            messages.Add($"Good {tod}!");
-            messages.Add($"Good {tod}, ready to build?");
-            messages.Add($"Good {tod}, let's get to it!");
-            messages.Add($"It's a great {tod} to code!");
-        }
-
-        if (tod == "morning")
-        {
-            messages.Add("Hey there, early bird!");
-            messages.Add("Rise and shine, let's code!");
-            messages.Add("Coffee in hand, let's ship something!");
-            messages.Add("A fresh day, a fresh start.");
-            messages.Add("Morning focus is unmatched.");
-        }
-        if (tod == "afternoon")
-        {
-            messages.Add("Afternoon grind - let's go!");
-            messages.Add("Hope the day's treating you well!");
-            messages.Add("Halfway through the day, keep it up!");
-            messages.Add("Afternoon slump? Not here.");
-            messages.Add("Post-lunch focus: activated.");
-        }
-        if (tod == "evening")
-        {
-            messages.Add("Fancy coding over a cup of tea?");
-            messages.Add("Winding down or just getting started?");
-            messages.Add("Evening sessions hit different.");
-            messages.Add("The day's winding down, but the code isn't.");
-        }
-        if (tod == "night")
-        {
-            messages.Add("Hey there, night owl!");
-            messages.Add("Burning the midnight oil?");
-            messages.Add("The best code gets written at night.");
-            messages.Add("Still at it? Respect.");
-            messages.Add("Late night, great code.");
-            messages.Add("The quieter the world, the clearer the code.");
-            messages.Add("Dark outside, bright ideas inside.");
-            messages.Add("Another late one? Worth it.");
-        }
-
-        // ── 5. Season-aware messages ──────────────────────────────────────────
-        // Hemisphere: 0 = auto-detect from country, 1 = northern, 2 = southern.
-        var isSouthern = _userHemisphere == 2
-            || (_userHemisphere == 0 && country is "AU" or "NZ" or "ZA" or "AR" or "BR" or "CL");
-        var month = now.Month;
-        var season = isSouthern
-            ? month switch { 12 or 1 or 2 => "summer", 3 or 4 or 5 => "autumn",
-                             6 or 7 or 8 => "winter", _ => "spring" }
-            : month switch { 12 or 1 or 2 => "winter", 3 or 4 or 5 => "spring",
-                             6 or 7 or 8 => "summer", _ => "autumn" };
-
-        messages.Add(season switch
-        {
-            "winter" => "Warm up your fingers - it's time to code.",
-            "spring" => "Spring energy - let's build something fresh.",
-            "summer" => "Hot outside, hotter code.",
-            "autumn" => "Cozy season, perfect for shipping features.",
-            _        => "Great day to write some code."
-        });
-
-        // ── 6. Neutral standby messages ───────────────────────────────────────
-        // Excluded when a name is set so the pool isn't diluted by messages
-        // that could have addressed the user by name instead.
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            messages.Add("Welcome back!");
-            messages.Add("Great to see you!");
-            messages.Add("Ready to code?");
-            messages.Add("Let's build something!");
-            messages.Add("What are we building today?");
-            messages.Add("Back at it again!");
-            messages.Add("Let's get to work!");
-            messages.Add("Hey there!");
-            messages.Add($"Happy {dayName}!");
-        }
-
-        return messages.ToArray();
-    }
-
-    private static string TimeOfDay(int hour)
-    {
-        if (hour < 6)  return "night";
-        if (hour < 12) return "morning";
-        if (hour < 17) return "afternoon";
-        if (hour < 22) return "evening";
-        return "night";
     }
 
     // Lazily constructed per-instance so it can incorporate the personalization settings
@@ -6259,15 +5430,79 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // re-rolled (e.g. a personalization setting change).
     private string? _selectedWelcomeMessage;
 
-    // Evaluated once per launch: true one in a thousand times, showing the "Code fast. Stay light" tagline.
-    private readonly bool _isTaglineGreeting = Random.Shared.Next(1_000) == 0;
+    // Evaluated once per launch: true one in ten thousand times, showing the "Code fast. Stay light" tagline.
+    private readonly bool _isTaglineGreeting = Random.Shared.Next(10_000) == 0;
     public bool IsTaglineGreeting => _isTaglineGreeting;
+
+    // ── Birthday ──────────────────────────────────────────────────────────────
+
+    private static readonly DateTime _kodoBirthDate = new(2026, 4, 18);
+
+    /// <summary>
+    /// True on April 18 every year — Kodo's birthday. Drives celebratory UI accents
+    /// throughout the app (wordmark flourish, window title suffix, status bar note,
+    /// and birthday messages in the welcome pool).
+    /// </summary>
+    public bool IsKodoBirthday
+    {
+        get
+        {
+            var today = DateTime.Now;
+            return today.Month == _kodoBirthDate.Month && today.Day == _kodoBirthDate.Day;
+        }
+    }
+
+    /// <summary>How old Kodo is today (whole years since April 18 2026).</summary>
+    public int KodoBirthdayAge
+    {
+        get
+        {
+            var today = DateTime.Now;
+            var age   = today.Year - _kodoBirthDate.Year;
+            if (today.Month < _kodoBirthDate.Month ||
+                (today.Month == _kodoBirthDate.Month && today.Day < _kodoBirthDate.Day))
+                age--;
+            return Math.Max(0, age);
+        }
+    }
+
+    /// <summary>
+    /// Short celebratory note shown in the status bar on Kodo's birthday, e.g.
+    /// "Kodo turns 1 today! 🎂". Empty on every other day.
+    /// </summary>
+    public string StatusBarBirthdayText
+    {
+        get
+        {
+            if (!IsKodoBirthday) return string.Empty;
+            var age = KodoBirthdayAge;
+            return age == 1 ? "Kodo turns 1 today! 🎂" : $"Kodo turns {age} today! 🎂";
+        }
+    }
+
+    /// <summary>True only when StatusBarBirthdayText is non-empty (i.e. on the birthday).</summary>
+    public bool IsStatusBarBirthdayVisible => IsKodoBirthday;
+
+    // Evaluated once per launch: true one in ten thousand times, swapping the
+    // "Get Started" card's subtitle for a rare alternate line. Same odds as
+    // IsTaglineGreeting above, by design - keeps the two easter eggs consistent.
+    private readonly bool _isRareGetStartedMessage = Random.Shared.Next(10_000) == 0;
+    public string GetStartedSubtitleText => _isRareGetStartedMessage
+        ? "Legend has it the code writes itself if you wait long enough. (It doesn't - open a file.)"
+        : "Open a file or folder to get started, or create something new.";
 
     public string WelcomeMessage
     {
         get
         {
-            _welcomeMessagesCache ??= BuildWelcomeMessages();
+            _welcomeMessagesCache ??= WelcomeMessageBuilder.BuildMessages(
+                _userName,
+                _userCountry,
+                _userHemisphere,
+                _userTimezoneOffset,
+                IsKodoBirthday,
+                KodoBirthdayAge,
+                _sportingEventMessages);
             _selectedWelcomeMessage ??= _welcomeMessagesCache[Random.Shared.Next(_welcomeMessagesCache.Length)];
             return _selectedWelcomeMessage;
         }
@@ -6972,6 +6207,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             DiscordRichPresenceEnabled             = IsDiscordRichPresenceEnabled,
             DiscordImprovedRpcEnabled              = IsDiscordImprovedRpcEnabled,
             DeveloperOptionsVisible                = IsDeveloperOptionsVisible,
+            VerboseLoggingEnabled                   = IsVerboseLoggingEnabled,
             StatusBarFilePathVisible               = IsStatusBarFilePathVisible,
             WordWrapEnabled                        = IsWordWrapEnabled,
             TabSize                                = TabSize,
@@ -8319,10 +7555,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // page views are labelled plainly, and dirty files get a ● prefix.
     private string BuildWindowTitle()
     {
+        var birthday = IsKodoBirthday ? " 🎂" : string.Empty;
+
         if (_isSettingsPageVisible)   return "Settings";
         if (_isExtensionsPageVisible) return "Extensions";
         if (_isTutorialPageVisible)   return "Tutorial";
-        if (_isHomePageVisible)       return "Kodo";
+        if (_isHomePageVisible)       return $"Kodo{birthday}";
 
         if (HasDocumentOpen)
         {
@@ -8337,7 +7575,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return $"{dirty}{file}";
         }
 
-        return "Kodo";
+        return $"Kodo{birthday}";
     }
 
     // Writes content into the TextEditor document without triggering dirty tracking
@@ -8939,28 +8177,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var update = await UpdateService.CheckForUpdateAsync();
-            if (update is not null)
+            var installInBackground = IsAutoUpdateAppInBackgroundEnabled;
+            var update = await UpdateService.CheckAndHandleUpdateAsync(installInBackground, found =>
             {
-                if (IsAutoUpdateAppInBackgroundEnabled)
-                {
-                    CheckForUpdatesStatusText = $"Kodo {update.Version} found - installing in the background…";
-                    await UpdateService.SilentlyInstallAsync(update);
-                }
-                else
-                {
-                    CheckForUpdatesStatusText = $"Kodo {update.Version} is available.";
-                    UpdateDialog.ShowFor(update);
-                }
-            }
-            else
-            {
+                CheckForUpdatesStatusText = installInBackground
+                    ? $"Kodo {found.Version} found - installing in the background…"
+                    : $"Kodo {found.Version} is available.";
+            });
+
+            if (update is null)
                 CheckForUpdatesStatusText = $"You're up to date - Kodo {KodoDiagnostics.AppVersion}.";
-            }
         }
         catch (Exception ex)
         {
-            // CheckForUpdateAsync already swallows its own failures and
+            // CheckAndHandleUpdateAsync already swallows its own failures and
             // returns null, but guard here too so a manual click can never
             // crash the settings page.
             CheckForUpdatesStatusText = "Couldn't check for updates. Check your connection and try again.";
@@ -8992,15 +8222,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // install) or, if "Update automatically without asking" is on,
             // skip the dialog and install silently - instead of just sending
             // the user to the releases page in a browser.
-            var update = await UpdateService.CheckForUpdateAsync();
-            if (update is not null)
-            {
-                if (IsAutoUpdateAppInBackgroundEnabled)
-                    await UpdateService.SilentlyInstallAsync(update);
-                else
-                    UpdateDialog.ShowFor(update);
-            }
-            else
+            var update = await UpdateService.CheckAndHandleUpdateAsync(IsAutoUpdateAppInBackgroundEnabled);
+            if (update is null)
                 // No installer asset could be found (rate-limited, draft
                 // release, no .exe attached, etc.) - fall back to the releases
                 // page so the user isn't left stuck.
@@ -9027,30 +8250,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Shortcut rows: (gesture, description)
         var shortcuts = new (string Gesture, string Description)[]
         {
-            // Navigation
-            ("Ctrl+N",           "New file"),
-            ("Ctrl+O",           "Open file"),
-            ("Ctrl+K",           "Open / close folder"),
-            ("Ctrl+S",           "Save"),
-            ("Ctrl+Shift+S",     "Save as"),
-            ("Ctrl+W",           "Close tab"),
-            ("Ctrl+H",           "Go to Home"),
-            ("Ctrl+,",           "Open Settings"),
-            ("Ctrl+E",           "Open Extensions / Marketplace"),
-            ("Ctrl+Shift+E",     "Go to Editor"),
-            // Editor
-            ("Ctrl+F",           "Find in file"),
-            ("Ctrl+B",           "Toggle file explorer"),
-            ("Ctrl+X / C / V",   "Cut / Copy / Paste"),
-            // Terminal
+            // ── Navigation ────────────────────────────────────────────────────
+            ("Ctrl+H",             "Go to Home"),
+            ("Ctrl+Shift+E",       "Go to Editor"),
+            ("Ctrl+,",             "Open Settings"),
+            ("Ctrl+E",             "Open Extensions / Marketplace"),
+            // ── Files & tabs ──────────────────────────────────────────────────
+            ("Ctrl+N",             "New file"),
+            ("Ctrl+O",             "Open file"),
+            ("Ctrl+K",             "Open folder  (again to close)"),
+            ("Ctrl+S",             "Save"),
+            ("Ctrl+Shift+S",       "Save as"),
+            ("Ctrl+W",             "Close tab"),
+            // ── Editor ────────────────────────────────────────────────────────
+            ("Ctrl+F",             "Find in file"),
+            ("Ctrl+B",             "Toggle file explorer"),
+            ("Ctrl+X / C / V",     "Cut / Copy / Paste"),
+            // ── Terminal ──────────────────────────────────────────────────────
             ("Ctrl+`  or  Ctrl+J", "Toggle terminal panel"),
-            ("Ctrl+Shift+`",     "New terminal session"),
-            // Image viewer
-            ("Ctrl++",           "Zoom in"),
-            ("Ctrl+-",           "Zoom out"),
-            ("Ctrl+0",           "Reset zoom"),
-            // Misc
-            ("Escape",           "Close Settings / Extensions / Tutorial"),
+            ("Ctrl+Shift+`",       "New terminal session"),
+            // ── Image viewer ──────────────────────────────────────────────────
+            ("Ctrl++",             "Zoom in"),
+            ("Ctrl+-",             "Zoom out"),
+            ("Ctrl+0",             "Reset zoom"),
+            // ── General ───────────────────────────────────────────────────────
+            ("Escape",             "Close Settings / Extensions / Tutorial / What's New"),
         };
 
         // ── Header ──────────────────────────────────────────────────────────
@@ -9239,6 +8463,57 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ExtensionsStatusText = $"Could not open extensions folder: {ex.Message}";
             await ShowWarningDialogAsync("Open extensions folder", ex);
         }
+    }
+
+    private async void CopyDiagnosticInfoButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var info = new StringBuilder()
+                .Append("Kodo ").AppendLine(KodoDiagnostics.AppVersion)
+                .Append("OS: ").AppendLine(RuntimeInformation.OSDescription)
+                .Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription)
+                .Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
+                .Append(" / ").AppendLine(Environment.Is64BitProcess ? "64-bit" : "32-bit")
+                .Append("Theme: ").AppendLine(CurrentThemeName)
+                .Append("Settings file: ").AppendLine(SettingsFilePath)
+                .Append("Crash log: ").AppendLine(CrashLogFilePath)
+                .Append("Warnings log: ").AppendLine(WarningsLogFilePath)
+                .ToString();
+
+            await (TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(info) ?? Task.CompletedTask);
+            DeveloperOptionsStatusText = "Diagnostic info copied to clipboard.";
+        }
+        catch (Exception ex)
+        {
+            DeveloperOptionsStatusText = $"Could not copy diagnostic info: {ex.Message}";
+        }
+    }
+
+    private void ClearLogsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var clearedAny = false;
+        var failures = new List<string>();
+
+        foreach (var path in new[] { KodoDiagnostics.CrashLogFilePath, KodoDiagnostics.WarningsLogFilePath })
+        {
+            try
+            {
+                if (!File.Exists(path)) continue;
+                File.Delete(path);
+                clearedAny = true;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{Path.GetFileName(path)} ({ex.Message})");
+            }
+        }
+
+        DeveloperOptionsStatusText = failures.Count > 0
+            ? $"Couldn't clear: {string.Join(", ", failures)}"
+            : clearedAny
+                ? "Logs cleared."
+                : "No logs to clear.";
     }
     private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -10344,45 +9619,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // ── App auto-updater ──────────────────────────────────────────────────────
-    // Starts/stops the periodic background check timer to match the current
-    // value of IsAutoUpdateAppEnabled. Called once at startup and again every
-    // time the setting is toggled in Settings. Mirrors
-    // UpdateExtensionAutoUpdateLifecycle just above.
-    private void UpdateAppAutoUpdateLifecycle()
-    {
-        _appAutoUpdateTimer.Stop();
-        if (IsAutoUpdateAppEnabled)
-            _appAutoUpdateTimer.Start();
-    }
-
-    // Fires every six hours while Kodo stays open and the setting is enabled,
-    // so a release published mid-session isn't only picked up on next launch.
-    // Skips while a manual check from the Settings page is already in flight,
-    // so the two never race each other or step on the same status text.
-    private async void AppAutoUpdateTimer_OnTick(object? sender, EventArgs e)
-    {
-        if (!IsAutoUpdateAppEnabled || IsCheckingForUpdatesManually)
-            return;
-
-        try
-        {
-            var update = await UpdateService.CheckForUpdateAsync();
-            if (update is null)
-                return;
-
-            // "Update automatically without asking": skip the dialog and
-            // install silently instead.
-            if (IsAutoUpdateAppInBackgroundEnabled)
-                await UpdateService.SilentlyInstallAsync(update);
-            else
-                UpdateDialog.ShowFor(update);
-        }
-        catch (Exception ex)
-        {
-            // Silent background check - this must never surface as a crash.
-            KodoDiagnostics.LogDebug("Periodic app update check failed", ex);
-        }
-    }
+    // The periodic timer, its start/stop lifecycle, and the tick handler that
+    // checks-and-handles a found update all live in AppUpdateScheduler
+    // (Updater.cs) now - see _appUpdateScheduler above.
 
     // Fires every few hours while Kodo is open and the setting is enabled, so
     // extensions published mid-session aren't only picked up on next launch.
@@ -11214,7 +10453,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _discordReconnectTimer.Stop();
         _extensionsRefreshDebounceTimer.Stop();
         _extensionAutoUpdateTimer.Stop();
-        _appAutoUpdateTimer.Stop();
+        _appUpdateScheduler.Stop();
         _marketplaceRefreshTimer.Stop();
         _wordCountRefreshTimer.Stop();
         _settingsSaveDebounceTimer.Stop();
@@ -12070,6 +11309,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public bool DiscordRichPresenceEnabled { get; set; }
         public bool DiscordImprovedRpcEnabled  { get; set; }
         public bool DeveloperOptionsVisible { get; set; }
+        public bool VerboseLoggingEnabled { get; set; }
         public bool StatusBarFilePathVisible { get; set; } = true;
         public bool WordWrapEnabled { get; set; }
         public int TabSize { get; set; } = 4;

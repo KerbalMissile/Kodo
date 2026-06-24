@@ -348,6 +348,45 @@ internal static class UpdateService
         }
     }
 
+    // ── Consolidated check-then-act flow ─────────────────────────────────────
+    //
+    // Every call site that wants to "check for an update and do something
+    // about it" (the manual Settings button, the releases-page fallback, and
+    // the periodic background timer) used to duplicate this exact branch:
+    // check → if found, either silently install or show UpdateDialog. This
+    // is the single place that logic lives now; callers just decide what to
+    // do with the optional pre-install status callback and the final result.
+
+    /// <summary>
+    /// Checks for an update and, if one is found, either installs it silently
+    /// or shows <see cref="UpdateDialog"/>, depending on <paramref name="installInBackground"/>.
+    /// Returns the <see cref="UpdateInfo"/> that was found (after handling it),
+    /// or <c>null</c> if no update was available. Never throws - failures are
+    /// already swallowed by <see cref="CheckForUpdateAsync"/> and <see cref="SilentlyInstallAsync"/>.
+    /// </summary>
+    /// <param name="onUpdateFound">
+    /// Optional callback invoked the moment an update is found, before the
+    /// install/dialog branch runs - lets a caller update status text (e.g.
+    /// "Kodo vX is available.") without waiting for a silent install to finish.
+    /// </param>
+    public static async Task<UpdateInfo?> CheckAndHandleUpdateAsync(
+        bool installInBackground,
+        Action<UpdateInfo>? onUpdateFound = null,
+        CancellationToken ct = default)
+    {
+        var update = await CheckForUpdateAsync(ct).ConfigureAwait(false);
+        if (update is null) return null;
+
+        onUpdateFound?.Invoke(update);
+
+        if (installInBackground)
+            await SilentlyInstallAsync(update, ct).ConfigureAwait(false);
+        else
+            UpdateDialog.ShowFor(update);
+
+        return update;
+    }
+
     // ── GitHub API DTOs ──────────────────────────────────────────────────────
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -822,4 +861,67 @@ internal static class PendingUpdateService
     }
 
     private sealed record PendingUpdateRecord(string Version, string InstallerPath, DateTime DownloadedAtUtc);
+}
+// ── Periodic background app-update scheduler ────────────────────────────────
+//
+// Owns the DispatcherTimer that drives "check for a new Kodo build every six
+// hours while the app stays open" - the launch-time check itself still lives
+// in App.axaml.cs (CheckForUpdatesInBackground); this only covers everything
+// after that. MainWindow owns one instance and feeds it small accessors for
+// the settings it needs to read, rather than the scheduler reaching back into
+// MainWindow's full surface area.
+internal sealed class AppUpdateScheduler
+{
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromHours(6) };
+    private readonly Func<bool> _isEnabled;
+    private readonly Func<bool> _isManualCheckInProgress;
+    private readonly Func<bool> _installInBackground;
+
+    /// <param name="isEnabled">Mirrors the "Automatically check for and install Kodo updates" setting.</param>
+    /// <param name="isManualCheckInProgress">
+    /// True while a manual "Check for Updates" click (Settings page) is in
+    /// flight, so the periodic tick never races it or steps on the same
+    /// status text.
+    /// </param>
+    /// <param name="installInBackground">Mirrors the "Update automatically without asking" sub-setting.</param>
+    public AppUpdateScheduler(Func<bool> isEnabled, Func<bool> isManualCheckInProgress, Func<bool> installInBackground)
+    {
+        _isEnabled = isEnabled;
+        _isManualCheckInProgress = isManualCheckInProgress;
+        _installInBackground = installInBackground;
+        _timer.Tick += async (_, _) => await OnTickAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Starts or stops the timer to match the current value of <c>isEnabled</c>.
+    /// Call once at startup and again every time the setting is toggled.
+    /// </summary>
+    public void UpdateLifecycle()
+    {
+        _timer.Stop();
+        if (_isEnabled())
+            _timer.Start();
+    }
+
+    /// <summary>Stops the timer outright - call when the window is closing.</summary>
+    public void Stop() => _timer.Stop();
+
+    // Fires every six hours while Kodo stays open and the setting is enabled,
+    // so a release published mid-session isn't only picked up on next launch.
+    // Skips while a manual check from the Settings page is already in flight.
+    private async Task OnTickAsync()
+    {
+        if (!_isEnabled() || _isManualCheckInProgress())
+            return;
+
+        try
+        {
+            await UpdateService.CheckAndHandleUpdateAsync(_installInBackground()).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            // Silent background check - this must never surface as a crash.
+            KodoDiagnostics.LogDebug("Periodic app update check failed", ex);
+        }
+    }
 }
