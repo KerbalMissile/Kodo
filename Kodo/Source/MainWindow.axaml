@@ -2714,6 +2714,32 @@
                                                             </StackPanel>
                                                         </StackPanel>
                                                     </Button>
+                                                    <Button Classes="chrome"
+                                                            Click="ThemeButton_OnClick"
+                                                            Tag="System"
+                                                            Width="170"
+                                                            ToolTip.Tip="Match your Windows light/dark setting">
+                                                        <StackPanel Spacing="8">
+                                                            <Panel>
+                                                                <Border Height="72"
+                                                                        CornerRadius="10"
+                                                                        Background="{Binding SystemThemePreviewBackground}"
+                                                                        BorderBrush="{Binding SystemThemePreviewBorder}"
+                                                                        BorderThickness="1" />
+                                                                <Border Height="72"
+                                                                        CornerRadius="10"
+                                                                        BorderThickness="2"
+                                                                        BorderBrush="{Binding AccentBrush}"
+                                                                        IsVisible="{Binding IsSystemThemeActive}" />
+                                                            </Panel>
+                                                            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="System Default" />
+                                                                <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                                           VerticalAlignment="Center" Text="●"
+                                                                           IsVisible="{Binding IsSystemThemeActive}" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Button>
                                                 </WrapPanel>
 
                                                 <!-- Extension themes - wraps freely so all cards are visible -->
@@ -3443,7 +3469,7 @@
                                                VerticalAlignment="Center"
                                                Text="Theme" />
                                 </StackPanel>
-                                <Grid ColumnDefinitions="Auto,Auto"
+                                <Grid ColumnDefinitions="Auto,Auto,Auto"
                                       ColumnSpacing="10"
                                       HorizontalAlignment="Left">
                                     <Button Grid.Column="0"
@@ -3498,6 +3524,34 @@
                                                 <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
                                                            VerticalAlignment="Center" Text="●"
                                                            IsVisible="{Binding IsLightThemeActive}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Grid.Column="2"
+                                            Classes="chrome"
+                                            Click="ThemeButton_OnClick"
+                                            Tag="System"
+                                            Width="170"
+                                            ToolTip.Tip="Match your Windows light/dark setting">
+                                        <StackPanel Spacing="8">
+                                            <Panel>
+                                                <Border Height="96"
+                                                        CornerRadius="12"
+                                                        Background="{Binding SystemThemePreviewBackground}"
+                                                        BorderBrush="{Binding SystemThemePreviewBorder}"
+                                                        BorderThickness="1" />
+                                                <Border Height="96"
+                                                        CornerRadius="12"
+                                                        BorderThickness="2"
+                                                        BorderBrush="{Binding AccentBrush}"
+                                                        IsVisible="{Binding IsSystemThemeActive}" />
+                                            </Panel>
+                                            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="System Default" />
+                                                <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
+                                                           VerticalAlignment="Center" Text="●"
+                                                           IsVisible="{Binding IsSystemThemeActive}" />
                                             </StackPanel>
                                         </StackPanel>
                                     </Button>
@@ -4178,6 +4232,10 @@
                                                 Click="ClearLogsButton_OnClick"
                                                 ToolTip.Tip="Delete crash.log and warnings.log from disk"
                                                 Content="Clear Logs" />
+                                        <Button Classes="chrome"
+                                                Click="ExportKodoDataButton_OnClick"
+                                                ToolTip.Tip="Save a formatted .txt file with all of Kodo's settings, personalization, open/recent files, and installed extensions"
+                                                Content="Export Kodo Data" />
                                     </StackPanel>
 
                                     <TextBlock VerticalAlignment="Center"

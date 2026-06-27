@@ -622,6 +622,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // live without requiring the Microsoft.Win32.SystemEvents NuGet package.
     private readonly DispatcherTimer _windowsAccentPollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private string _lastSeenWindowsAccentHex = string.Empty;
+    // Polls the Windows "AppsUseLightTheme" registry value (same cadence/approach
+    // as the accent poll above) so the System Default theme blob's preview swatch
+    // - and the active palette, when System mode is selected - track a live
+    // Windows light/dark toggle without requiring an app restart.
+    private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private string _lastSeenWindowsThemeName = string.Empty;
     private readonly RainbowBracketColorizer _rainbowBracketColorizer = new();
     private readonly InterpolatedStringColorizer _interpolatedStringColorizer = new();
     private readonly HtmlEmbeddedColorizer _htmlEmbeddedColorizer = new();
@@ -1209,6 +1215,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _lastSeenWindowsAccentHex = GetWindowsAccentColor() ?? string.Empty;
             _windowsAccentPollTimer.Tick += WindowsAccentPollTimer_OnTick;
             _windowsAccentPollTimer.Start();
+
+            // Same approach for the System Default theme blob - poll the
+            // light/dark registry value every 2 s so it stays live too.
+            _lastSeenWindowsThemeName = ResolveSystemThemeName();
+            _windowsThemePollTimer.Tick += WindowsThemePollTimer_OnTick;
+            _windowsThemePollTimer.Start();
         }
         Opened += MainWindow_OnOpened;
         Closing += MainWindow_OnClosing;
@@ -5207,6 +5219,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(ThemeStatusText));
             OnPropertyChanged(nameof(IsDarkThemeActive));
             OnPropertyChanged(nameof(IsLightThemeActive));
+            OnPropertyChanged(nameof(IsSystemThemeActive));
             foreach (var ext in ThemeExtensions)
                 ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, value, StringComparison.OrdinalIgnoreCase);
         }
@@ -5262,7 +5275,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar))
         : "Explorer";
 
-    public string ThemeStatusText => $"Current theme: {CurrentThemeName}";
+    public string ThemeStatusText => IsSystemThemeActive
+        ? $"Current theme: System Default ({CurrentThemeName})"
+        : $"Current theme: {CurrentThemeName}";
 
     // ── Personalization settings ─────────────────────────────────────────────
 
@@ -5439,7 +5454,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly DateTime _kodoBirthDate = new(2026, 4, 18);
 
     /// <summary>
-    /// True on April 18 every year — Kodo's birthday. Drives celebratory UI accents
+    /// True on April 18 every year- Kodo's birthday. Drives celebratory UI accents
     /// throughout the app (wordmark flourish, window title suffix, status bar note,
     /// and birthday messages in the welcome pool).
     /// </summary>
@@ -5508,8 +5523,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public bool IsDarkThemeActive  => string.Equals(CurrentThemeName, "Dark",  StringComparison.OrdinalIgnoreCase);
-    public bool IsLightThemeActive => string.Equals(CurrentThemeName, "Light", StringComparison.OrdinalIgnoreCase);
+    public bool IsDarkThemeActive  => !IsSystemThemeActive && string.Equals(CurrentThemeName, "Dark",  StringComparison.OrdinalIgnoreCase);
+    public bool IsLightThemeActive => !IsSystemThemeActive && string.Equals(CurrentThemeName, "Light", StringComparison.OrdinalIgnoreCase);
+
+    // True when the user picked "follow Windows" rather than an explicit
+    // Dark/Light/extension theme. Tracked off _requestedThemeName (not
+    // CurrentThemeName) so the System Default blob - not the Dark or Light
+    // blob - shows the active ring, even though CurrentThemeName still
+    // resolves to a concrete "Dark"/"Light" for the colour-application logic.
+    public bool IsSystemThemeActive => string.Equals(_requestedThemeName, "System", StringComparison.OrdinalIgnoreCase);
+
+    // Live preview swatch for the System Default blob. Reflects whatever
+    // Windows is currently reporting (Light or Dark) regardless of which
+    // theme mode is actually active, refreshed by _windowsThemePollTimer -
+    // mirrors how WindowsAccentPreviewBrush stays live for the accent blob.
+    public IBrush SystemThemePreviewBackground { get; private set; } = Brush.Parse("#1E1E1E");
+    public IBrush SystemThemePreviewBorder     { get; private set; } = Brush.Parse("#2B2B2B");
 
     public string LanguageDisplayText
     {
@@ -6202,7 +6231,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // so we don't access ObservableCollections or bound properties from a background thread.
         return new AppSettings
         {
-            ThemeName                              = CurrentThemeName,
+            ThemeName                              = _requestedThemeName,
             AutoSaveEnabled                        = IsAutoSaveEnabled,
             DiscordRichPresenceEnabled             = IsDiscordRichPresenceEnabled,
             DiscordImprovedRpcEnabled              = IsDiscordImprovedRpcEnabled,
@@ -6303,9 +6332,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ApplyThemeBrushes(string themeName)
     {
         _requestedThemeName = themeName;
+        // "System" isn't a real palette - resolve it to whatever Windows is
+        // currently reporting before doing the extension/built-in lookup below.
+        // _requestedThemeName stays "System" so persistence and the blob's
+        // active-ring binding still recognise the user's actual selection.
+        var effectiveThemeName = string.Equals(themeName, "System", StringComparison.OrdinalIgnoreCase)
+            ? ResolveSystemThemeName()
+            : themeName;
         var extensionTheme = ThemeExtensions
             .Select(e => e.ThemeDefinition!)
-            .FirstOrDefault(t => string.Equals(t.ThemeId, themeName, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(t => string.Equals(t.ThemeId, effectiveThemeName, StringComparison.OrdinalIgnoreCase));
 
         if (extensionTheme is not null)
         {
@@ -6331,7 +6367,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else
         {
-            CurrentThemeName = themeName == "Light" ? "Light" : "Dark";
+            CurrentThemeName = effectiveThemeName == "Light" ? "Light" : "Dark";
             Application.Current!.RequestedThemeVariant = CurrentThemeName == "Light"
                 ? ThemeVariant.Light
                 : ThemeVariant.Dark;
@@ -6394,14 +6430,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try { AccentBrush = GetCachedBrush(resolvedAccent); }
         catch { AccentBrush = GetCachedBrush("#8C00FF"); }
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
+
+        // Same reasoning as WindowsAccentPreviewBrush above: initialise the
+        // System Default blob's preview from the live registry value now so
+        // it doesn't flash a stale default before the poll timer's first tick.
+        RefreshSystemThemePreview();
     }
 
     private void ApplyTheme(string themeName)
     {
         _requestedThemeName = themeName;
+        // "System" isn't a real palette - resolve it to whatever Windows is
+        // currently reporting before doing the extension/built-in lookup below.
+        // _requestedThemeName stays "System" so persistence and the blob's
+        // active-ring binding still recognise the user's actual selection.
+        var effectiveThemeName = string.Equals(themeName, "System", StringComparison.OrdinalIgnoreCase)
+            ? ResolveSystemThemeName()
+            : themeName;
         var extensionTheme = ThemeExtensions
             .Select(e => e.ThemeDefinition!)
-            .FirstOrDefault(t => string.Equals(t.ThemeId, themeName, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(t => string.Equals(t.ThemeId, effectiveThemeName, StringComparison.OrdinalIgnoreCase));
 
         if (extensionTheme is not null)
         {
@@ -6427,7 +6475,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else
         {
-            CurrentThemeName = themeName == "Light" ? "Light" : "Dark";
+            CurrentThemeName = effectiveThemeName == "Light" ? "Light" : "Dark";
             Application.Current!.RequestedThemeVariant = CurrentThemeName == "Light"
                 ? ThemeVariant.Light
                 : ThemeVariant.Dark;
@@ -6480,6 +6528,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsAccentKodo));
         OnPropertyChanged(nameof(IsAccentTheme));
         OnPropertyChanged(nameof(ThemeAccentPreviewBrush));
+        OnPropertyChanged(nameof(IsSystemThemeActive));
+        OnPropertyChanged(nameof(IsDarkThemeActive));
+        OnPropertyChanged(nameof(IsLightThemeActive));
+        RefreshSystemThemePreview();
         // Always run ApplyAccentOverride: it updates both AccentBrush (for all
         // three modes) and WindowsAccentPreviewBrush (so the blob stays live
         // even when "kodo" or "custom" mode is active).
@@ -6545,6 +6597,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { /* Registry unavailable */ }
         return null;
     }
+
+    // Reads the same registry value Windows itself uses to decide whether
+    // apps should render light or dark chrome. Null means "couldn't tell"
+    // (non-Windows, locked-down system, etc.), not "light" or "dark".
+    private static bool? GetWindowsAppsUseLightTheme()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            if (key?.GetValue("AppsUseLightTheme") is int raw)
+                return raw != 0;
+        }
+        catch { /* Registry unavailable */ }
+        return null;
+    }
+
+    // Resolves the "System" theme selection to the concrete built-in theme
+    // ("Light" or "Dark") that Windows is currently reporting. Falls back to
+    // Dark - Kodo's overall default - when the registry value can't be read.
+    private static string ResolveSystemThemeName() =>
+        GetWindowsAppsUseLightTheme() == true ? "Light" : "Dark";
+
+    // Keeps the System Default blob's preview swatch live, independent of
+    // which theme mode is actually active - mirrors how ApplyAccentOverride
+    // keeps WindowsAccentPreviewBrush live for the accent blob.
+    private void RefreshSystemThemePreview()
+    {
+        var isLight = GetWindowsAppsUseLightTheme() == true;
+        SystemThemePreviewBackground = GetCachedBrush(isLight ? "#FFFFFF" : "#1E1E1E");
+        SystemThemePreviewBorder     = GetCachedBrush(isLight ? "#D7DCE5" : "#2B2B2B");
+        OnPropertyChanged(nameof(SystemThemePreviewBackground));
+        OnPropertyChanged(nameof(SystemThemePreviewBorder));
+    }
+
 
     private async void AccentColorPickerButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -8515,6 +8603,136 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? "Logs cleared."
                 : "No logs to clear.";
     }
+
+    // Builds a complete, human-readable snapshot of everything Kodo currently
+    // knows about this install - settings, personalization, open/recent files,
+    // and installed extensions. Backs the "Export Kodo Data" developer option.
+    private string BuildKodoDataExport()
+    {
+        var sb = new StringBuilder();
+
+        void Section(string title)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"── {title} ──");
+        }
+
+        sb.AppendLine("Kodo Data Export");
+        sb.Append("Generated: ").Append(KodoDiagnostics.UtcNow().ToString("yyyy-MM-dd HH:mm:ss")).AppendLine(" UTC");
+        sb.Append("Kodo ").AppendLine(KodoDiagnostics.AppVersion);
+        sb.Append("OS: ").AppendLine(RuntimeInformation.OSDescription);
+        sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
+        sb.Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
+          .Append(" / ").AppendLine(Environment.Is64BitProcess ? "64-bit" : "32-bit");
+
+        Section("Appearance");
+        sb.AppendLine($"Theme: {(IsSystemThemeActive ? $"System Default ({CurrentThemeName})" : CurrentThemeName)}");
+        sb.AppendLine($"Accent mode: {_accentColorMode}");
+        sb.AppendLine($"Custom accent colour: {_customAccentHex}");
+
+        Section("Editor");
+        sb.AppendLine($"Word wrap: {IsWordWrapEnabled}");
+        sb.AppendLine($"Tab size: {TabSize}");
+        sb.AppendLine($"Font size: {EditorFontSize}");
+        sb.AppendLine($"Confirm before closing unsaved tabs: {IsConfirmBeforeClosingUnsavedTabsEnabled}");
+        sb.AppendLine($"Restore open tabs on launch: {IsRestoreOpenTabsOnLaunchEnabled}");
+        sb.AppendLine($"Show full file path in status bar: {IsStatusBarFilePathVisible}");
+        sb.AppendLine($"Auto-save: {IsAutoSaveEnabled}");
+
+        Section("Updates");
+        sb.AppendLine($"Auto-update extensions: {IsAutoUpdateExtensionsEnabled} (silent install: {IsAutoUpdateExtensionsInBackgroundEnabled})");
+        sb.AppendLine($"Auto-update Kodo: {IsAutoUpdateAppEnabled} (silent install: {IsAutoUpdateAppInBackgroundEnabled})");
+        sb.AppendLine($"Last seen version: {(string.IsNullOrWhiteSpace(_lastSeenVersion) ? "(none)" : _lastSeenVersion)}");
+        sb.AppendLine($"Completed tutorial: {_hasCompletedTutorial}");
+
+        Section("Discord Rich Presence");
+        sb.AppendLine($"Enabled: {IsDiscordRichPresenceEnabled}");
+        sb.AppendLine($"Improved RPC: {IsDiscordImprovedRpcEnabled}");
+
+        Section("Terminal");
+        sb.AppendLine($"Preferred shell: {SelectedTerminalShell?.DisplayName ?? "(none)"}");
+        sb.AppendLine($"Visible on launch: {IsTerminalVisible}");
+        sb.AppendLine($"Panel height: {TerminalPanelHeight:0}px");
+
+        Section("Personalization");
+        sb.AppendLine($"Name: {(string.IsNullOrWhiteSpace(_userName) ? "(not set)" : _userName)}");
+        sb.AppendLine($"Country: {(string.IsNullOrWhiteSpace(_userCountry) ? "(not set)" : _userCountry)}");
+        sb.AppendLine($"Hemisphere: {_userHemisphere}");
+        sb.AppendLine($"Timezone offset: {(string.IsNullOrWhiteSpace(_userTimezoneOffset) ? "(not set)" : _userTimezoneOffset)}");
+
+        Section("Developer Options");
+        sb.AppendLine($"Developer options visible: {IsDeveloperOptionsVisible}");
+        sb.AppendLine($"Verbose logging: {IsVerboseLoggingEnabled}");
+
+        Section("File Locations");
+        sb.AppendLine($"Settings file: {SettingsFilePath}");
+        sb.AppendLine($"Crash log: {CrashLogFilePath}");
+        sb.AppendLine($"Warnings log: {WarningsLogFilePath}");
+        sb.AppendLine($"Extensions folder: {ExtensionsFolderPath}");
+
+        var openTabPaths = OpenTabs
+            .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
+            .Select(tab => tab.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        Section($"Open Tabs ({openTabPaths.Count})");
+        if (openTabPaths.Count == 0)
+            sb.AppendLine("(none)");
+        else
+            foreach (var path in openTabPaths)
+                sb.AppendLine(path);
+
+        Section($"Recent Files ({RecentFiles.Count})");
+        if (RecentFiles.Count == 0)
+            sb.AppendLine("(none)");
+        else
+            foreach (var entry in RecentFiles)
+                sb.AppendLine($"{entry.Path}{(entry.IsFolder ? "  [folder]" : string.Empty)}  -  last opened {entry.LastOpened:yyyy-MM-dd HH:mm}");
+
+        var extensions = VisibleLoadedExtensions.ToList();
+        Section($"Installed Extensions ({extensions.Count})");
+        if (extensions.Count == 0)
+            sb.AppendLine("(none)");
+        else
+            foreach (var ext in extensions)
+            {
+                sb.AppendLine($"{ext.Name} (v{ext.Version}) - {ext.Type}, by {ext.Author}");
+                sb.AppendLine($"    Source: {ext.SourcePath}");
+            }
+
+        return sb.ToString();
+    }
+
+    private async void ExportKodoDataButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var export = BuildKodoDataExport();
+            var suggestedFileName = $"Kodo-Data-Export-{KodoDiagnostics.UtcNow():yyyyMMdd-HHmmss}.txt";
+
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Export Kodo Data",
+                SuggestedFileName = suggestedFileName
+            });
+
+            var path = file?.TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                DeveloperOptionsStatusText = "Export cancelled.";
+                return;
+            }
+
+            await File.WriteAllTextAsync(path, export);
+            DeveloperOptionsStatusText = $"Kodo data exported to {path}.";
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogWarning("MainWindow.ExportKodoDataButton_OnClick", ex, operation: "Export Kodo data");
+            DeveloperOptionsStatusText = $"Could not export Kodo data: {ex.Message}";
+        }
+    }
+
     private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { Tag: string themeName })
@@ -10458,6 +10676,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _wordCountRefreshTimer.Stop();
         _settingsSaveDebounceTimer.Stop();
         _windowsAccentPollTimer.Stop();
+        _windowsThemePollTimer.Stop();
         NetworkChange.NetworkAvailabilityChanged -= NetworkChange_OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged -= NetworkChange_OnNetworkAddressChanged;
         CloseAllTerminalSessions();
@@ -10479,6 +10698,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ApplyThemeToEditor();
             RefreshExtensionTheme();
         }
+    }
+
+    // Runs on the UI thread every 2 s; mirrors WindowsAccentPollTimer_OnTick.
+    // Refreshes the System Default blob's preview whenever Windows' light/dark
+    // setting changes, and re-applies the theme too when System mode is the
+    // user's active selection so switching Windows' setting takes effect live.
+    private void WindowsThemePollTimer_OnTick(object? sender, EventArgs e)
+    {
+        var current = ResolveSystemThemeName();
+        if (current == _lastSeenWindowsThemeName) return;
+        _lastSeenWindowsThemeName = current;
+        RefreshSystemThemePreview();
+        if (IsSystemThemeActive)
+            ApplyTheme("System");
     }
 
     private void NetworkChange_OnNetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) =>
