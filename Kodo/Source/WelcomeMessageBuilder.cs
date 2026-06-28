@@ -755,9 +755,7 @@ internal static class WelcomeMessageBuilder
         var name = userName;
         if (!string.IsNullOrWhiteSpace(name))
         {
-            var tod2 = TimeOfDay(now.Hour);
-
-            messages.Add($"Good {tod2}, {name}!");
+            messages.Add($"Good {tod}, {name}!");
             messages.Add($"Hey {name}! Ready to build?");
             messages.Add($"Welcome back, {name}!");
             messages.Add($"Let's go, {name}!");

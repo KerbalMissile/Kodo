@@ -3,7 +3,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
+using Microsoft.Win32;
 
 namespace Kodo;
 
@@ -27,7 +29,12 @@ public enum KodoSeverity { Critical, Warning, Debug }
 internal static class KodoDiagnostics
 {
     public static string AppVersion { get; } = ResolveAppVersion();
-    private static readonly string CurrentAppVersion = AppVersion;
+
+    // RuntimeInformation.OSDescription always returns "Microsoft Windows 10.0.XXXXX"
+    // on Windows 11 — the NT kernel version stayed at 10.0.x for compatibility, and
+    // the registry ProductName key also still says "Windows 10 Pro" on Windows 11.
+    // CurrentBuildNumber is the only reliable signal: Windows 11 starts at build 22000.
+    public static string OSDescription { get; } = ResolveOSDescription();
 
     // When enabled (via the Developer Options panel), Debug-level traces that
     // would normally only go to the Debug output are also appended to
@@ -47,6 +54,50 @@ internal static class KodoDiagnostics
         // in the .csproj and is not confused with a different build.
         var plusIndex = raw.IndexOf('+');
         return plusIndex >= 0 ? raw[..plusIndex] : raw;
+    }
+
+    private static string ResolveOSDescription()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return RuntimeInformation.OSDescription;
+
+        return TryGetWindowsProductName() ?? RuntimeInformation.OSDescription;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string? TryGetWindowsProductName()
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+            if (key is null) return null;
+
+            var productName = key.GetValue("ProductName")        as string ?? string.Empty;
+            var buildStr    = key.GetValue("CurrentBuildNumber") as string ?? string.Empty;
+            var displayVer  = key.GetValue("DisplayVersion")     as string ?? string.Empty;
+
+            if (!int.TryParse(buildStr, out var build)) return null;
+
+            // Strip the stale "Windows 10" / "Windows 11" prefix and reattach
+            // the correct one based on build number, keeping the edition suffix.
+            var edition = productName
+                .Replace("Windows 10", string.Empty, StringComparison.OrdinalIgnoreCase)
+                .Replace("Windows 11", string.Empty, StringComparison.OrdinalIgnoreCase)
+                .Trim();
+
+            var winLabel = build >= 22000 ? "Windows 11" : "Windows 10";
+            var fullName = string.IsNullOrWhiteSpace(edition) ? winLabel : $"{winLabel} {edition}";
+
+            // e.g. "Windows 11 Pro 24H2 (build 26200)"
+            return string.IsNullOrWhiteSpace(displayVer)
+                ? $"{fullName} (build {build})"
+                : $"{fullName} {displayVer} (build {build})";
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // ── Log paths ─────────────────────────────────────────────────────────────
@@ -88,8 +139,8 @@ internal static class KodoDiagnostics
         sb.AppendLine();
         sb.Append("Source: ").AppendLine(source);
         sb.Append("Terminating: ").AppendLine(isTerminating ? "Yes" : "No");
-        sb.Append("Version: ").AppendLine(CurrentAppVersion);
-        sb.Append("OS: ").AppendLine(RuntimeInformation.OSDescription);
+        sb.Append("Version: ").AppendLine(AppVersion);
+        sb.Append("OS: ").AppendLine(OSDescription);
         sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
         sb.Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
           .Append(" / ").AppendLine(Environment.Is64BitProcess ? "64-bit" : "32-bit");
@@ -98,16 +149,6 @@ internal static class KodoDiagnostics
         sb.AppendLine(exception.ToString());
         return sb.ToString();
     }
-
-    // Overload that accepts a raw severity string for legacy call sites that
-    // haven't been migrated yet.  Maps "Crash" → Critical, anything else → Warning.
-    public static string BuildDiagnosticPayload(
-        string source,
-        Exception exception,
-        bool isTerminating,
-        string severityLabel,
-        string? operation = null) =>
-        BuildDiagnosticPayload(source, exception, isTerminating, ParseSeverity(severityLabel), operation);
 
     public static string BuildDiagnosticSummary(
         string source,
@@ -118,7 +159,7 @@ internal static class KodoDiagnostics
         var summary = new StringBuilder();
         summary.Append("Time: ").Append(timestamp)
                .Append("  |  Source: ").Append(source)
-               .Append("  |  Version: ").Append(CurrentAppVersion);
+               .Append("  |  Version: ").Append(AppVersion);
 
         if (!string.IsNullOrWhiteSpace(operation))
             summary.Append("  |  Operation: ").Append(operation);
@@ -190,11 +231,6 @@ internal static class KodoDiagnostics
         string severity,
         string? operation = null) =>
         WriteToLog(source, exception, isTerminating, ParseSeverity(severity), operation);
-
-    /// <inheritdoc cref="LogDebug"/>
-    /// <remarks>Legacy overload - prefer <see cref="LogDebug"/>.</remarks>
-    public static void WriteDebugFallback(string message, Exception? exception = null) =>
-        LogDebug(message, exception);
 
     // ── Internal write helpers ────────────────────────────────────────────────
 

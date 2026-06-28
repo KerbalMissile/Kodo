@@ -1072,6 +1072,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public MainWindow(string? startupFilePath)
     {
+        // Suppress all SaveSettings() calls for the entire constructor + OnOpened
+        // startup sequence.  The flag is cleared (and a clean write is forced) in
+        // OnOpened's finally block, so nothing is lost.  Setting it here — rather
+        // than only at the top of OnOpened — closes the window between the
+        // constructor start and the Opened event where incidental saves from
+        // CollectionChanged, ActiveEditorTab, or any future constructor-path call
+        // could overwrite the just-loaded settings with a partial snapshot.
+        _suppressSettingsSave = true;
+
         var trimmedStartupPath = startupFilePath?.Trim().Trim('"');
         _startupFilePath = !string.IsNullOrWhiteSpace(trimmedStartupPath) && File.Exists(trimmedStartupPath)
             ? trimmedStartupPath
@@ -6177,7 +6186,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // Treat it like a missing file rather than overwriting with defaults.
             if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
 
-            var settings = JsonSerializer.Deserialize<AppSettings>(json);
+            // Cap recursion depth so a deeply-nested or adversarial settings file
+            // cannot cause a StackOverflowException inside the deserializer.
+            var opts = new JsonSerializerOptions { MaxDepth = 32 };
+            var settings = JsonSerializer.Deserialize<AppSettings>(json, opts);
             if (settings is null) return new AppSettings();
 
             settings.ThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
@@ -7211,16 +7223,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // actual accent colour rather than AvaloniaEdit's built-in defaults.
         ApplyThemeToEditor();
 
-        // Suppress saves only during the automated tab-restore and startup-file
-        // open sequence. CollectionChanged / ActiveEditorTab fire SaveSettings()
-        // on every tab, but at that point the tab list is still being built, so
-        // each intermediate save would overwrite OpenTabPaths with a partial set.
+        // _suppressSettingsSave was set at the very top of the constructor and has
+        // been blocking incidental saves throughout the entire startup sequence.
+        // It stays true here while we restore tabs and open the startup file so
+        // that each intermediate CollectionChanged / ActiveEditorTab notification
+        // doesn't overwrite OpenTabPaths with a partial snapshot.
         // The flag is cleared in a finally block so an exception can never leave
         // it permanently set (which would silently disable all future saves).
         try
         {
-            _suppressSettingsSave = true;
-
             if (IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0)
             {
                 foreach (var path in _startupOpenTabPaths)
@@ -8559,7 +8570,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var info = new StringBuilder()
                 .Append("Kodo ").AppendLine(KodoDiagnostics.AppVersion)
-                .Append("OS: ").AppendLine(RuntimeInformation.OSDescription)
+                .Append("OS: ").AppendLine(KodoDiagnostics.OSDescription)
                 .Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription)
                 .Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
                 .Append(" / ").AppendLine(Environment.Is64BitProcess ? "64-bit" : "32-bit")
@@ -8620,7 +8631,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         sb.AppendLine("Kodo Data Export");
         sb.Append("Generated: ").Append(KodoDiagnostics.UtcNow().ToString("yyyy-MM-dd HH:mm:ss")).AppendLine(" UTC");
         sb.Append("Kodo ").AppendLine(KodoDiagnostics.AppVersion);
-        sb.Append("OS: ").AppendLine(RuntimeInformation.OSDescription);
+        sb.Append("OS: ").AppendLine(KodoDiagnostics.OSDescription);
         sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
         sb.Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
           .Append(" / ").AppendLine(Environment.Is64BitProcess ? "64-bit" : "32-bit");
@@ -10732,9 +10743,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             networkInterface.OperationalStatus == OperationalStatus.Up &&
             networkInterface.NetworkInterfaceType is not NetworkInterfaceType.Loopback &&
             networkInterface.NetworkInterfaceType is not NetworkInterfaceType.Tunnel);
-
-    private static bool IsConnectivityFailure(Exception exception) =>
-        exception is HttpRequestException or TaskCanceledException;
 
     // GitHub answers an over-quota request with 403 (anonymous "60 req/hr" limit)
     // or 429 (secondary rate limit, e.g. too many requests in a short burst).
