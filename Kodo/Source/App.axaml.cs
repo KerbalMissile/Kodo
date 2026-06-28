@@ -219,7 +219,8 @@ public partial class App : Application
     private static void TaskScheduler_OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
         // Warning: unobserved Task exception - recoverable, process keeps running.
-        // Logged to warnings.log rather than crash.log since the app is not crashing.
+        // Logged to kodo.log as a Warning (not Critical) since the app is not crashing,
+        // so crash.log is not generated.
         KodoDiagnostics.LogWarning("TaskScheduler.UnobservedTaskException", e.Exception, operation: "Background task");
         // Mark as observed first so the runtime does not re-throw it after we return.
         e.SetObserved();
@@ -265,7 +266,7 @@ public partial class App : Application
 
         try
         {
-            var logPath = KodoDiagnostics.LogFilePath;
+            var logPath = KodoDiagnostics.MainLogFilePath;
 
             if (Dispatcher.UIThread.CheckAccess())
             {
@@ -465,7 +466,7 @@ public partial class App : Application
         // --- Log path note ---
         var logPathText = new TextBlock
         {
-            Text         = $"Full log written to: {logPath}",
+            Text         = $"Full details in: {logPath}",
             FontSize     = 11,
             Foreground   = new SolidColorBrush(KodoTextDim),
             TextWrapping = TextWrapping.Wrap,

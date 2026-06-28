@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -12,17 +13,18 @@ namespace Kodo;
 // ── Severity tiers ────────────────────────────────────────────────────────────
 //
 //  Critical  – unhandled exceptions, startup crashes, data-loss risk.
-//              Written to crash.log.  Always shows a crash dialog.
+//              Written to kodo.log.  Triggers crash.log generation (breadcrumbs
+//              + crash payload).  Always shows a crash dialog.
 //
 //  Warning   – recoverable operation failures (network, file I/O, extension
-//              load errors, etc.).  Written to warnings.log.  Shows the
-//              warning dialog in the UI.
+//              load errors, etc.).  Written to kodo.log.  Shows the warning
+//              dialog in the UI.
 //
 //  Debug     – internal diagnostics that should not surface to the user
 //              (cache hits, suppressed duplicates, dev info).
 //              Written only to Debug output; never produces a file or dialog
 //              unless an exception is attached, in which case it appends to
-//              warnings.log silently.
+//              kodo.log silently.
 //
 public enum KodoSeverity { Critical, Warning, Debug }
 
@@ -37,10 +39,45 @@ internal static class KodoDiagnostics
     public static string OSDescription { get; } = ResolveOSDescription();
 
     // When enabled (via the Developer Options panel), Debug-level traces that
-    // would normally only go to the Debug output are also appended to
-    // warnings.log, even when no exception is attached. Off by default so
-    // normal usage doesn't spam the log file.
+    // would normally only go to the Debug output are also appended to kodo.log,
+    // even when no exception is attached. Off by default so normal usage doesn't
+    // spam the log file.
     public static bool VerboseLoggingEnabled { get; set; }
+
+    // ── Breadcrumb buffer ─────────────────────────────────────────────────────
+    //
+    // A rolling window of the most recent log lines, held in memory.  On a
+    // Critical event we flush the buffer into crash.log ahead of the crash
+    // payload so there is context showing what Kodo was doing before it died.
+    // The buffer is never written to disk on its own — it only appears in
+    // crash.log when a crash actually occurs.
+
+    private const int BreadcrumbCapacity = 50;
+    private static readonly Queue<string> _breadcrumbs = new();
+    private static readonly object _breadcrumbLock = new();
+
+    private static void PushBreadcrumb(string line)
+    {
+        lock (_breadcrumbLock)
+        {
+            if (_breadcrumbs.Count >= BreadcrumbCapacity)
+                _breadcrumbs.Dequeue();
+            _breadcrumbs.Enqueue(line);
+        }
+    }
+
+    private static IReadOnlyList<string> DrainBreadcrumbs()
+    {
+        lock (_breadcrumbLock)
+        {
+            var snapshot = new List<string>(_breadcrumbs);
+            // Keep the buffer intact — a second crash dialog (e.g. UnobservedTask
+            // firing after AppDomain.UnhandledException) should still have context.
+            return snapshot;
+        }
+    }
+
+    // ── Version / OS helpers ──────────────────────────────────────────────────
 
     private static string ResolveAppVersion()
     {
@@ -105,17 +142,17 @@ internal static class KodoDiagnostics
     public static string LogDirectoryPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
 
-    // Critical / unhandled-exception log (was the only log file before).
+    // Main log — every event (Critical, Warning, Debug-with-exception, Verbose)
+    // appends here.  The single file to check when diagnosing any issue.
+    public static string MainLogFilePath => Path.Combine(LogDirectoryPath, "kodo.log");
+
+    // Crash-only log — generated solely when a Critical event fires.  Contains
+    // the recent breadcrumb buffer (what Kodo was doing before the crash) followed
+    // by the crash payload.  Easier to share for a bug report than the full kodo.log.
     public static string CrashLogFilePath => Path.Combine(LogDirectoryPath, "crash.log");
 
-    // Recoverable-warning log - operation failures that showed a dialog but
-    // did not crash the app.  Kept separate so users and devs can quickly
-    // distinguish "the app died" from "an extension failed to load".
-    public static string WarningsLogFilePath => Path.Combine(LogDirectoryPath, "warnings.log");
-
-    // Legacy alias kept so existing callers that read LogFilePath still compile
-    // without changes.  Points at crash.log (unchanged behaviour).
-    public static string LogFilePath => CrashLogFilePath;
+    // Legacy alias — points at the main log so existing callers still compile.
+    public static string LogFilePath => MainLogFilePath;
 
     public static DateTime UtcNow() => DateTime.UtcNow;
 
@@ -144,7 +181,7 @@ internal static class KodoDiagnostics
         sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
         sb.Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
           .Append(" / ").AppendLine(Environment.Is64BitProcess ? "64-bit" : "32-bit");
-        sb.Append("Log Path: ").AppendLine(severity == KodoSeverity.Critical ? CrashLogFilePath : WarningsLogFilePath);
+        sb.Append("Log: ").AppendLine(MainLogFilePath);
         sb.AppendLine();
         sb.AppendLine(exception.ToString());
         return sb.ToString();
@@ -171,18 +208,21 @@ internal static class KodoDiagnostics
     // ── Typed logging API ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Log a Critical-severity event to crash.log.
+    /// Log a Critical-severity event to kodo.log and generate crash.log.
     /// Use for unhandled exceptions and situations where data loss may have occurred.
     /// </summary>
     public static void LogCritical(
         string source,
         Exception exception,
         bool isTerminating,
-        string? operation = null) =>
+        string? operation = null)
+    {
         WriteToLog(source, exception, isTerminating, KodoSeverity.Critical, operation);
+        WriteCrashLog(source, exception, isTerminating, operation);
+    }
 
     /// <summary>
-    /// Log a Warning-severity event to warnings.log.
+    /// Log a Warning-severity event to kodo.log.
     /// Use for recoverable failures that the user has been (or will be) informed about.
     /// </summary>
     public static void LogWarning(
@@ -193,7 +233,7 @@ internal static class KodoDiagnostics
 
     /// <summary>
     /// Emit a Debug trace.  Only writes to the Debug output; if an exception is
-    /// provided it is also appended silently to warnings.log.
+    /// provided it is also appended silently to kodo.log.
     /// </summary>
     public static void LogDebug(string message, Exception? exception = null)
     {
@@ -211,19 +251,20 @@ internal static class KodoDiagnostics
         catch { /* never throw from a debug trace */ }
     }
 
-    // Appends a plain, exception-free trace line to warnings.log. Only called
-    // when VerboseLoggingEnabled is on; kept lightweight since it can fire
-    // frequently while verbose logging is active.
+    // Appends a plain, exception-free trace line to kodo.log. Only called when
+    // VerboseLoggingEnabled is on; kept lightweight since it can fire frequently.
     private static void WriteVerboseTrace(string message)
     {
         var timestamp = UtcNow().ToString("yyyy-MM-dd HH:mm:ss") + " UTC";
-        WritePayloadToDisk($"[{timestamp}] VERBOSE  {message}", WarningsLogFilePath);
+        var line = $"[{timestamp}] VERBOSE  {message}";
+        PushBreadcrumb(line);
+        WritePayloadToDisk(line, MainLogFilePath);
     }
 
     // ── Legacy API (kept for backward-compat; delegates to typed methods) ─────
 
     /// <inheritdoc cref="LogCritical"/>
-    /// <remarks>Legacy overload - prefer <see cref="LogCritical"/> or <see cref="LogWarning"/>.</remarks>
+    /// <remarks>Legacy overload — prefer <see cref="LogCritical"/> or <see cref="LogWarning"/>.</remarks>
     public static void WriteDiagnosticLog(
         string source,
         Exception exception,
@@ -252,10 +293,45 @@ internal static class KodoDiagnostics
                       $"Exception={exception?.GetType()}:{exception?.Message}";
         }
 
-        // Debug entries go to warnings.log (silently, no dialog); Critical goes
-        // to crash.log; Warning goes to warnings.log.
-        var targetPath = severity == KodoSeverity.Critical ? CrashLogFilePath : WarningsLogFilePath;
-        WritePayloadToDisk(payload, targetPath);
+        // Every severity tier goes to kodo.log.
+        PushBreadcrumb(payload);
+        WritePayloadToDisk(payload, MainLogFilePath);
+    }
+
+    // Writes crash.log: the recent breadcrumb buffer (context) followed by the
+    // crash payload.  Called only from LogCritical so crash.log is never created
+    // for warnings or debug traces.
+    private static void WriteCrashLog(
+        string source,
+        Exception exception,
+        bool isTerminating,
+        string? operation)
+    {
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("════════════════════════════════════════════════════════════");
+            sb.Append('[').Append(UtcNow().ToString("yyyy-MM-dd HH:mm:ss")).AppendLine(" UTC] CRASH REPORT");
+            sb.AppendLine("════════════════════════════════════════════════════════════");
+            sb.AppendLine();
+
+            // ── Recent activity leading up to the crash ───────────────────────
+            var crumbs = DrainBreadcrumbs();
+            if (crumbs.Count > 0)
+            {
+                sb.AppendLine("── Recent activity ──────────────────────────────────────────");
+                foreach (var crumb in crumbs)
+                    sb.AppendLine(crumb);
+                sb.AppendLine();
+            }
+
+            // ── Crash payload ─────────────────────────────────────────────────
+            sb.AppendLine("── Crash ────────────────────────────────────────────────────");
+            sb.AppendLine(BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, operation));
+
+            WritePayloadToDisk(sb.ToString(), CrashLogFilePath);
+        }
+        catch { /* crash log generation must never itself crash */ }
     }
 
     private static void WritePayloadToDisk(string payload, string primaryPath)

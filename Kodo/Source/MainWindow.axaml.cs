@@ -4619,7 +4619,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// When on, Debug-level traces are also appended to warnings.log (not just
+    /// When on, Debug-level traces are also appended to kodo.log (not just
     /// the Debug output), which is useful when diagnosing an issue but noisy
     /// enough that it stays off by default.
     /// </summary>
@@ -4652,13 +4652,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasDeveloperOptionsStatus => !string.IsNullOrWhiteSpace(DeveloperOptionsStatusText);
 
-    /// <summary>Path to crash.log, shown in the button tooltip.</summary>
+    /// <summary>Path to kodo.log (main log), shown in developer options.</summary>
+    public string MainLogFilePath => KodoDiagnostics.MainLogFilePath;
+
+    /// <summary>Path to crash.log, shown in developer options.</summary>
     public string CrashLogFilePath => KodoDiagnostics.CrashLogFilePath;
 
-    /// <summary>Path to warnings.log, shown in the button tooltip.</summary>
-    public string WarningsLogFilePath => KodoDiagnostics.WarningsLogFilePath;
-
-    /// <summary>Path to the folder that contains crash.log, shown in the button tooltip.</summary>
+    /// <summary>Path to the folder that contains kodo.log and crash.log.</summary>
     public string CrashLogFolderPath => KodoDiagnostics.LogDirectoryPath;
 
     /// <summary>Path to the folder that contains kodosettings.json, shown in the button tooltip.</summary>
@@ -8568,19 +8568,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            var info = new StringBuilder()
-                .Append("Kodo ").AppendLine(KodoDiagnostics.AppVersion)
-                .Append("OS: ").AppendLine(KodoDiagnostics.OSDescription)
-                .Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription)
-                .Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
-                .Append(" / ").AppendLine(Environment.Is64BitProcess ? "64-bit" : "32-bit")
-                .Append("Theme: ").AppendLine(CurrentThemeName)
-                .Append("Settings file: ").AppendLine(SettingsFilePath)
-                .Append("Crash log: ").AppendLine(CrashLogFilePath)
-                .Append("Warnings log: ").AppendLine(WarningsLogFilePath)
-                .ToString();
-
-            await (TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(info) ?? Task.CompletedTask);
+            await (TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(BuildDiagnosticReport()) ?? Task.CompletedTask);
             DeveloperOptionsStatusText = "Diagnostic info copied to clipboard.";
         }
         catch (Exception ex)
@@ -8594,7 +8582,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var clearedAny = false;
         var failures = new List<string>();
 
-        foreach (var path in new[] { KodoDiagnostics.CrashLogFilePath, KodoDiagnostics.WarningsLogFilePath })
+        foreach (var path in new[] { KodoDiagnostics.MainLogFilePath, KodoDiagnostics.CrashLogFilePath })
         {
             try
             {
@@ -8615,10 +8603,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 : "No logs to clear.";
     }
 
-    // Builds a complete, human-readable snapshot of everything Kodo currently
-    // knows about this install - settings, personalization, open/recent files,
-    // and installed extensions. Backs the "Export Kodo Data" developer option.
-    private string BuildKodoDataExport()
+    // Builds a bug-report snapshot covering environment, editor state, appearance,
+    // RPC, extensions, and log/settings paths.  Used by both "Copy Diagnostic Info"
+    // (clipboard) and "Export Kodo Data" (file) so the two are always in sync.
+    private string BuildDiagnosticReport()
     {
         var sb = new StringBuilder();
 
@@ -8628,88 +8616,65 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             sb.AppendLine($"── {title} ──");
         }
 
-        sb.AppendLine("Kodo Data Export");
-        sb.Append("Generated: ").Append(KodoDiagnostics.UtcNow().ToString("yyyy-MM-dd HH:mm:ss")).AppendLine(" UTC");
+        // ── Environment ───────────────────────────────────────────────────
         sb.Append("Kodo ").AppendLine(KodoDiagnostics.AppVersion);
         sb.Append("OS: ").AppendLine(KodoDiagnostics.OSDescription);
         sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
         sb.Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
           .Append(" / ").AppendLine(Environment.Is64BitProcess ? "64-bit" : "32-bit");
 
+        // Latest release — helps confirm if the bug is already fixed upstream.
+        var latestTag = LatestReleaseTag;
+        sb.Append("Latest release: ").AppendLine(
+            string.IsNullOrWhiteSpace(latestTag)
+                ? "(not yet fetched)"
+                : IsNewerVersionAvailable ? $"{latestTag}  ← update available" : latestTag);
+
+        // ── Editor State ──────────────────────────────────────────────────
+        Section("Editor State");
+        var unsavedCount = OpenTabs.Count(t => t.IsDirty);
+        sb.AppendLine($"Open tabs: {OpenTabs.Count}{(unsavedCount > 0 ? $"  ({unsavedCount} unsaved)" : string.Empty)}");
+        var lang = CurrentLanguageExtension;
+        sb.AppendLine($"Active language: {(lang is not null ? $"{lang.Name} v{lang.Version}" : "(none / plain text)")}");
+        if (HasFileOpen)
+            sb.AppendLine($"Active file encoding: {EncodingDisplayText}");
+        sb.AppendLine($"Tab size: {TabSize}");
+        sb.AppendLine($"Font size: {EditorFontSize}px");
+        sb.AppendLine($"Word wrap: {IsWordWrapEnabled}");
+        sb.AppendLine($"Auto-save: {IsAutoSaveEnabled}");
+
+        // ── Appearance ────────────────────────────────────────────────────
         Section("Appearance");
         sb.AppendLine($"Theme: {(IsSystemThemeActive ? $"System Default ({CurrentThemeName})" : CurrentThemeName)}");
         sb.AppendLine($"Accent mode: {_accentColorMode}");
-        sb.AppendLine($"Custom accent colour: {_customAccentHex}");
+        if (_accentColorMode == "custom")
+            sb.AppendLine($"Custom accent: {_customAccentHex}");
 
-        Section("Editor");
-        sb.AppendLine($"Word wrap: {IsWordWrapEnabled}");
-        sb.AppendLine($"Tab size: {TabSize}");
-        sb.AppendLine($"Font size: {EditorFontSize}");
-        sb.AppendLine($"Confirm before closing unsaved tabs: {IsConfirmBeforeClosingUnsavedTabsEnabled}");
-        sb.AppendLine($"Restore open tabs on launch: {IsRestoreOpenTabsOnLaunchEnabled}");
-        sb.AppendLine($"Show full file path in status bar: {IsStatusBarFilePathVisible}");
-        sb.AppendLine($"Auto-save: {IsAutoSaveEnabled}");
+        // ── Terminal ──────────────────────────────────────────────────────
+        Section("Terminal");
+        sb.AppendLine($"Preferred shell: {SelectedTerminalShell?.DisplayName ?? "(none)"}");
 
-        Section("Updates");
-        sb.AppendLine($"Auto-update extensions: {IsAutoUpdateExtensionsEnabled} (silent install: {IsAutoUpdateExtensionsInBackgroundEnabled})");
-        sb.AppendLine($"Auto-update Kodo: {IsAutoUpdateAppEnabled} (silent install: {IsAutoUpdateAppInBackgroundEnabled})");
-        sb.AppendLine($"Last seen version: {(string.IsNullOrWhiteSpace(_lastSeenVersion) ? "(none)" : _lastSeenVersion)}");
-        sb.AppendLine($"Completed tutorial: {_hasCompletedTutorial}");
-
+        // ── Discord Rich Presence ─────────────────────────────────────────
         Section("Discord Rich Presence");
         sb.AppendLine($"Enabled: {IsDiscordRichPresenceEnabled}");
         sb.AppendLine($"Improved RPC: {IsDiscordImprovedRpcEnabled}");
 
-        Section("Terminal");
-        sb.AppendLine($"Preferred shell: {SelectedTerminalShell?.DisplayName ?? "(none)"}");
-        sb.AppendLine($"Visible on launch: {IsTerminalVisible}");
-        sb.AppendLine($"Panel height: {TerminalPanelHeight:0}px");
-
-        Section("Personalization");
-        sb.AppendLine($"Name: {(string.IsNullOrWhiteSpace(_userName) ? "(not set)" : _userName)}");
-        sb.AppendLine($"Country: {(string.IsNullOrWhiteSpace(_userCountry) ? "(not set)" : _userCountry)}");
-        sb.AppendLine($"Hemisphere: {_userHemisphere}");
-        sb.AppendLine($"Timezone offset: {(string.IsNullOrWhiteSpace(_userTimezoneOffset) ? "(not set)" : _userTimezoneOffset)}");
-
-        Section("Developer Options");
-        sb.AppendLine($"Developer options visible: {IsDeveloperOptionsVisible}");
-        sb.AppendLine($"Verbose logging: {IsVerboseLoggingEnabled}");
-
-        Section("File Locations");
-        sb.AppendLine($"Settings file: {SettingsFilePath}");
-        sb.AppendLine($"Crash log: {CrashLogFilePath}");
-        sb.AppendLine($"Warnings log: {WarningsLogFilePath}");
-        sb.AppendLine($"Extensions folder: {ExtensionsFolderPath}");
-
-        var openTabPaths = OpenTabs
-            .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
-            .Select(tab => tab.Path)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        Section($"Open Tabs ({openTabPaths.Count})");
-        if (openTabPaths.Count == 0)
-            sb.AppendLine("(none)");
-        else
-            foreach (var path in openTabPaths)
-                sb.AppendLine(path);
-
-        Section($"Recent Files ({RecentFiles.Count})");
-        if (RecentFiles.Count == 0)
-            sb.AppendLine("(none)");
-        else
-            foreach (var entry in RecentFiles)
-                sb.AppendLine($"{entry.Path}{(entry.IsFolder ? "  [folder]" : string.Empty)}  -  last opened {entry.LastOpened:yyyy-MM-dd HH:mm}");
-
+        // ── Extensions ───────────────────────────────────────────────────
         var extensions = VisibleLoadedExtensions.ToList();
         Section($"Installed Extensions ({extensions.Count})");
         if (extensions.Count == 0)
             sb.AppendLine("(none)");
         else
             foreach (var ext in extensions)
-            {
-                sb.AppendLine($"{ext.Name} (v{ext.Version}) - {ext.Type}, by {ext.Author}");
-                sb.AppendLine($"    Source: {ext.SourcePath}");
-            }
+                sb.AppendLine($"{ext.Name} v{ext.Version} ({ext.Type}) by {ext.Author}");
+
+        // ── File Locations ────────────────────────────────────────────────
+        Section("File Locations");
+        sb.AppendLine($"Settings: {SettingsFilePath}");
+        sb.AppendLine($"Main log: {MainLogFilePath}");
+        sb.AppendLine($"Crash log: {CrashLogFilePath}");
+        sb.AppendLine($"Extensions folder: {ExtensionsFolderPath}");
+        sb.AppendLine($"Verbose logging: {IsVerboseLoggingEnabled}");
 
         return sb.ToString();
     }
@@ -8718,7 +8683,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            var export = BuildKodoDataExport();
+            var export = BuildDiagnosticReport();
             var suggestedFileName = $"Kodo-Data-Export-{KodoDiagnostics.UtcNow():yyyyMMdd-HHmmss}.txt";
 
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -11251,7 +11216,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     //
     // Critical (isCritical = true):  file-save failures and any operation where
     //   data may be at risk.  Shown with an amber warning banner, logged to
-    //   warnings.log, and the title reads "Kodo - Warning".
+    //   kodo.log, and the title reads "Kodo - Warning".
     //
     // Non-critical (default):  network/marketplace/update failures and other
     //   recoverable errors.  No banner, softer subtitle, same log destination.
@@ -11284,7 +11249,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? "Kodo could not complete this file operation. Your in-editor content is still intact - try saving again or use Save As to choose a different location."
                 : "Kodo ran into a problem with this operation. No data was lost - you can try again.";
             var windowTitle  = isCritical ? "Kodo - Warning" : "Kodo - Notice";
-            var logPath      = KodoDiagnostics.WarningsLogFilePath;
+            var logPath      = KodoDiagnostics.MainLogFilePath;
 
             // --- Header ---
             var titleText = new TextBlock
@@ -11392,7 +11357,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var logPathText = new TextBlock
             {
-                Text         = $"Log written to: {logPath}",
+                Text         = $"Logged to: {logPath}",
                 FontSize     = 11,
                 Foreground   = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
