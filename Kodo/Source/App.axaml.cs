@@ -62,6 +62,9 @@ public partial class App : Application
             // desktop.Args[0] is the file path when launched via "Open with" / double-click.
             var startupFilePath = desktop.Args?.Length > 0 ? desktop.Args[0] : null;
             desktop.MainWindow  = new MainWindow(startupFilePath);
+
+            AptabaseClient.TrackEvent("app_launched");
+            desktop.Exit += async (_, _) => await AptabaseClient.FlushAsync();
         }
 
 #if !DEBUG
