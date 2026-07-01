@@ -3035,7 +3035,40 @@
 
                                     </Grid>
 
+                                    <!-- Consent card - shown once, until the user accepts or declines -->
+                                    <Border IsVisible="{Binding IsDataTrackingPromptVisible}"
+                                            Background="{Binding ButtonBrush}"
+                                            BorderBrush="{Binding SurfaceBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="16"
+                                            Padding="20">
+                                        <StackPanel Spacing="12">
+                                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                <Border Width="3" Height="18" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                                <TextBlock FontSize="15"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Text="Help improve Kodo" />
+                                            </StackPanel>
+                                            <TextBlock FontSize="13"
+                                                       Foreground="{Binding MutedTextBrush}"
+                                                       TextWrapping="Wrap"
+                                                       LineHeight="20"
+                                                       Text="Kodo can send anonymous usage data - like which features get used and crash reports - to help fix bugs and prioritize what to build next. Nothing personal, and no file contents or paths, ever. You can change this anytime in Settings." />
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <Button Classes="chrome"
+                                                        Click="DeclineDataTrackingButton_OnClick"
+                                                        Content="Not now" />
+                                                <Button Classes="marketaction"
+                                                        Click="AcceptDataTrackingButton_OnClick"
+                                                        Content="Accept" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
                                 </StackPanel>
+
 
                             </Panel>
 
@@ -4047,6 +4080,31 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Privacy -->
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="24">
+                            <StackPanel Spacing="14">
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                    <TextBlock FontSize="18"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="Privacy" />
+                                </StackPanel>
+                                <CheckBox IsChecked="{Binding IsDataTrackingEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Help improve Kodo by sharing anonymous usage data" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Text="Kodo can send anonymous usage events - like which features are used and crash reports - to help prioritize fixes and improvements. No file contents, file paths, or personal information are ever included. You can change this at any time." />
+                            </StackPanel>
+                        </Border>
+
                         <!-- Personalization -->
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -4220,7 +4278,7 @@
                                                   VerticalAlignment="Center" />
                                         <TextBlock VerticalAlignment="Center"
                                                    Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Enable verbose logging (writes debug traces to warnings.log)" />
+                                                   Text="Enable verbose logging (writes debug traces to kodo.log)" />
                                     </StackPanel>
 
                                     <StackPanel Orientation="Horizontal" Spacing="8">
@@ -4230,7 +4288,7 @@
                                                 Content="Copy Diagnostic Info" />
                                         <Button Classes="chrome"
                                                 Click="ClearLogsButton_OnClick"
-                                                ToolTip.Tip="Delete crash.log and warnings.log from disk"
+                                                ToolTip.Tip="Delete kodo.log and crash.log from disk"
                                                 Content="Clear Logs" />
                                         <Button Classes="chrome"
                                                 Click="ExportKodoDataButton_OnClick"
@@ -4513,6 +4571,98 @@
 
                     </StackPanel>
                 </ScrollViewer>
+            </Grid>
+
+            <!-- Opening splash - consolidated release-notes / diagnostics-consent
+                 screen shown at most once per launch for returning users (see
+                 LoadStartupTabsAsync). Depending on why it was triggered it shows
+                 release notes, the consent card, or both. Sits on top of every
+                 other page since it's the last child in this Panel. -->
+            <Grid IsVisible="{Binding IsUpdateSplashVisible}"
+                  IsHitTestVisible="{Binding IsUpdateSplashVisible}"
+                  Background="#B3000000">
+                <Border Background="{Binding CardBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="20"
+                        Padding="32"
+                        MaxWidth="560"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                    <StackPanel Spacing="20">
+                        <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                            <Border Width="42"
+                                    Height="42"
+                                    CornerRadius="12"
+                                    ClipToBounds="True"
+                                    VerticalAlignment="Center">
+                                <Image Source="/Assets/kodo-logo.png"
+                                       Stretch="UniformToFill" />
+                            </Border>
+                            <StackPanel Spacing="2" VerticalAlignment="Center">
+                                <TextBlock FontSize="20"
+                                           FontWeight="Bold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="{Binding OpeningSplashTitleText}" />
+                                <TextBlock FontSize="13"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           Text="{Binding OpeningSplashSubtitleText}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Release notes - only part of this showing when triggered by a version bump -->
+                        <Border IsVisible="{Binding IsReleaseNotesSectionVisible}"
+                                Background="{Binding WindowBackgroundBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="16"
+                                MaxHeight="220">
+                            <ScrollViewer>
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           LineHeight="20"
+                                           FontSize="13"
+                                           Text="{Binding LatestReleaseNotes}" />
+                            </ScrollViewer>
+                        </Border>
+
+                        <!-- Consent card - only shown until the user has responded once -->
+                        <Border IsVisible="{Binding IsDataTrackingPromptVisible}"
+                                Background="{Binding ButtonBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="14"
+                                Padding="18">
+                            <StackPanel Spacing="10">
+                                <TextBlock FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Help improve Kodo" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           LineHeight="18"
+                                           Text="Kodo can send anonymous usage data - like which features get used and crash reports - to help fix bugs and prioritize what to build next. Nothing personal, and no file contents or paths, ever. You can change this anytime in Settings." />
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button Classes="chrome"
+                                            Click="DeclineDataTrackingButton_OnClick"
+                                            Content="Not now" />
+                                    <Button Classes="marketaction"
+                                            Click="AcceptDataTrackingButton_OnClick"
+                                            Content="Accept" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Plain dismiss button - only shown once the consent question is already settled -->
+                        <Button IsVisible="{Binding !IsDataTrackingPromptVisible}"
+                                Classes="marketaction"
+                                Click="DismissUpdateSplashButton_OnClick"
+                                HorizontalAlignment="Right"
+                                Content="Got it" />
+                    </StackPanel>
+                </Border>
             </Grid>
             </Panel>
         </Grid>

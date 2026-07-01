@@ -30,6 +30,34 @@ internal static class AptabaseClient
     // Filled once at Initialize
     private static AptabaseSystemProps? _systemProps;
 
+    // Off by default - Program.Main runs before settings have loaded, so we
+    // can't know the user's choice yet. MainWindow calls SetEnabled() once
+    // kodosettings.json has been read, and again whenever the user flips the
+    // "Help improve Kodo" toggle in Settings or answers the consent prompt.
+    // This means nothing is ever sent before the user has explicitly opted in.
+    private static bool _isEnabled;
+
+    public static bool IsEnabled => _isEnabled;
+
+    /// <summary>
+    /// Enables or disables sending analytics events. When disabling, any
+    /// events queued but not yet sent are discarded rather than sent later.
+    /// </summary>
+    public static void SetEnabled(bool enabled)
+    {
+        if (_isEnabled == enabled) return;
+        _isEnabled = enabled;
+        Console.WriteLine($"[Aptabase] Data tracking {(enabled ? "enabled" : "disabled")}");
+
+        if (!enabled)
+        {
+            _eventQueue.Clear();
+            return;
+        }
+
+        _ = TestConnectivityAsync();
+    }
+
     private static string GetWindowsVersion()
     {
         var ver = Environment.OSVersion.Version;
@@ -56,7 +84,8 @@ internal static class AptabaseClient
         Console.WriteLine($"[Aptabase] Initialized with session: {_sessionId}");
         Console.WriteLine($"[Aptabase] App Key: {_appKey}");
 
-        _ = TestConnectivityAsync();
+        // No connectivity test here - tracking is off by default until the
+        // user opts in (see SetEnabled), which runs the test itself.
     }
 
     private static async Task TestConnectivityAsync()
@@ -78,6 +107,12 @@ internal static class AptabaseClient
     {
         try
         {
+            if (!_isEnabled)
+            {
+                Console.WriteLine($"[Aptabase] Data tracking disabled, skipping event: {eventName}");
+                return;
+            }
+
             if (string.IsNullOrEmpty(_sessionId))
             {
                 Console.WriteLine($"[Aptabase] Session not initialized, skipping event: {eventName}");
@@ -99,6 +134,12 @@ internal static class AptabaseClient
     {
         try
         {
+            if (!_isEnabled)
+            {
+                _eventQueue.Clear();
+                return;
+            }
+
             if (_eventQueue.Count == 0) return;
 
             Console.WriteLine($"[Aptabase] Flushing {_eventQueue.Count} queued event(s)");

@@ -774,13 +774,12 @@ internal static class WelcomeMessageBuilder
         // ── 1. Holiday / special day ──────────────────────────────────────────
         // Added multiple times so that on a special day the relevant greeting
         // has a meaningfully higher chance of being shown than any single
-        // generic message, without making it a certainty.
+        // generic message. Weighted heavily (x8) so it dominates the pool on
+        // the day itself, similar to the Kodo birthday weighting below.
         var holiday = GetHolidayEntry(now, country);
         if (holiday?.Greeting is not null)
         {
-            messages.Add(holiday.Greeting);
-            messages.Add(holiday.Greeting);
-            messages.Add(holiday.Greeting);
+            for (var i = 0; i < 8; i++) messages.Add(holiday.Greeting);
         }
 
         // ── 1a. Kodo birthday ─────────────────────────────────────────────────
@@ -797,7 +796,17 @@ internal static class WelcomeMessageBuilder
             messages.Add("One year of fast, focused editing. Here's to many more! 🎉");
         }
 
-        // ── 1b. Real-world sporting events (e.g. FIFA World Cup) ───────────────
+        // ── 1b. 11:11 wish moment ────────────────────────────────────────────
+        // A small easter egg: at exactly 11:11 (AM or PM), add a "make a
+        // wish" greeting. Weighted heavily (x8) so it's very likely to be
+        // the one shown during that single minute, matching the treatment
+        // given to other special-moment greetings above.
+        if (now.Minute == 11 && (now.Hour == 11 || now.Hour == 23))
+        {
+            for (var i = 0; i < 8; i++) messages.Add("11:11! Make a wish!");
+        }
+
+        // ── 1c. Real-world sporting events (e.g. FIFA World Cup) ───────────────
         // Populated asynchronously by FetchSportingEventMessagesAsync via
         // TheSportsDB's free API, with a hardcoded tournament-window fallback
         // so themed messages still appear even if the API call hasn't

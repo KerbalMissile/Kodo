@@ -675,9 +675,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _tutorialOpenedFromSettings;
     private bool _isWhatsNewPageVisible;
     private bool _isWhatsNewExpanded;
+    // True whenever the consolidated "opening splash" is on screen. It can carry
+    // release notes, a diagnostics-consent ask, or both at once - see
+    // _openingSplashShowsReleaseNotes and IsDataTrackingPromptVisible, and the
+    // sequencing comment above the trigger logic in LoadStartupTabsAsync.
     private bool _isUpdateSplashVisible;
+    // True when the *current* showing of the opening splash includes release
+    // notes (i.e. it was triggered by a version bump). False means this
+    // occurrence is a diagnostics-consent-only ask, so the release notes
+    // section and "What's New" heading are hidden. Set once when the splash
+    // is triggered; not recomputed while it's on screen.
+    private bool _openingSplashShowsReleaseNotes;
     // The version string that was running the last time the user launched Kodo.
-    // When it differs from CurrentAppVersion we show the update splash once.
+    // When it differs from CurrentAppVersion we show release notes in the
+    // opening splash once.
     private string _lastSeenVersion = string.Empty;
     private bool _isHomePageVisible;
     private bool _isFileExplorerVisible;
@@ -714,6 +725,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // True when settings.json did not exist on this launch - used to show the tutorial once.
     private bool _isFirstLaunch;
     private bool _hasCompletedTutorial;
+    // Anonymous usage/analytics opt-in. Defaults to false (nothing is ever sent) until
+    // the user explicitly answers the consent prompt shown once on first launch of a
+    // new Kodo install, or once on first launch of a new version. Can always be
+    // changed afterwards from the Privacy card in Settings.
+    private bool _isDataTrackingEnabled;
+    private bool _hasRespondedToDataTrackingPrompt;
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
     private string _latestReleaseStatusText = "Loading latest release...";
     private string _marketplaceConnectivityMessage = string.Empty;
@@ -1074,8 +1091,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         // Suppress all SaveSettings() calls for the entire constructor + OnOpened
         // startup sequence.  The flag is cleared (and a clean write is forced) in
-        // OnOpened's finally block, so nothing is lost.  Setting it here — rather
-        // than only at the top of OnOpened — closes the window between the
+        // OnOpened's finally block, so nothing is lost.  Setting it here - rather
+        // than only at the top of OnOpened - closes the window between the
         // constructor start and the Opened event where incidental saves from
         // CollectionChanged, ActiveEditorTab, or any future constructor-path call
         // could overwrite the just-loaded settings with a partial snapshot.
@@ -1145,6 +1162,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isAutoUpdateAppEnabled = settings.AutoUpdateAppEnabled;
         _isAutoUpdateAppInBackgroundEnabled = settings.AutoUpdateAppInBackgroundEnabled;
         _hasCompletedTutorial = settings.HasCompletedTutorial;
+        _isDataTrackingEnabled = settings.AllowDataTracking;
+        _hasRespondedToDataTrackingPrompt = settings.HasRespondedToDataTrackingPrompt;
+        // Bring the Aptabase client in line with the just-loaded consent choice.
+        // Before this call it defaults to disabled, so nothing can be sent
+        // between process start and this point regardless of a prior choice.
+        AptabaseClient.SetEnabled(_isDataTrackingEnabled);
         _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom" or "theme"
             ? settings.AccentColorMode : "kodo";
         // Migration: before "theme" was a distinct mode, "kodo" with a theme active
@@ -1588,10 +1611,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // against the 60 req/hr anonymous rate limit, so repeated refreshes
             // (startup, post-install, manual) are free as long as nothing changed.
             // Only a real 200 response burns one rate-limit slot.
+            //
+            // Only attach the conditional header when marketplaceExtensions is
+            // already non-empty (seeded above from the disk cache, or already
+            // populated earlier this session) - i.e. we actually have something
+            // to fall back on if the server answers 304.  The ETag file and the
+            // cache JSON file are written independently below, so they can fall
+            // out of sync (a killed process, a locked file, a cache folder that
+            // got cleared without the ETag alongside it). A stale-but-valid ETag
+            // sent with nothing to reuse would let a 304 "succeed" with zero
+            // marketplace extensions and no error to explain why - which is
+            // silent and only "fixable" by luck on a manual retry. Dropping the
+            // conditional header in that case forces an unconditional 200 with a
+            // full body instead.
             _marketplaceIndexETag ??= TryReadMarketplaceIndexETag();
+            var hasLocalDataToReuseOn304 = marketplaceExtensions.Count > 0;
             using var indexRequest = new HttpRequestMessage(HttpMethod.Get, DefaultMarketplaceIndexUrl);
             indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-            if (_marketplaceIndexETag is not null)
+            if (hasLocalDataToReuseOn304 && _marketplaceIndexETag is not null)
                 indexRequest.Headers.TryAddWithoutValidation("If-None-Match", _marketplaceIndexETag);
 
             var (statusCode, remoteJson, newETag) = await RunWithGitHubTimeoutAsync(
@@ -3915,6 +3952,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Master visibility flag for the consolidated opening splash. Whether it
+    // shows release notes, a diagnostics-consent ask, or both is decided once
+    // at trigger time - see the sequencing comment in LoadStartupTabsAsync.
     public bool IsUpdateSplashVisible
     {
         get => _isUpdateSplashVisible;
@@ -3923,8 +3963,57 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isUpdateSplashVisible == value) return;
             _isUpdateSplashVisible = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsReleaseNotesSectionVisible));
+            OnPropertyChanged(nameof(OpeningSplashTitleText));
+            OnPropertyChanged(nameof(OpeningSplashSubtitleText));
         }
     }
+
+    // Gates the release-notes heading + scrollable notes box inside the opening
+    // splash. False for a diagnostics-consent-only showing (no version bump
+    // pending), so the splash reduces to just the consent card in that case.
+    public bool IsReleaseNotesSectionVisible => _isUpdateSplashVisible && _openingSplashShowsReleaseNotes;
+
+    public string OpeningSplashTitleText => _openingSplashShowsReleaseNotes
+        ? "What's New in Kodo"
+        : "Help Improve Kodo";
+
+    public string OpeningSplashSubtitleText => _openingSplashShowsReleaseNotes
+        ? LatestReleaseDisplayName
+        : "One quick question before you get back to it.";
+
+    // Backs the "Help improve Kodo" checkbox in Settings, and the Accept/Decline
+    // buttons on the consent card (shown in the tutorial's setup step for new
+    // installs, and in the opening splash - alongside release notes, on its
+    // own, or not at all, depending on why the splash was triggered). Any
+    // explicit interaction with this setting counts as the user having made a
+    // choice, so the consent card never asks again afterwards.
+    public bool IsDataTrackingEnabled
+    {
+        get => _isDataTrackingEnabled;
+        set
+        {
+            var valueChanged = _isDataTrackingEnabled != value;
+            _isDataTrackingEnabled = value;
+            AptabaseClient.SetEnabled(value);
+
+            if (valueChanged)
+                OnPropertyChanged();
+
+            if (!_hasRespondedToDataTrackingPrompt)
+            {
+                _hasRespondedToDataTrackingPrompt = true;
+                OnPropertyChanged(nameof(IsDataTrackingPromptVisible));
+            }
+
+            SaveSettings();
+        }
+    }
+
+    // True until the user has accepted or declined the data-tracking consent
+    // prompt at least once. Drives the consent card's visibility in both the
+    // tutorial setup step and the update splash.
+    public bool IsDataTrackingPromptVisible => !_hasRespondedToDataTrackingPrompt;
 
     // Base width 240 + extra pixels per character beyond 2 in the longest icon label.
     // 2-char labels ("Py","JS") → 240px; 3-char ("C++","F#") → 252px; 4-char ("Java") → 264px.
@@ -4145,12 +4234,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static bool IsDevBuild =>
         CurrentAppVersion.Contains("-DEV", StringComparison.OrdinalIgnoreCase);
 
-    // Priority: stable (no suffix) = 2, -BETA = 1, -DEV = 0
+    // Suffix priority for comparing two tags with the same numeric core, low to
+    // high: -DEV < -ALPHA < -BETA < (unrecognized suffix) < -RC < stable (no
+    // suffix). "-RC" is deliberately closest to a full release. Any suffix
+    // Kodo doesn't specifically recognize (e.g. "-PREVIEW") is still treated
+    // as *some* kind of pre-release - ranked below "-RC" and stable, but above
+    // the earlier known stages - so a new tag invented later can't silently
+    // outrank a real release candidate or a stable build, without needing a
+    // code change every time one shows up.
     private static int VersionPriority(string tag)
     {
-        if (tag.Contains("-DEV",  StringComparison.OrdinalIgnoreCase)) return 0;
-        if (tag.Contains("-BETA", StringComparison.OrdinalIgnoreCase)) return 1;
-        return 2;
+        var dash = tag.IndexOf('-');
+        if (dash < 0) return 5; // stable: no suffix at all
+
+        var suffix = tag[dash..];
+        if (suffix.Contains("dev",   StringComparison.OrdinalIgnoreCase)) return 0;
+        if (suffix.Contains("alpha", StringComparison.OrdinalIgnoreCase)) return 1;
+        if (suffix.Contains("beta",  StringComparison.OrdinalIgnoreCase)) return 2;
+        if (suffix.Contains("rc",    StringComparison.OrdinalIgnoreCase)) return 4;
+
+        return 3; // unrecognized pre-release suffix
     }
 
     private static string StripPreRelease(string tag)
@@ -5681,20 +5784,81 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (accent.ToImmutable() is not ISolidColorBrush solid)
             return Brushes.White;
-        var c = solid.Color;
-        // Convert sRGB channels to linear light
+        return GetReadableForeground(solid.Color);
+    }
+
+    // Shared relative-luminance calculation (WCAG 2.x), used both for picking
+    // accent-button text and for the theme-pack text safety net below.
+    private static double GetRelativeLuminance(Color c)
+    {
         static double Lin(byte channel)
         {
             var s = channel / 255.0;
             return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
         }
-        var L = 0.2126 * Lin(c.R) + 0.7152 * Lin(c.G) + 0.0722 * Lin(c.B);
-        // White (L=1) contrast ratio vs L: (1.05)/(L+0.05)
-        // Black (L=0) contrast ratio vs L: (L+0.05)/(0.05)
-        // Pick whichever is higher
+        return 0.2126 * Lin(c.R) + 0.7152 * Lin(c.G) + 0.0722 * Lin(c.B);
+    }
+
+    // Standard WCAG contrast ratio between two colours, always >= 1.0.
+    private static double GetContrastRatio(Color a, Color b)
+    {
+        var l1 = GetRelativeLuminance(a);
+        var l2 = GetRelativeLuminance(b);
+        if (l1 < l2) (l1, l2) = (l2, l1);
+        return (l1 + 0.05) / (l2 + 0.05);
+    }
+
+    // Returns whichever of white/black contrasts best against the given colour.
+    private static IBrush GetReadableForeground(Color background)
+    {
+        var L = GetRelativeLuminance(background);
         return (1.05 / (L + 0.05)) >= ((L + 0.05) / 0.05)
             ? Brushes.White
             : Brushes.Black;
+    }
+
+    // Theme extension packs (.kox files, including third-party marketplace
+    // ones) supply their own text colours as raw hex strings, and nothing
+    // guarantees an author's PrimaryText/MutedText actually reads against
+    // their own background colours - a copy-paste mistake or a near-duplicate
+    // hex is enough to produce invisible ("black on black") text anywhere
+    // that colour is used. Built-in Light/Dark are hand-picked and don't need
+    // this, but anything sourced from an extension does: check the candidate
+    // text colour against every surface it might actually be drawn on, and if
+    // it fails the WCAG AA minimum (4.5:1) against the worst of them, fall
+    // back to whichever of white/black reads best there instead.
+    private static IBrush EnsureReadableTextBrush(IBrush candidate, params IBrush[] backgrounds)
+    {
+        const double MinimumReadableContrast = 4.5; // WCAG AA, normal text
+
+        if (candidate.ToImmutable() is not ISolidColorBrush candidateSolid)
+            return candidate;
+
+        var worstContrast = double.MaxValue;
+        Color worstBackground = default;
+        var foundSolidBackground = false;
+
+        foreach (var background in backgrounds)
+        {
+            if (background.ToImmutable() is not ISolidColorBrush backgroundSolid)
+                continue;
+            foundSolidBackground = true;
+            var contrast = GetContrastRatio(candidateSolid.Color, backgroundSolid.Color);
+            if (contrast < worstContrast)
+            {
+                worstContrast = contrast;
+                worstBackground = backgroundSolid.Color;
+            }
+        }
+
+        if (!foundSolidBackground || worstContrast >= MinimumReadableContrast)
+            return candidate;
+
+        KodoDiagnostics.LogDebug(
+            $"Theme text colour failed contrast check ({worstContrast:0.00}:1, needs {MinimumReadableContrast:0.0}:1) " +
+            "against its own background - falling back to a safe colour so text stays readable.");
+
+        return GetReadableForeground(worstBackground);
     }
 
     // Always reflects the live Windows accent colour; used by the Windows blob
@@ -6270,6 +6434,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             UserTimezoneOffset                      = _userTimezoneOffset,
             UserName                                = _userName,
             LastSeenVersion                         = CurrentAppVersion,
+            AllowDataTracking                       = _isDataTrackingEnabled,
+            HasRespondedToDataTrackingPrompt        = _hasRespondedToDataTrackingPrompt,
             OpenTabPaths = OpenTabs
                 .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
                 .Select(tab => tab.Path)
@@ -6371,6 +6537,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CardBrush             = GetCachedBrush(extensionTheme.Card);
             PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
             MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
+            // Theme-pack colours aren't guaranteed to be readable against
+            // each other (author mistakes, near-duplicate hexes) - verify and
+            // fall back to a safe colour rather than risk invisible text.
+            PrimaryTextBrush = EnsureReadableTextBrush(PrimaryTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
+            MutedTextBrush   = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
             SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
             AccentBrush           = GetCachedBrush(extensionTheme.Accent);
             _themeAccentHex       = extensionTheme.Accent;
@@ -6479,6 +6650,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CardBrush             = GetCachedBrush(extensionTheme.Card);
             PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
             MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
+            // Theme-pack colours aren't guaranteed to be readable against
+            // each other (author mistakes, near-duplicate hexes) - verify and
+            // fall back to a safe colour rather than risk invisible text.
+            PrimaryTextBrush = EnsureReadableTextBrush(PrimaryTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
+            MutedTextBrush   = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
             SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
             AccentBrush           = GetCachedBrush(extensionTheme.Accent);
             _themeAccentHex       = extensionTheme.Accent;
@@ -7269,15 +7445,51 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = FetchAnnouncementsAsync();
         _ = FetchSportingEventMessagesAsync();
 
-        // Show the What's New splash once per upgrade. Uses the same version parser
-        // as IsNewerVersionAvailable so v-prefixes, -BETA, and -DEV suffixes are all
-        // handled correctly. DEV builds suppress the splash (same as the update banner).
-        // Not shown on a true first launch (the tutorial takes priority instead).
-        if (!_isFirstLaunch && !IsDevBuild && IsCurrentNewerThanLastSeen(_lastSeenVersion))
-            IsUpdateSplashVisible = true;
+        // ── Opening splash sequencing ────────────────────────────────────────
+        // Exactly one of these shows per launch, never both, never twice:
+        //
+        //   - Tutorial: true first-ever launch (no completed tutorial yet).
+        //     Covers both orientation content and the diagnostics-consent ask
+        //     itself, inline in its setup step.
+        //   - Opening splash: everyone else ("returning" = has completed the
+        //     tutorial at least once, checked instead of "!_isFirstLaunch" so
+        //     an interrupted first run - settings file exists but the tutorial
+        //     was never finished - still gets routed to the tutorial, not
+        //     here). It can carry release notes, a diagnostics-consent ask, or
+        //     both, depending on what's actually pending:
+        //       - Release notes show only with positive evidence of an
+        //         upgrade: a stored LastSeenVersion older than the running
+        //         build (same parser as IsNewerVersionAvailable, so v-prefixes
+        //         and pre-release suffixes are handled consistently). No
+        //         stored version at all means nothing to compare against, so
+        //         no release notes - not "show every time" as a fallback.
+        //         DEV builds never show release notes, same as the update banner.
+        //       - The consent ask shows only for returning users who have
+        //         never responded (e.g. upgrading from a build that predates
+        //         this prompt). It's independent of the release-notes check
+        //         above, so an unanswered consent prompt still surfaces even
+        //         when there's no version bump pending.
+        //
+        // A user who just finished the tutorial for the first time never sees
+        // this splash right after - _hasCompletedTutorial flips to true and
+        // _hasRespondedToDataTrackingPrompt is already true if they answered
+        // the consent card in the tutorial (declining counts as answering),
+        // so neither condition below can be true on that same launch.
+        var isReturningUser = _hasCompletedTutorial;
 
         if (_isFirstLaunch && !_hasCompletedTutorial)
+        {
             await ShowTutorialAsync();
+        }
+        else if (isReturningUser)
+        {
+            var showReleaseNotes = !IsDevBuild && IsCurrentNewerThanLastSeen(_lastSeenVersion);
+            var showConsentAsk   = !_hasRespondedToDataTrackingPrompt;
+
+            _openingSplashShowsReleaseNotes = showReleaseNotes;
+            if (showReleaseNotes || showConsentAsk)
+                IsUpdateSplashVisible = true;
+        }
     }
 
     private void NewFile()
@@ -8216,8 +8428,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = RefreshLatestReleaseAsync();
     }
 
+    // Only reachable once the consent ask (if any) is already resolved - see
+    // the "Got it" button's IsVisible binding - so this never lets someone
+    // dismiss the opening splash past a pending consent question unanswered.
     private void DismissUpdateSplashButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsUpdateSplashVisible = false;
+
+    // Shared by the consent card wherever it appears (tutorial setup step and
+    // the opening splash, whether or not release notes are also showing).
+    // "Not now" (Decline) counts as answering just as much as "Accept" - once
+    // clicked, _hasRespondedToDataTrackingPrompt is true and the ask never
+    // reappears; the user can still flip it on later from Settings. Accepting
+    // or declining also dismisses the opening splash immediately if that's
+    // where the card was shown, so the user doesn't need a second click.
+    private void AcceptDataTrackingButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        IsDataTrackingEnabled = true;
+        if (IsUpdateSplashVisible) IsUpdateSplashVisible = false;
+    }
+
+    private void DeclineDataTrackingButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        IsDataTrackingEnabled = false;
+        if (IsUpdateSplashVisible) IsUpdateSplashVisible = false;
+    }
 
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -8623,7 +8857,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         sb.Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
           .Append(" / ").AppendLine(Environment.Is64BitProcess ? "64-bit" : "32-bit");
 
-        // Latest release — helps confirm if the bug is already fixed upstream.
+        // Latest release - helps confirm if the bug is already fixed upstream.
         var latestTag = LatestReleaseTag;
         sb.Append("Latest release: ").AppendLine(
             string.IsNullOrWhiteSpace(latestTag)
@@ -11552,6 +11786,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public string? UserTimezoneOffset { get; set; }
         public string? UserName         { get; set; }
         public string? LastSeenVersion  { get; set; }
+        // Anonymous usage-analytics opt-in. False (no tracking) until the user
+        // has explicitly responded to the consent prompt at least once.
+        public bool AllowDataTracking { get; set; }
+        public bool HasRespondedToDataTrackingPrompt { get; set; }
     }
 
     private sealed record ExtensionScanResult(

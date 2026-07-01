@@ -33,7 +33,7 @@ internal static class KodoDiagnostics
     public static string AppVersion { get; } = ResolveAppVersion();
 
     // RuntimeInformation.OSDescription always returns "Microsoft Windows 10.0.XXXXX"
-    // on Windows 11 — the NT kernel version stayed at 10.0.x for compatibility, and
+    // on Windows 11 - the NT kernel version stayed at 10.0.x for compatibility, and
     // the registry ProductName key also still says "Windows 10 Pro" on Windows 11.
     // CurrentBuildNumber is the only reliable signal: Windows 11 starts at build 22000.
     public static string OSDescription { get; } = ResolveOSDescription();
@@ -49,7 +49,7 @@ internal static class KodoDiagnostics
     // A rolling window of the most recent log lines, held in memory.  On a
     // Critical event we flush the buffer into crash.log ahead of the crash
     // payload so there is context showing what Kodo was doing before it died.
-    // The buffer is never written to disk on its own — it only appears in
+    // The buffer is never written to disk on its own - it only appears in
     // crash.log when a crash actually occurs.
 
     private const int BreadcrumbCapacity = 50;
@@ -71,7 +71,7 @@ internal static class KodoDiagnostics
         lock (_breadcrumbLock)
         {
             var snapshot = new List<string>(_breadcrumbs);
-            // Keep the buffer intact — a second crash dialog (e.g. UnobservedTask
+            // Keep the buffer intact - a second crash dialog (e.g. UnobservedTask
             // firing after AppDomain.UnhandledException) should still have context.
             return snapshot;
         }
@@ -142,16 +142,16 @@ internal static class KodoDiagnostics
     public static string LogDirectoryPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
 
-    // Main log — every event (Critical, Warning, Debug-with-exception, Verbose)
+    // Main log - every event (Critical, Warning, Debug-with-exception, Verbose)
     // appends here.  The single file to check when diagnosing any issue.
     public static string MainLogFilePath => Path.Combine(LogDirectoryPath, "kodo.log");
 
-    // Crash-only log — generated solely when a Critical event fires.  Contains
+    // Crash-only log - generated solely when a Critical event fires.  Contains
     // the recent breadcrumb buffer (what Kodo was doing before the crash) followed
     // by the crash payload.  Easier to share for a bug report than the full kodo.log.
     public static string CrashLogFilePath => Path.Combine(LogDirectoryPath, "crash.log");
 
-    // Legacy alias — points at the main log so existing callers still compile.
+    // Legacy alias - points at the main log so existing callers still compile.
     public static string LogFilePath => MainLogFilePath;
 
     public static DateTime UtcNow() => DateTime.UtcNow;
@@ -264,7 +264,7 @@ internal static class KodoDiagnostics
     // ── Legacy API (kept for backward-compat; delegates to typed methods) ─────
 
     /// <inheritdoc cref="LogCritical"/>
-    /// <remarks>Legacy overload — prefer <see cref="LogCritical"/> or <see cref="LogWarning"/>.</remarks>
+    /// <remarks>Legacy overload - prefer <see cref="LogCritical"/> or <see cref="LogWarning"/>.</remarks>
     public static void WriteDiagnosticLog(
         string source,
         Exception exception,
