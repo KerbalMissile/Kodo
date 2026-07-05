@@ -432,14 +432,15 @@ internal static class UpdateService
 //   "Update available" -> [Update Now] -> progress bar -> installer launch.
 internal sealed class UpdateDialog : Window
 {
-    // Same dark-surface palette used by the crash dialog, so every Kodo dialog
-    // looks consistent regardless of which theme/accent the user has selected.
-    private static readonly Color SurfaceColor   = Color.Parse("#1E1E1E");
-    private static readonly Color SurfaceDeep    = Color.Parse("#1A1A1A");
-    private static readonly Color BorderColor    = Color.Parse("#3A3A3A");
-    private static readonly Color BadgeBgColor   = Color.Parse("#2B2B2B");
-    private static readonly Color TextMutedColor = Color.Parse("#A0A0A0");
-    private static readonly Color TextDimColor   = Color.Parse("#606060");
+    // Same dark-surface palette used by every other Kodo dialog (see
+    // DialogPalette below), so every dialog looks consistent regardless of
+    // which theme/accent the user has selected.
+    private static readonly Color SurfaceColor   = DialogPalette.Surface;
+    private static readonly Color SurfaceDeep    = DialogPalette.SurfaceDeep;
+    private static readonly Color BorderColor    = DialogPalette.Border;
+    private static readonly Color BadgeBgColor   = DialogPalette.BadgeBg;
+    private static readonly Color TextMutedColor = DialogPalette.TextMuted;
+    private static readonly Color TextDimColor   = DialogPalette.TextDim;
 
     // Resolved once per dialog instance from the user's active accent setting
     // (Kodo purple / Windows accent / custom / theme), same as MainWindow.
@@ -679,6 +680,25 @@ internal sealed class UpdateDialog : Window
         }
     }
 }
+// ── Shared dialog palette ────────────────────────────────────────────────────
+// Single source of truth for the dark-surface colours used by every
+// code-built dialog in the app (crash dialog in App.axaml.cs, update dialog
+// below, and the various in-app dialogs in MainWindow.axaml.cs). Previously
+// each dialog kept its own duplicate copy of these hex values; centralising
+// them here means a single change actually propagates everywhere, rather than
+// only where a comment claimed it would.
+internal static class DialogPalette
+{
+    public static readonly Color Surface     = Color.Parse("#1E1E1E");
+    public static readonly Color SurfaceDeep = Color.Parse("#1A1A1A");
+    public static readonly Color Border      = Color.Parse("#3A3A3A");
+    public static readonly Color BadgeBg     = Color.Parse("#2B2B2B");
+    public static readonly Color TextMuted   = Color.Parse("#A0A0A0");
+    public static readonly Color TextDim     = Color.Parse("#606060");
+    public static readonly Color TokenBlue   = Color.Parse("#9CDCFE");  // source badge
+    public static readonly Color TokenOrange = Color.Parse("#CE9178");  // stack trace
+}
+
 // ── Accent colour resolution ─────────────────────────────────────────────────
 // Resolves the user's chosen accent colour outside of MainWindow, for dialogs
 // (crash dialog, update dialog, etc.) that may need to appear before a
