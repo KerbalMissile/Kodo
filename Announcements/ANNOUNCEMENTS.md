@@ -1,4 +1,4 @@
-## v1.1.0 is almost here!
-> June 18, 2026
-Enjoy new features like an improved home screen, icons and some cool new welcome messages!
+## v1.1.0 is here!
+> July 5, 2026
+Enjoy a reworked UI, pinned recents, and background auto-updates for Kodo and your extensions!
 ---
