@@ -141,7 +141,7 @@
       "description": "Syntax highlighting for JSON and JSONC files.",
       "fileName": "JSON-Kodo-Extension-v1.0.2.kox",
       "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/JSON-Kodo-Extension-v1.0.2.kox",
-      "iconUrl": "https://commons.wikimedia.org/wiki/File:JSON_vector_logo.svg"
+      "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c9/JSON_vector_logo.svg"
     },
     {
       "id": "yaml-kodo-extension",
