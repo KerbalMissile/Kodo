@@ -39,21 +39,43 @@ internal static class Program
         // (e.g. Kodo was relaunched and spawned another one), just exit. Using
         // a named mutex rather than a process-name check avoids false positives
         // from unrelated exes that happen to share the name during debugging.
-        using var singleInstance = new Mutex(initiallyOwned: true, "Kodo-KodoUpdater-SingleInstance", out var createdNew);
-        if (!createdNew) return;
-
-        while (true)
+        //
+        // Wrapped in its own try/catch - if mutex creation itself fails for some
+        // reason (rare, but possible in locked-down environments), we'd rather
+        // risk a duplicate resident process than have the updater die silently
+        // before it ever reaches the poll loop. Nobody is watching this process,
+        // so an unhandled exception here would just mean updates quietly stop
+        // working forever with zero indication why.
+        Mutex? singleInstance = null;
+        try
         {
-            try
-            {
-                await RunOneCycleAsync();
-            }
-            catch
-            {
-                // Never let one bad cycle kill the whole resident process.
-            }
+            singleInstance = new Mutex(initiallyOwned: true, "Kodo-KodoUpdater-SingleInstance", out var createdNew);
+            if (!createdNew) return;
+        }
+        catch
+        {
+            // Fall through and run anyway.
+        }
 
-            await Task.Delay(PollInterval);
+        try
+        {
+            while (true)
+            {
+                try
+                {
+                    await RunOneCycleAsync();
+                }
+                catch
+                {
+                    // Never let one bad cycle kill the whole resident process.
+                }
+
+                await Task.Delay(PollInterval);
+            }
+        }
+        finally
+        {
+            singleInstance?.Dispose();
         }
     }
 
