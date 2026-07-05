@@ -9881,6 +9881,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         System.Text.Encoding? chosen = null;
         Window? dialog = null;
 
+        // Resolve the live accent colour the same way ApplyThemeToEditor does,
+        // so the "current encoding" highlight matches whatever accent the user
+        // has chosen (Kodo / Windows / custom / theme) instead of always being
+        // purple. Falls back to Kodo purple only if AccentBrush can't be read.
+        var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
+            ? accentSolid.Color
+            : Color.Parse("#8C00FF");
+
         var panel = new StackPanel { Spacing = 6, Margin = new Thickness(16) };
 
         panel.Children.Add(new TextBlock
@@ -9902,10 +9910,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 Background = isCurrent
-                    ? new SolidColorBrush(Color.Parse("#2D1F4A"))
+                    ? new SolidColorBrush(accentColor, 0.18)
                     : new SolidColorBrush(Color.Parse("#252526")),
                 Foreground = isCurrent
-                    ? new SolidColorBrush(Color.Parse("#C084FC"))
+                    ? new SolidColorBrush(accentColor)
                     : Brushes.White,
                 BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
                 BorderThickness = new Thickness(1),
