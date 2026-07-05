@@ -38,9 +38,9 @@ internal static class AptabaseClient
     // This means nothing is ever sent before the user has explicitly opted in.
     private static bool _isEnabled;
 
-    // Set once in Initialize(). When true, SetEnabled() refuses to turn
-    // tracking on, no matter what the user's saved preference or the
-    // Settings toggle says - dev builds should never phone home.
+    // Set once in Initialize(). Informational only - dev builds (version
+    // ending in "-DEV") are tracked like any other build; the previous
+    // blanket suppression in SetEnabled() has been removed.
     private static bool _isDevBuild;
 
     public static bool IsEnabled => _isEnabled;
@@ -49,16 +49,10 @@ internal static class AptabaseClient
     /// <summary>
     /// Enables or disables sending analytics events. When disabling, any
     /// events queued but not yet sent are discarded rather than sent later.
-    /// Dev builds (version ending in "-DEV") always stay disabled.
+    /// Applies to all builds, including -DEV.
     /// </summary>
     public static void SetEnabled(bool enabled)
     {
-        if (enabled && _isDevBuild)
-        {
-            Console.WriteLine("[Aptabase] Dev build detected, ignoring request to enable tracking");
-            enabled = false;
-        }
-
         if (_isEnabled == enabled) return;
         _isEnabled = enabled;
         Console.WriteLine($"[Aptabase] Data tracking {(enabled ? "enabled" : "disabled")}");
@@ -112,7 +106,7 @@ internal static class AptabaseClient
 
         if (_isDevBuild)
         {
-            Console.WriteLine($"[Aptabase] Dev build detected ({appVersion}), telemetry disabled for this session");
+            Console.WriteLine($"[Aptabase] Dev build detected ({appVersion})");
         }
 
         // No connectivity test here - tracking is off by default until the

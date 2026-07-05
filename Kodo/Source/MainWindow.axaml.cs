@@ -146,8 +146,8 @@ public class FileTreeItem : INotifyPropertyChanged
         return ext switch
 			{
 			    ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "C#",
-			    ".axaml" or ".xaml" => "XM",
-			    ".xml" or ".html" or ".htm" => "HTML",
+			    ".axaml" or ".xaml" or ".xml" => "XML",
+			    ".html" or ".htm" => "HTML",
 			    ".json" or ".yaml" or ".yml" or ".toml" => "JSON",
 			    ".txt" or ".rst" or ".log" => "TXT",
                 ".md" or ".markdown" => "MD",
@@ -182,8 +182,6 @@ public class FileTreeItem : INotifyPropertyChanged
 				".csv" or ".tsv" => "CSV",
 				".nova" => "NOVA",
 				".kox" => "KOX",
-                ".sln" => "SLN",
-                ".manifest" => "MF",
                 ".exe" => "EXE",
                 ".dll" => "DLL",
 			    _ => "..",
