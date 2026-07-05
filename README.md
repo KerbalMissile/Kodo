@@ -31,7 +31,7 @@ Released under the [Kodo Public License v1.1](LICENSE.md).
 |---|---|
 | 🧩 **Extension Marketplace** | Install syntax highlighting and themes via `.kox` files |
 | 🧑‍💻 **Integrated Terminal** | Run code from within Kodo, no extra terminal needed |
-| 🎨 **Themes** | Built-in Dark, Light, and High Contrast modes + custom extension themes |
+| 🎨 **Themes** | Built-in Dark, Light, and System Default modes + custom extension themes |
 | 📁 **Folder Support** | Open and browse entire project folders in the file explorer |
 | 💾 **Autosave** | Configurable autosave so you never lose work |
 | 🔤 **Syntax Highlighting** | Language support delivered through the extension system |

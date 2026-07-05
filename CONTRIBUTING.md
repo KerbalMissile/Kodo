@@ -8,9 +8,9 @@ Thanks for your interest in contributing! Kodo is a small project built by two p
 
 To run Kodo locally, you'll need:
 
-1. [.NET](https://dotnet.microsoft.com/en-us/download) minimum version 8
+1. [.NET](https://dotnet.microsoft.com/en-us/download) minimum version 10
 2. Run `dotnet new install Avalonia.Templates`
-3. Change your directory to Kodo's source folder: `cd path\to\Kodo\Kodo`
+3. Change your directory to Kodo's source folder: `cd path\to\Kodo\Source`
 4. Run `dotnet run` - it'll take a few seconds then open up
 
 That's it. No complicated build pipeline, no extra tools.
@@ -39,10 +39,7 @@ Please keep PRs focused, one thing per PR makes it much easier to review. If you
 
 Look at the existing code and match it. A few things to keep consistent:
 
-- Add a comment at the top of any file you modify in the format the codebase already uses:
-  ```
-  // April 24th, 2026 - YourName - Brief description of what you changed
-  ```
+- Instead of a per-file changelog comment, make a good PR - a clear title and description of what you changed and why goes a long way for review.
 - Keep comments descriptive but not excessive - explain *why*, not just *what*
 - Don't leave dead code or commented-out blocks behind
 
@@ -53,10 +50,11 @@ Look at the existing code and match it. A few things to keep consistent:
 Extensions are the best way to contribute without touching the core app. A `.kox` file is just a renamed `.zip` containing:
 
 ```
-manifest.json    ← required
-language.json    ← for language extensions
-theme.json       ← for theme extensions
-icon.png         ← optional, must be square
+manifest.json     ← required
+language.json     ← for language extensions
+language2.json    ← optional, a second language profile in the same package
+theme.json        ← for theme extensions
+icon.png/icon.svg ← optional, must be square
 ```
 
 ### manifest.json
