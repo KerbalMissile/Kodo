@@ -6445,7 +6445,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? activeTab.Path
                 : null,
             RecentFiles = RecentFiles
-                .Select(f => new RecentFileEntry { Path = f.Path, IsFolder = f.IsFolder, LastOpened = f.LastOpened })
+                .Select(f => new RecentFileEntry { Path = f.Path, IsFolder = f.IsFolder, LastOpened = f.LastOpened, IsPinned = f.IsPinned })
                 .ToList()
         };
     }
@@ -7435,9 +7435,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         finally
         {
-            // Re-enable saves and do one clean write now that the tab list is complete.
+            // Re-enable saves so that any *real* future change (the user toggling
+            // a setting, opening/closing a tab, etc.) persists normally.
             _suppressSettingsSave = false;
-            SaveSettings(immediate: true);
+
+            // Only force an immediate write here if a settings file already
+            // existed on disk. On first launch (or whenever the file is missing,
+            // e.g. the user deleted it to reset the app) there is nothing to
+            // "clean up" - the state is just in-memory defaults - and
+            // unconditionally writing it back out would silently recreate the
+            // file the user just removed. Once the user actually changes
+            // something, the normal SaveSettings() calls in the property
+            // setters will create the file at that point instead.
+            if (!_isFirstLaunch)
+            {
+                SaveSettings(immediate: true);
+            }
         }
 
         _ = RefreshExtensionsAndAutoUpdateAsync();
@@ -7739,15 +7752,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // reappear as soon as the path becomes available again. Existence is checked
         // at open time in RecentFileButton_OnClick; entries are only removed when the
         // user explicitly clears them, not automatically on load.
-        var entries = (recentFiles ?? [])
+        foreach (var entry in (recentFiles ?? [])
             .Where(entry => !string.IsNullOrWhiteSpace(entry.Path))
-            .ToList();
-
-        foreach (var entry in entries)
+            .OrderByDescending(entry => entry.IsPinned)
+            .ThenByDescending(entry => entry.LastOpened))
         {
-            RecentFiles.Add(new RecentFileItem(entry.Path, entry.IsFolder, entry.LastOpened));
-            if (RecentFiles.Count >= MaxRecentFiles)
-                break;
+            RecentFiles.Add(new RecentFileItem(entry.Path, entry.IsFolder, entry.LastOpened, entry.IsPinned));
         }
     }
 
@@ -7771,21 +7781,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (string.IsNullOrWhiteSpace(path)) return;
 
-        for (var i = RecentFiles.Count - 1; i >= 0; i--)
+        var existing = RecentFiles.FirstOrDefault(item =>
+            string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is not null)
         {
-            var item = RecentFiles[i];
-            var isSamePath = string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase);
-            var isChildFileOfFolder = isFolder && !item.IsFolder && IsPathInsideDirectory(item.Path, path);
-            if (isSamePath || isChildFileOfFolder)
-                RecentFiles.RemoveAt(i);
+            RecentFiles.Remove(existing);
+            RecentFiles.Add(new RecentFileItem(path, isFolder, DateTime.Now, existing.IsPinned));
+        }
+        else
+        {
+            RecentFiles.Add(new RecentFileItem(path, isFolder, DateTime.Now));
         }
 
-        RecentFiles.Insert(0, new RecentFileItem(path, isFolder, DateTime.Now));
-        while (RecentFiles.Count > MaxRecentFiles)
-            RecentFiles.RemoveAt(RecentFiles.Count - 1);
-
+        ReorderRecentFiles();
         SaveSettings();
         OnPropertyChanged(nameof(HasRecentFiles));
+    }
+
+    private void TogglePinnedRecentFile(string path)
+    {
+        var existing = RecentFiles.FirstOrDefault(item =>
+            string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (existing is null) return;
+
+        existing.IsPinned = !existing.IsPinned;
+        ReorderRecentFiles();
+        SaveSettings();
     }
 
     private void RemoveRecentFile(string path)
@@ -7795,6 +7817,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RecentFiles.Remove(existing);
         SaveSettings();
         OnPropertyChanged(nameof(HasRecentFiles));
+    }
+
+    private void ReorderRecentFiles()
+    {
+        var ordered = RecentFiles
+            .OrderByDescending(item => item.IsPinned)
+            .ThenByDescending(item => item.LastOpened)
+            .ToList();
+
+        RecentFiles.Clear();
+        foreach (var item in ordered)
+            RecentFiles.Add(item);
+
+        while (RecentFiles.Count(item => !item.IsPinned) > MaxRecentFiles)
+        {
+            var removable = RecentFiles.LastOrDefault(item => !item.IsPinned);
+            if (removable is null)
+                break;
+
+            RecentFiles.Remove(removable);
+        }
     }
 
     private void ZoomInButton_OnClick(object? sender, RoutedEventArgs e)  => ZoomImageIn();
@@ -8587,11 +8630,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ("Ctrl+H",             "Go to Home"),
             ("Ctrl+Shift+E",       "Go to Editor"),
             ("Ctrl+,",             "Open Settings"),
-            ("Ctrl+E",             "Open Extensions / Marketplace"),
+            ("Ctrl+E  or  Ctrl+Shift+X", "Open Extensions / Marketplace"),
             // ── Files & tabs ──────────────────────────────────────────────────
             ("Ctrl+N",             "New file"),
             ("Ctrl+O",             "Open file"),
-            ("Ctrl+K",             "Open folder  (again to close)"),
+            ("Ctrl+K",             "Open folder"),
+            ("Ctrl+Shift+K",       "Close folder"),
             ("Ctrl+S",             "Save"),
             ("Ctrl+Shift+S",       "Save as"),
             ("Ctrl+W",             "Close tab"),
@@ -8654,6 +8698,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 FontSize   = 13,
                 Foreground = MutedTextBrush,
                 VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
                 Margin     = new Thickness(0, 0, 0, 6),
             };
 
@@ -8811,8 +8856,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void ClearLogsButton_OnClick(object? sender, RoutedEventArgs e)
+    private async void ClearLogsButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Clear logs?",
+            "This permanently deletes the main log and crash log files from disk. This can't be undone.",
+            confirmLabel: "Clear",
+            isDestructive: true);
+
+        if (!confirmed) return;
+
         var clearedAny = false;
         var failures = new List<string>();
 
@@ -8996,6 +9049,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             await OpenFileFromPathAsync(item.Path);
         }
+    }
+
+    private void TogglePinnedRecentFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string path }) return;
+        TogglePinnedRecentFile(path);
+        e.Handled = true;
     }
 
     private void OpenEditorTabButton_OnClick(object? sender, RoutedEventArgs e)
@@ -9608,6 +9668,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
         try
         {
+            var kind = item.IsDirectory ? "folder" : "file";
+            var confirmed = await ShowConfirmationDialogAsync(
+                $"Delete {kind}?",
+                item.IsDirectory
+                    ? $"This permanently deletes '{item.Name}' and everything inside it from disk. This can't be undone."
+                    : $"This permanently deletes '{item.Name}' from disk. This can't be undone.",
+                confirmLabel: "Delete",
+                isDestructive: true);
+
+            if (!confirmed) return;
+
             var matchingTabs = OpenTabs
                 .Where(tab => !tab.IsUntitled && (
                     string.Equals(tab.Path, item.FullPath, StringComparison.OrdinalIgnoreCase) ||
@@ -9968,8 +10039,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void DecreaseFontSizeButton_OnClick(object? sender, RoutedEventArgs e) =>
         EditorFontSize = Math.Max(8, EditorFontSize - 1);
 
-    private void ClearRecentFilesButton_OnClick(object? sender, RoutedEventArgs e)
+    private async void ClearRecentFilesButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (!HasRecentFiles) return;
+
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Clear Recent Files?",
+            "This removes every entry from your Recent Files list. The files themselves aren't touched - only the list of shortcuts to them. This can't be undone.",
+            confirmLabel: "Clear",
+            isDestructive: true);
+
+        if (!confirmed) return;
+
         RecentFiles.Clear();
         SaveSettings();
         OnPropertyChanged(nameof(HasRecentFiles));
@@ -10164,8 +10245,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void UninstallExtensionButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is Button { Tag: LoadedExtension extension })
-            await UninstallExtensionAsync(extension);
+        if (sender is not Button { Tag: LoadedExtension extension }) return;
+
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Uninstall extension?",
+            $"This removes '{extension.Name}' from disk and disables it immediately. This can't be undone.",
+            confirmLabel: "Uninstall",
+            isDestructive: true);
+
+        if (!confirmed) return;
+
+        await UninstallExtensionAsync(extension);
     }
 
     // Shows a "Ctrl+click to open link" tooltip when the pointer hovers over a URL,
@@ -11021,6 +11111,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NavigateTo(Page.Home);
     }
 
+    // Gate for every path that can end the tutorial (Finish button, Skip
+    // button, Escape key). If the diagnostics-consent question hasn't been
+    // answered yet, we don't let the tutorial close - instead we route the
+    // user to the setup step, where the consent card (Accept / Not now)
+    // lives, so they're never stuck with no way to make progress.
+    private bool TryFinishTutorial()
+    {
+        if (IsDataTrackingPromptVisible)
+        {
+            TutorialStepIndex = TutorialSteps.Length - 1;
+            return false;
+        }
+
+        CompleteTutorialAndReturnHome();
+        return true;
+    }
+
     private void PreviousTutorialStepButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TutorialStepIndex > 0)
@@ -11035,11 +11142,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        CompleteTutorialAndReturnHome();
+        TryFinishTutorial();
     }
 
     private void SkipTutorialButton_OnClick(object? sender, RoutedEventArgs e) =>
-        CompleteTutorialAndReturnHome();
+        TryFinishTutorial();
 
     private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
     {
@@ -11064,7 +11171,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (IsTutorialPageVisible)
             {
-                CompleteTutorialAndReturnHome();
+                TryFinishTutorial();
                 e.Handled = true;
             }
             else if (IsSettingsPageVisible || IsExtensionsPageVisible || IsWhatsNewPageVisible)
@@ -11136,12 +11243,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 break;
 
             case Key.K:
-                // Ctrl+K - toggle folder open/close
+                // Ctrl+K - open folder. Ctrl+Shift+K - close the open folder.
+                // (Matches the tooltips on the Open Folder / Close Folder buttons.)
                 e.Handled = true;
-                if (IsFolderOpen)
-                    CloseFolder();
+                if (hasShift)
+                {
+                    if (IsFolderOpen)
+                        CloseFolder();
+                }
                 else
+                {
                     await OpenFolderAsync();
+                }
                 break;
 
             case Key.B:
@@ -11443,6 +11556,107 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception dialogEx)
         {
             KodoDiagnostics.LogDebug("ShowNotFoundDialogAsync failed to display.", dialogEx);
+        }
+    }
+
+    // ── Generic confirmation dialog ───────────────────────────────────────────
+    //
+    // A lightweight "are you sure?" prompt for destructive-but-recoverable
+    // actions (e.g. clearing recent files). Shares the same visual language
+    // as ShowNotFoundDialogAsync/ShowWarningDialogAsync (CardBrush window,
+    // AccentBrush primary action) but is intentionally generic - callers
+    // supply the title/body/button text and get a bool back for whether the
+    // user confirmed. Defaults to a "Cancel" / "Confirm" pair; pass
+    // isDestructive: true to render the confirm button in a warning color
+    // instead of the accent color, for actions that can't be undone.
+    private async Task<bool> ShowConfirmationDialogAsync(
+        string title,
+        string body,
+        string confirmLabel = "Confirm",
+        string cancelLabel = "Cancel",
+        bool isDestructive = false)
+    {
+        try
+        {
+            var titleText = new TextBlock
+            {
+                Text         = title,
+                FontSize     = 16,
+                FontWeight   = FontWeight.SemiBold,
+                Foreground   = PrimaryTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+            };
+
+            var bodyText = new TextBlock
+            {
+                Text         = body,
+                FontSize     = 13,
+                Foreground   = MutedTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 4, 0, 0),
+            };
+
+            var cancelButton = new Button
+            {
+                Content             = cancelLabel,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Padding             = new Thickness(16, 8),
+                Background          = ButtonBrush,
+                Foreground          = MutedTextBrush,
+                BorderBrush         = SurfaceBorderBrush,
+                BorderThickness     = new Thickness(1),
+                CornerRadius        = new CornerRadius(8),
+            };
+
+            var confirmButton = new Button
+            {
+                Content             = confirmLabel,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Padding             = new Thickness(20, 8),
+                Background          = isDestructive ? new SolidColorBrush(Color.Parse("#C4302B")) : AccentBrush,
+                Foreground          = AccentForegroundBrush,
+                BorderThickness     = new Thickness(0),
+                CornerRadius        = new CornerRadius(8),
+            };
+
+            var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            buttonRow.Children.Add(cancelButton);
+            Grid.SetColumn(confirmButton, 1);
+            buttonRow.Children.Add(confirmButton);
+
+            var content = new StackPanel
+            {
+                Spacing  = 12,
+                Margin   = new Thickness(20),
+                Children = { titleText, bodyText, buttonRow },
+            };
+
+            Window? dialog = null;
+            dialog = new Window
+            {
+                Title                 = "Kodo",
+                Width                 = 420,
+                SizeToContent         = SizeToContent.Height,
+                MinWidth              = 340,
+                MaxHeight             = 320,
+                CanResize             = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background            = CardBrush,
+                Content               = content,
+            };
+
+            var result = false;
+            cancelButton.Click  += (_, _) => { result = false; dialog!.Close(); };
+            confirmButton.Click += (_, _) => { result = true;  dialog!.Close(); };
+            await dialog.ShowDialog(this);
+            return result;
+        }
+        catch (Exception dialogEx)
+        {
+            KodoDiagnostics.LogDebug($"ShowConfirmationDialogAsync failed to display for '{title}'.", dialogEx);
+            // If the dialog itself fails to render, fail safe by not
+            // performing the (potentially destructive) action it was gating.
+            return false;
         }
     }
 
@@ -11801,6 +12015,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         public string   Path       { get; set; } = string.Empty;
         public bool     IsFolder   { get; set; }
         public DateTime LastOpened { get; set; } = DateTime.Now;
+        public bool     IsPinned   { get; set; }
     }
 
     private enum UnsavedTabAction
@@ -11822,18 +12037,43 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 }
 
 
-public sealed class RecentFileItem
+public sealed class RecentFileItem : INotifyPropertyChanged
 {
-    public RecentFileItem(string path, bool isFolder, DateTime lastOpened)
+    private bool _isPinned;
+
+    public RecentFileItem(string path, bool isFolder, DateTime lastOpened, bool isPinned = false)
     {
-        Path        = path;
-        IsFolder    = isFolder;
-        LastOpened  = lastOpened;
+        Path       = path;
+        IsFolder   = isFolder;
+        LastOpened = lastOpened;
+        _isPinned  = isPinned;
     }
 
-    public string   Path       { get; }
-    public bool     IsFolder   { get; }
-    public DateTime LastOpened { get; }
+    public string Path { get; }
+    public bool IsFolder { get; }
+    public DateTime LastOpened { get; set; }
+
+    public bool IsPinned
+    {
+        get => _isPinned;
+        set
+        {
+            if (_isPinned == value) return;
+            _isPinned = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPinned)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PinButtonText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PinTooltipText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PinnedBadgeText)));
+        }
+    }
+
+    public string PinButtonText => IsPinned ? "Unpin" : "Pin";
+
+    public string PinTooltipText => IsPinned ? "Unpin this item" : "Pin this item";
+
+    public string PinnedBadgeText => "Pinned";
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public string DisplayName
     {
@@ -11842,7 +12082,7 @@ public sealed class RecentFileItem
             if (IsFolder)
                 return System.IO.Path.GetFileName(Path.TrimEnd(System.IO.Path.DirectorySeparatorChar));
             var name = System.IO.Path.GetFileName(Path);
-            var dot = name.IndexOf('.');
+            var dot = name.IndexOf("."[0]);
             return dot > 0 ? name[..dot] : name;
         }
     }
@@ -11900,7 +12140,6 @@ public sealed class RecentFileItem
         }
     }
 }
-
 public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 {
     private static readonly Dictionary<char, char> OpeningToClosing = new()

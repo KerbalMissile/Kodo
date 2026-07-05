@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -37,14 +38,27 @@ internal static class AptabaseClient
     // This means nothing is ever sent before the user has explicitly opted in.
     private static bool _isEnabled;
 
+    // Set once in Initialize(). When true, SetEnabled() refuses to turn
+    // tracking on, no matter what the user's saved preference or the
+    // Settings toggle says - dev builds should never phone home.
+    private static bool _isDevBuild;
+
     public static bool IsEnabled => _isEnabled;
+    public static bool IsDevBuild => _isDevBuild;
 
     /// <summary>
     /// Enables or disables sending analytics events. When disabling, any
     /// events queued but not yet sent are discarded rather than sent later.
+    /// Dev builds (version ending in "-DEV") always stay disabled.
     /// </summary>
     public static void SetEnabled(bool enabled)
     {
+        if (enabled && _isDevBuild)
+        {
+            Console.WriteLine("[Aptabase] Dev build detected, ignoring request to enable tracking");
+            enabled = false;
+        }
+
         if (_isEnabled == enabled) return;
         _isEnabled = enabled;
         Console.WriteLine($"[Aptabase] Data tracking {(enabled ? "enabled" : "disabled")}");
@@ -72,17 +86,34 @@ internal static class AptabaseClient
 
     public static void Initialize()
     {
+        // AssemblyInformationalVersion preserves the "-DEV" suffix from the
+        // csproj's <InformationalVersion>; Assembly.GetName().Version does not
+        // (System.Version is numeric-only), so we read it separately here.
+        var informationalVersion = System.Reflection.Assembly
+            .GetExecutingAssembly()
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+
+        var appVersion = !string.IsNullOrEmpty(informationalVersion)
+            ? informationalVersion
+            : System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0";
+
+        _isDevBuild = appVersion.EndsWith("-DEV", StringComparison.OrdinalIgnoreCase);
+
         _sessionId   = Guid.NewGuid().ToString();
         _systemProps = new AptabaseSystemProps(
             IsDebug:    System.Diagnostics.Debugger.IsAttached,
-            AppVersion: System.Reflection.Assembly
-                            .GetExecutingAssembly()
-                            .GetName().Version?.ToString() ?? "0.0.0",
+            AppVersion: appVersion,
             SdkVersion: "kodo-aptabase@1.0.0",
             OsName:     GetWindowsVersion());
 
         Console.WriteLine($"[Aptabase] Initialized with session: {_sessionId}");
         Console.WriteLine($"[Aptabase] App Key: {_appKey}");
+
+        if (_isDevBuild)
+        {
+            Console.WriteLine($"[Aptabase] Dev build detected ({appVersion}), telemetry disabled for this session");
+        }
 
         // No connectivity test here - tracking is off by default until the
         // user opts in (see SetEnabled), which runs the test itself.

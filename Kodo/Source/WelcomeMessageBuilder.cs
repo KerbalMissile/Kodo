@@ -806,6 +806,48 @@ internal static class WelcomeMessageBuilder
             for (var i = 0; i < 8; i++) messages.Add("11:11! Make a wish!");
         }
 
+        // ── 1b-i. Friday the 13th ───────────────────────────────────────────────
+        // Same pattern as the 11:11 check above: a small easter egg weighted
+        // heavily (x8) so it's very likely to be the greeting shown that day.
+        if (dow == DayOfWeek.Friday && now.Day == 13)
+        {
+            for (var i = 0; i < 8; i++) messages.Add("Friday the 13th... may your builds stay bug-free! 🖤");
+            messages.Add("Unlucky for some, lucky for your commit history?");
+        }
+
+        // ── 1b-ii. Leap Day ──────────────────────────────────────────────────────
+        // Feb 29 only exists once every 4 years, so it gets its own one-off
+        // greeting rather than folding into the generic day-of-week flavour.
+        if (now.Month == 2 && now.Day == 29)
+        {
+            for (var i = 0; i < 8; i++) messages.Add("Leap Day! Enjoy the extra day - it only comes around every 4 years.");
+        }
+
+        // ── 1b-iii. Programmer's Day / Pi Day ─────────────────────────────────────
+        // Programmer's Day is the 256th day of the year (2^8 - a number
+        // programmers appreciate), which lands on Sept 12 in leap years and
+        // Sept 13 otherwise. Pi Day (3/14) gets the same treatment since both
+        // fit a code editor's sense of humour better than some of the more
+        // generic observances above.
+        if (now.DayOfYear == 256)
+        {
+            for (var i = 0; i < 8; i++) messages.Add("Happy Programmer's Day! 🖥️ Day 256 of the year - fitting, isn't it?");
+        }
+        if (now.Month == 3 && now.Day == 14)
+        {
+            for (var i = 0; i < 8; i++) messages.Add("Happy Pi Day! 🥧 3.14159265...");
+        }
+
+        // ── 1b-iv. New Year's Eve countdown ───────────────────────────────────────
+        // During the final hour before midnight on Dec 31, layer a
+        // countdown-flavoured line on top of the generic "Happy New Year's
+        // Eve!" greeting from the holiday block above.
+        if (now.Month == 12 && now.Day == 31 && now.Hour == 23)
+        {
+            for (var i = 0; i < 8; i++) messages.Add("Almost midnight - one more commit before the new year?");
+            messages.Add("The countdown's on. Ship it before the ball drops!");
+        }
+
         // ── 1c. Real-world sporting events (e.g. FIFA World Cup) ───────────────
         // Populated asynchronously by FetchSportingEventMessagesAsync via
         // TheSportsDB's free API, with a hardcoded tournament-window fallback
@@ -930,6 +972,27 @@ internal static class WelcomeMessageBuilder
             "autumn" => "Cozy season, perfect for shipping features.",
             _        => "Great day to write some code."
         });
+
+        if (season == "winter")
+        {
+            messages.Add("Snow outside, cozy code inside.");
+            messages.Add("Winter's here - perfect excuse to stay in and ship.");
+        }
+        if (season == "spring")
+        {
+            messages.Add("Spring cleaning? Let's refactor something too.");
+            messages.Add("New blossoms, new builds.");
+        }
+        if (season == "summer")
+        {
+            messages.Add("Summer vibes, sharp code.");
+            messages.Add("Long days, long streaks - let's keep building.");
+        }
+        if (season == "autumn")
+        {
+            messages.Add("Leaves are falling, but your code's holding up.");
+            messages.Add("Sweater weather, solid code.");
+        }
 
         // ── 6. Neutral standby messages ───────────────────────────────────────
         // Excluded when a name is set so the pool isn't diluted by messages
