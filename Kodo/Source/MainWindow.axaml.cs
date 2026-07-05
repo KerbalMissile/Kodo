@@ -9915,7 +9915,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Foreground = isCurrent
                     ? new SolidColorBrush(accentColor)
                     : Brushes.White,
-                BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
+                BorderBrush = new SolidColorBrush(DialogPalette.Border),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
                 Padding = new Thickness(12, 7),
@@ -9933,7 +9933,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             Text = "The file will be re-saved immediately with the chosen encoding.",
             FontSize = 11,
-            Foreground = new SolidColorBrush(Color.Parse("#606060")),
+            Foreground = new SolidColorBrush(DialogPalette.TextDim),
             Margin = new Thickness(0, 8, 0, 0),
             TextWrapping = TextWrapping.Wrap,
         });
@@ -9945,7 +9945,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SizeToContent = SizeToContent.Height,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = new SolidColorBrush(Color.Parse("#1E1E1E")),
+            Background = new SolidColorBrush(DialogPalette.Surface),
             Content = panel,
         };
 

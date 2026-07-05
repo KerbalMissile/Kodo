@@ -23,22 +23,28 @@ namespace Kodo;
 // the error/crash dialog UI - all built in code so this file has no AXAML dependency.
 public partial class App : Application
 {
-    // Prevent crash-dialog storms from re-entering the UI thread and starving input.
+    // Prevents crash-dialog storms: only one crash dialog may be in flight at a
+    // time. Set to 1 by the CompareExchange guard in ShowCrashDialog and held
+    // at 1 for the dialog's entire lifetime (build, show, and awaiting
+    // dismissal); reset to 0 in ShowCrashDialogOnUiThreadAsync's finally block
+    // once the dialog closes. The terminating-exception spin-wait in
+    // ShowCrashDialog also reads this flag to know when it's safe to let the
+    // CLR proceed with process teardown.
     private static int _isCrashDialogOpen;
     // ── Shared colours ───────────────────────────────────────────────────────
-    // Both the crash dialog (App.axaml.cs) and the warning dialog (MainWindow.axaml.cs)
-    // use the same dark-surface palette so they look consistent regardless of which
-    // theme the user has selected.  Centralising them here means a single change
-    // propagates to both dialogs.
+    // Sourced from DialogPalette (Updater.cs) so every code-built dialog in
+    // the app - crash dialog here, update dialog, and the in-app dialogs in
+    // MainWindow.axaml.cs - draws from one place. A single change there now
+    // actually propagates everywhere.
 
-    private static readonly Color KodoDarkSurface     = Color.Parse("#1E1E1E");
-    private static readonly Color KodoDarkSurfaceDeep = Color.Parse("#1A1A1A");
-    private static readonly Color KodoDarkBorder      = Color.Parse("#3A3A3A");
-    private static readonly Color KodoDarkBadgeBg     = Color.Parse("#2B2B2B");
-    private static readonly Color KodoTextMuted       = Color.Parse("#A0A0A0");
-    private static readonly Color KodoTextDim         = Color.Parse("#606060");
-    private static readonly Color KodoTokenBlue       = Color.Parse("#9CDCFE");  // source badge
-    private static readonly Color KodoTokenOrange     = Color.Parse("#CE9178");  // stack trace
+    private static readonly Color KodoDarkSurface     = DialogPalette.Surface;
+    private static readonly Color KodoDarkSurfaceDeep = DialogPalette.SurfaceDeep;
+    private static readonly Color KodoDarkBorder      = DialogPalette.Border;
+    private static readonly Color KodoDarkBadgeBg     = DialogPalette.BadgeBg;
+    private static readonly Color KodoTextMuted       = DialogPalette.TextMuted;
+    private static readonly Color KodoTextDim         = DialogPalette.TextDim;
+    private static readonly Color KodoTokenBlue       = DialogPalette.TokenBlue;  // source badge
+    private static readonly Color KodoTokenOrange     = DialogPalette.TokenOrange;  // stack trace
 
     // ── Initialization ───────────────────────────────────────────────────────
 
@@ -242,30 +248,14 @@ public partial class App : Application
 
     // ── Crash dialog ─────────────────────────────────────────────────────────
     //
-    // ShowCrashDialog dispatches a modal error dialog to the UI thread.
-    //
-    // WHY InvokeAsync + GetAwaiter().GetResult()?
-    //   AppDomain.UnhandledException fires on a background (finalizer/thread-pool) thread
-    //   just before the CLR may tear down the process (IsTerminating = true).  If we only
-    //   Post() the work and return, the process exits before the UI thread renders anything.
-    //   Blocking the crash-handler thread with GetAwaiter().GetResult() keeps the process
-    //   alive until the user dismisses the dialog.
-    //
-    // EARLY-RETURN GUARD:
-    //   On Linux/macOS the Dispatcher may already be stopped when a terminal exception
-    //   fires.  Attempting to invoke on a stopped Dispatcher deadlocks.  We check
-    //   CanCurrentThreadAccess first; if the answer is "no Dispatcher at all", we just
-    //   return rather than hanging.
+    // ShowCrashDialog dispatches a modal error dialog to the UI thread. See the
+    // "WHY Post()..." comment below for the reasoning behind the dispatch
+    // strategy on terminating vs. recoverable exceptions.
 
     private static void ShowCrashDialog(string source, Exception exception, bool isTerminating)
     {
         if (Interlocked.CompareExchange(ref _isCrashDialogOpen, 1, 0) != 0)
             return;
-
-        // Reset the guard immediately - we use fire-and-forget below, so the
-        // guard would never be cleared in the finally block on the background
-        // thread, permanently preventing any future dialog.
-        Interlocked.Exchange(ref _isCrashDialogOpen, 0);
 
         try
         {
@@ -302,7 +292,7 @@ public partial class App : Application
                 // before the CLR tears the process down. We sleep in short bursts
                 // so we don't spin-waste CPU, and we exit the loop the moment the
                 // dialog reports it has been dismissed.
-                for (var i = 0; i < 300 && _isCrashDialogOpen == 0; i++)
+                for (var i = 0; i < 300 && _isCrashDialogOpen == 1; i++)
                     Thread.Sleep(100);
             }
             else
