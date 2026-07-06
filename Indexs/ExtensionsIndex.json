@@ -2,13 +2,13 @@
   "extensions": [
     {
       "id": "csharp-kodo-extension",
-      "version": "v1.2.5",
+      "version": "v1.3.0",
       "name": "C# Language Support",
       "type": "language",
       "author": "Kodo Team",
       "description": "Syntax highlighting for C# files, including .csproj and most other .NET based languages.",
-      "fileName": "C#-Kodo-Extension-v1.2.5.kox",
-      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.2.5.kox",
+      "fileName": "C#-Kodo-Extension-v1.3.0.kox",
+      "downloadUrl": "https://raw.githubusercontent.com/KerbalMissile/Kodo/main/Official_Extensions/C%23-Kodo-Extension-v1.3.0.kox",
       "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/b/bd/Logo_C_sharp.svg"
     },
     {
