@@ -36,9 +36,11 @@ Released under the [Kodo Public License v1.1](LICENSE.md).
 | 💾 **Autosave** | Configurable autosave so you never lose work |
 | 🔤 **Syntax Highlighting** | Language support delivered through the extension system |
 | 🕓 **Recent Files** | Jump back into recent files from the home screen |
-| 🎮 **Discord Rich Presence** | Show what you're working on in Discord |
+| 🎮 **Discord Rich Presence** | Show what you're working on in Discord (optional, toggle in Settings) |
 | ⌨️ **Smart Editing** | Auto-closing brackets, auto-indent, and find-in-file |
-| 🖼️ **Image Preview** | View image files directly in the editor |
+| 🖼️ **Image Preview** | View image files directly in the editor, with zoom |
+| 🔄 **Background Auto-Updates** | Kodo checks GitHub releases on its own and keeps both the app and your installed extensions up to date |
+| 🚀 **Guided Tutorial** | A short built-in walkthrough for first-time setup, revisitable any time from Settings |
 
 **Coming soon:** real-time collaborative editing · downloadable compilers ·  and much more!
 
