@@ -1,4 +1,4 @@
-// Licensed under the Kodo Public License v1.1
+// Licensed under the GPL-3.0
 using System;
 using System.Reflection;
 using System.Collections.Generic;
@@ -187,6 +187,20 @@ public class FileTreeItem : INotifyPropertyChanged
 			    _ => "..",
 			};
     }
+}
+
+// Single source of truth for well-known built-in extension ids. Several
+// colorizers/highlighters independently need to know "is this the built-in
+// Markdown extension?" (to switch between plain token-rule highlighting and
+// Markdown's own block/inline rules) - previously each of those five call
+// sites hardcoded the literal "markdown-kodo-extension" string, so a future
+// rename to any one of them would silently desync from the others.
+public static class KodoExtensionIds
+{
+    public const string Markdown = "markdown-kodo-extension";
+
+    public static bool IsMarkdown(string? extensionId) =>
+        string.Equals(extensionId, Markdown, StringComparison.OrdinalIgnoreCase);
 }
 
 public record class LoadedExtension : INotifyPropertyChanged
@@ -584,7 +598,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // To update the app version, change only that tag in the csproj.
     // Resolved via KodoDiagnostics.AppVersion (strips the +<git-hash> suffix).
     private static readonly string CurrentAppVersion = KodoDiagnostics.AppVersion;
-    public string CopyrightText => $"© {DateTime.Now.Year} KerbalMissile and SS-YYC. Licensed under KPL-v1.1.";
+    public string CopyrightText => $"© {DateTime.Now.Year} KerbalMissile and SS-YYC. Licensed under GPL-3.0.";
     // GitHub Contents API endpoint for the extension index JSON.
     // All Kodo-hosted assets (index JSON, extension .kox packages, and repo-hosted
     // icon images) are fetched via the Contents API with the raw+json Accept header,
@@ -3415,6 +3429,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             effectiveExtension.Keywords = [];
         if (matchingProfiles.Any(profile => profile.Types.Length > 0))
             effectiveExtension.Types = [];
+        if (matchingProfiles.Any(profile => profile.Functions.Length > 0))
+            effectiveExtension.Functions = [];
+        if (matchingProfiles.Any(profile => profile.Properties.Length > 0))
+            effectiveExtension.Properties = [];
+        if (matchingProfiles.Any(profile => profile.Namespaces.Length > 0))
+            effectiveExtension.Namespaces = [];
 
         foreach (var profile in matchingProfiles)
             ApplyLanguageProfile(effectiveExtension, profile);
@@ -3762,7 +3782,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var bestMatch = LoadedExtensions
             .Where(extension =>
                 extension.Type == "language" &&
-                !string.Equals(extension.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase))
+                !KodoExtensionIds.IsMarkdown(extension.Id))
             .Select(extension => new
             {
                 Extension = extension,
@@ -3859,7 +3879,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         // Rainbow brackets have no meaning in plain text or markdown prose.
         // Markdown fenced code blocks are colourised by _markdownColorizer independently.
-        var isMarkdown = string.Equals(ext?.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase);
+        var isMarkdown = KodoExtensionIds.IsMarkdown(ext?.Id);
         _rainbowBracketColorizer.UpdateSyntax(isMarkdown ? null : ext);
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
@@ -12663,7 +12683,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
     private void BuildRules(CompiledSyntaxProfile syntaxProfile)
     {
         foreach (var rule in syntaxProfile.TokenRules)
-            _rules.Add(new SyntaxBrushRule(rule.Regex, BrushFor(syntaxProfile.Extension, rule.ColorTokenName, rule.FallbackHex)));
+            _rules.Add(new SyntaxBrushRule(rule.Regex, BrushFor(syntaxProfile.Extension, rule.ColorTokenName, rule.FallbackHex), rule.ColorTokenName));
     }
 
     private static InterpolationSupport BuildSupport(LoadedExtension extension)
@@ -12676,7 +12696,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
             .ToHashSet(StringComparer.Ordinal);
 
         var supportsJavaScriptTemplate = multiLineDelimiters.Contains("`") &&
-            !string.Equals(extension.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase);
+            !KodoExtensionIds.IsMarkdown(extension.Id);
         var supportsPythonStyleInterpolation =
             string.Equals(extension.CommentLine, "#", StringComparison.Ordinal) &&
             !extension.DisableSingleQuoteStrings &&
@@ -12840,11 +12860,24 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
             return;
 
         var expressionText = text.Substring(expressionStart, expressionEnd - expressionStart);
+
+        // Reserve each match's range so earlier (more specific) rules can't be
+        // partially overwritten by later, more generic ones - e.g. the
+        // catch-all "variable" rule repainting part of an already-coloured
+        // preprocessor/attribute/function match. This mirrors the same fix in
+        // EmbeddedSyntaxProfile.Process() (SyntaxColorEngine.cs) and keeps
+        // interpolated-expression highlighting consistent with how the same
+        // rule list is resolved for real files and embedded/Markdown code.
+        var protectedRanges = new bool[expressionText.Length];
+
         foreach (var rule in _rules)
         {
             foreach (Match match in rule.Regex.Matches(expressionText))
             {
                 if (!match.Success || match.Length <= 0)
+                    continue;
+
+                if (!TryReserveExpressionRange(protectedRanges, match.Index, match.Index + match.Length))
                     continue;
 
                 ApplyBrush(
@@ -12855,6 +12888,23 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         }
 
         ApplyRainbowBrackets(text, lineOffset, expressionStart, expressionEnd);
+    }
+
+    private static bool TryReserveExpressionRange(bool[] protectedRanges, int start, int end)
+    {
+        if (start < 0 || end > protectedRanges.Length || start >= end)
+            return false;
+
+        for (var index = start; index < end; index++)
+        {
+            if (protectedRanges[index])
+                return false;
+        }
+
+        for (var index = start; index < end; index++)
+            protectedRanges[index] = true;
+
+        return true;
     }
 
     private void ApplyInterpolationPrefix(int lineOffset, int startIndex, int contentStart, int quoteLength)
@@ -13149,7 +13199,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
             RegexOptions.Compiled);
     }
 
-    private readonly record struct SyntaxBrushRule(Regex Regex, IBrush Brush);
+    private readonly record struct SyntaxBrushRule(Regex Regex, IBrush Brush, string ColorTokenName);
     private readonly record struct InterpolationSupport(bool SupportsJavaScriptTemplate, bool SupportsPythonStyle, bool SupportsDollarPrefixed)
     {
         public bool HasAny => SupportsJavaScriptTemplate || SupportsPythonStyle || SupportsDollarPrefixed;
@@ -13391,6 +13441,23 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             MarkRange(protectedRanges, markers.Index, markers.Index + markers.Length);
         }
 
+        // Code spans bind tighter than any other inline construct (CommonMark:
+        // code spans/autolinks/raw HTML > links > emphasis), so they must be
+        // reserved and colourised before HTML comments/tags, table pipes,
+        // links, or autolinks get a chance to claim the same text. Doing this
+        // later (as before) meant an inline code span containing a '|', a
+        // `[text](url)`-shaped substring, or a `<tag>`-shaped substring would
+        // get misread as a table separator / link / HTML tag, and the code
+        // span itself would then fail to reserve its range and render
+        // uncoloured instead of using the resolved language's own colours.
+        foreach (Match match in InlineCodeRegex.Matches(text))
+        {
+            if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
+                continue;
+
+            ColorizeInlineCode(match, lineOffset);
+        }
+
         foreach (Match match in HtmlCommentRegex.Matches(text))
         {
             if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
@@ -13414,12 +13481,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
                 ApplyBrush(lineOffset, start, end, _stringBrush);
             }
-        }
-
-        foreach (Match match in TablePipeRegex.Matches(text))
-        {
-            ApplyBrush(lineOffset, match.Index, match.Index + match.Length, _mutedBrush);
-            MarkRange(protectedRanges, match.Index, match.Index + match.Length);
         }
 
         foreach (Match match in LinkRegex.Matches(text))
@@ -13455,14 +13516,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
         }
 
-        foreach (Match match in InlineCodeRegex.Matches(text))
-        {
-            if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
-                continue;
-
-            ColorizeInlineCode(match, lineOffset);
-        }
-
         foreach (Match match in AutoLinkRegex.Matches(text))
         {
             if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
@@ -13474,6 +13527,20 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
                 ApplyBrush(lineOffset, match.Index, match.Index + 1, _punctuationBrush);
                 ApplyBrush(lineOffset, match.Index + match.Length - 1, match.Index + match.Length, _punctuationBrush);
             }
+        }
+
+        // Table-pipe coloring runs last among these passes and must respect
+        // ranges already claimed above (was previously unconditional, so a
+        // '|' inside an inline code span, link, or autolink got recoloured
+        // and re-marked as protected regardless of what already owned it -
+        // which could also make an *earlier*-processed code span's own
+        // TryReserveRange fail on a later pass over the same text).
+        foreach (Match match in TablePipeRegex.Matches(text))
+        {
+            if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
+                continue;
+
+            ApplyBrush(lineOffset, match.Index, match.Index + match.Length, _mutedBrush);
         }
 
         ApplyDelimitedMarkdownRegex(text, lineOffset, protectedRanges, StrongEmphasisRegex, _operatorBrush);
@@ -13908,7 +13975,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     }
 
     private static bool IsMarkdownExtension(LoadedExtension? extension) =>
-        string.Equals(extension?.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase);
+        KodoExtensionIds.IsMarkdown(extension?.Id);
 
     private static IBrush BrushFor(LoadedExtension extension, string tokenName, string fallback)
     {
@@ -13984,7 +14051,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
     private static readonly Regex TypeAttributeRegex =
         new(@"\btype\s*=\s*(?:""(?<value>[^""]*)""|'(?<value>[^']*)'|(?<value>[^\s>]+))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
-        typeof(VisualLineElement).GetMethod("set_TextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
+        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private HtmlSnapshot? _snapshot;
     private Func<string, string?, CompiledSyntaxProfile?>? _languageResolver;
@@ -14297,7 +14364,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             ext.MultiLineStringDelimiters.Contains("\"\"\"") ||
             ext.MultiLineStringDelimiters.Contains("'''");
 
-        var isMarkdown = string.Equals(ext.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase);
+        var isMarkdown = KodoExtensionIds.IsMarkdown(ext.Id);
 
         // ── Inner rulesets ────────────────────────────────────────────────────────────
         // codeRuleSet  - holds keyword/type/number rules; used as the inner ruleset of

@@ -72,25 +72,38 @@ public sealed class CompiledSyntaxProfile
             rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_-])@[\p{L}_-][\p{L}\p{Nd}_-]*(?![\p{L}\p{Nd}_-])", RegexOptions.Compiled), "preprocessor", "#C586C0"));
         }
 
-        if (!traits.IsMarkupLike)
-        {
-            rules.Add(new(new Regex(@"(?<=\.|->|::)[\p{L}_][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled), "property", "#9CDCFE"));
-            rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\.)", RegexOptions.Compiled), "namespace", "#4FC1FF"));
-        }
-
         if (traits.IsMarkupLike)
         {
             rules.Add(new(new Regex(@"</?|/?>|=", RegexOptions.Compiled), MarkupTextToken, MarkupTextFallback));
         }
         else
         {
+            // Rule order below is deliberate and load-bearing, not cosmetic.
+            //
+            // Both consumers of this list resolve overlapping matches by treating
+            // earlier rules as higher priority: AvaloniaEdit's HighlightingRuleSet
+            // breaks same-position ties by rule order, and EmbeddedSyntaxProfile.
+            // Process() now reserves each match's range so later rules can no
+            // longer repaint text an earlier rule already claimed. That means the
+            // most structurally distinctive rules must come first so the generic,
+            // catch-all "variable" rule at the very end can never partially
+            // overwrite them - e.g. `#define FOO` must keep its preprocessor
+            // colour instead of "FOO" getting repainted as a variable, and
+            // `obj.Method()` should read as a function call rather than a
+            // property access.
             rules.Add(new(new Regex(
                 traits.IsCssLike
                     ? @"(?<![\p{L}\p{Nd}_-])@[\p{L}_-][\p{L}\p{Nd}_-]*(?![\p{L}\p{Nd}_-])"
                     : @"(?<![\p{L}\p{Nd}_])[@#][\p{L}_][\p{L}\p{Nd}_-]*",
                 RegexOptions.Compiled), "preprocessor", "#C586C0"));
             rules.Add(new(new Regex(@"(?<=\[)[\p{L}_][\p{L}\p{Nd}_:.]*(?=[,\]\(])|(?<=<)[\p{L}_][\p{L}\p{Nd}_:-]*(?=[^>]*>)", RegexOptions.Compiled), "attribute", "#C586C0"));
+            // Function calls (identifier immediately followed by '(') must be
+            // scored before namespace/property-by-dot below, so `a.b.Method()`
+            // colours "Method" as a function even though it's also preceded by
+            // a dot.
             rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\s*\()", RegexOptions.Compiled), "function", "#DCDCAA"));
+            rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\.)", RegexOptions.Compiled), "namespace", "#4FC1FF"));
+            rules.Add(new(new Regex(@"(?<=\.|->|::)[\p{L}_][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled), "property", "#9CDCFE"));
             rules.Add(new(new Regex(@"=>|->|::|\+\+|--|\+=|-=|\*=|/=|%=|&&|\|\||<<|>>|<=|>=|==|!=|=|\+|-|\*|/|%|!|\?|:|<|>|&|\||\^|~", RegexOptions.Compiled), "operator", "#D4D4D4"));
             rules.Add(new(new Regex(@"[{}\[\]();,.]", RegexOptions.Compiled), "punctuation", "#D4D4D4"));
             rules.Add(new(new Regex(@"(?<=\b(?:using|import|include|require|use|from)\b\s+(?:[\p{L}_][\p{L}\p{Nd}_./\\]*\s*[./\\]\s*)?)[\p{L}_][\p{L}\p{Nd}_]*(?=\s*(?:;|$))", RegexOptions.Compiled), "namespace", "#4FC1FF"));
@@ -326,13 +339,13 @@ public sealed class EmbeddedSyntaxProfile
     public LoadedExtension Extension { get; }
     public IBrush CommentBrush { get; }
     public IBrush StringBrush { get; }
-    public IReadOnlyList<(Regex Regex, IBrush Brush)> TokenRules { get; }
+    public IReadOnlyList<(Regex Regex, IBrush Brush, string ColorTokenName)> TokenRules { get; }
 
     private EmbeddedSyntaxProfile(
         LoadedExtension extension,
         IBrush commentBrush,
         IBrush stringBrush,
-        IReadOnlyList<(Regex Regex, IBrush Brush)> tokenRules)
+        IReadOnlyList<(Regex Regex, IBrush Brush, string ColorTokenName)> tokenRules)
     {
         Extension = extension;
         CommentBrush = commentBrush;
@@ -347,7 +360,8 @@ public sealed class EmbeddedSyntaxProfile
                 rule.Regex,
                 Brush.Parse(syntaxProfile.Extension.ColorTokens.TryGetValue(rule.ColorTokenName, out var hex)
                     ? hex
-                    : rule.FallbackHex)))
+                    : rule.FallbackHex),
+                rule.ColorTokenName))
             .ToArray();
 
         return new EmbeddedSyntaxProfile(
@@ -495,11 +509,29 @@ public sealed class EmbeddedSyntaxProfile
             }
         }
 
-        foreach (var (regex, brush) in TokenRules)
+        foreach (var (regex, brush, colorTokenName) in TokenRules)
         {
+            // Punctuation intentionally does not reserve its range: rainbow
+            // bracket coloring (below) needs to be able to repaint the same
+            // bracket characters afterward. Every other rule reserves its
+            // range so an earlier, more specific match (e.g. a preprocessor
+            // directive or an attribute) can no longer be partially
+            // overwritten by a later, more generic rule (e.g. the catch-all
+            // "variable" rule) claiming an overlapping slice of the same text.
+            var isPunctuation = string.Equals(colorTokenName, "punctuation", StringComparison.Ordinal);
+
             foreach (Match match in regex.Matches(text))
             {
-                if (IsProtected(protectedRanges, match.Index, match.Index + match.Length))
+                if (isPunctuation)
+                {
+                    if (IsProtected(protectedRanges, match.Index, match.Index + match.Length))
+                        continue;
+
+                    applyBrush?.Invoke(match.Index, match.Index + match.Length, brush);
+                    continue;
+                }
+
+                if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
                     continue;
 
                 applyBrush?.Invoke(match.Index, match.Index + match.Length, brush);
@@ -806,7 +838,7 @@ public static class InlineCodeLanguageDetector
         var bestMatch = extensions
             .Where(extension =>
                 extension.Type == "language" &&
-                !string.Equals(extension.Id, "markdown-kodo-extension", StringComparison.OrdinalIgnoreCase))
+                !KodoExtensionIds.IsMarkdown(extension.Id))
             .Select(extension => Score(extension, snippet, hasCodePunctuation))
             .Where(result => result.Extension is not null)
             .OrderByDescending(result => result.Score)
