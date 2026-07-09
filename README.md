@@ -19,7 +19,7 @@
 
 Kodo is built by [KerbalMissile](https://github.com/KerbalMissile) and [SS-YYC](https://github.com/SS-YYC) around a single idea: your editor should stay out of your way. Quick setup, syntax highlighting via extensions, and zero friction from launch to coding.
 
-Released under the [Kodo Public License v1.1](LICENSE.md).
+Released under the [GPL-v3.0 license](LICENSE.md).
 
 **[▶ Watch the Demo (this is from a Beta version)](https://youtu.be/jYXhelB9CfM)  ·  [🌐 Website](https://kerbalmissile.github.io/Kodo-Website/)  ·  [💬 Join The Discord](https://discord.gg/cUQ6C88Z9C)**
 
@@ -68,4 +68,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full details, including how to build 
 
 ## License
 
-© 2026 KerbalMissile and SS-YYC. Licensed under the [Kodo Public License v1.1](LICENSE.md).
+© 2026 KerbalMissile and SS-YYC. Licensed under the [GPL-v3.0 license](LICENSE.md).
