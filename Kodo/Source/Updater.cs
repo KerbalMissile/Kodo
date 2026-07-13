@@ -30,10 +30,7 @@ internal sealed record UpdateInfo(
 // Reports download progress back to the UI (0.0 - 1.0, plus a human label).
 internal sealed record UpdateDownloadProgress(double Fraction, string Label);
 
-// Checks GitHub Releases for a newer Kodo build, downloads the installer asset,
-// and launches it with silent/auto-restart flags so the update applies with
-// minimal friction. The whole flow is best-effort: any failure here must never
-// crash or block the app, since update-checking is a convenience feature.
+// Checks GitHub Releases, downloads the installer, and launches it silently. Best-effort only.
 internal static class UpdateService
 {
     // Repo that publishes Kodo releases. Update if the repo ever moves.
@@ -60,9 +57,7 @@ internal static class UpdateService
 
     // ── Update check ──────────────────────────────────────────────────────────
 
-    // Hits the GitHub "latest release" endpoint and compares its tag against the
-    // currently running version. Returns null if there's no update, the check
-    // failed (offline, rate-limited, etc.), or no installer asset could be found.
+    // Hits GitHub's "latest release" endpoint and compares tags; null if none, unreachable, or no installer asset.
     public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default)
     {
         try
@@ -107,11 +102,7 @@ internal static class UpdateService
         }
     }
 
-    // Compares two "vX.Y.Z"-style tags. Returns true if `remote` is strictly
-    // newer than `local`. Falls back to a simple string-inequality check if
-    // either string doesn't parse as a dotted version, so unexpected tag
-    // formats (e.g. "v1.1.0-DEV") never crash the comparison - they're just
-    // treated as "different, but not necessarily newer" unless segments parse.
+    // Compares two vX.Y.Z tags; true if remote is newer. Falls back to string inequality for unparseable formats.
     internal static bool IsNewerVersion(string remote, string local)
     {
         var remoteParts = ParseVersionParts(remote);
@@ -156,12 +147,7 @@ internal static class UpdateService
 
     // ── Settings ──────────────────────────────────────────────────────────────
 
-    // Reads the "Automatically check for Kodo updates" toggle
-    // directly from kodosettings.json. Mirrors AccentResolver's approach below:
-    // a tiny, best-effort, standalone read so App.axaml.cs's startup check can
-    // honour the setting without needing a MainWindow/ViewModel instance to
-    // exist yet. Defaults to true (matching AppSettings.AutoUpdateAppEnabled's
-    // own default) if the file is missing, unreadable, or doesn't have the key.
+    // Reads the auto-update toggle directly from kodosettings.json, standalone, before a MainWindow exists. Defaults to true.
     public static bool IsAutoUpdateEnabledInSettings()
     {
         try
@@ -185,11 +171,7 @@ internal static class UpdateService
         }
     }
 
-    // Same best-effort standalone read as IsAutoUpdateEnabledInSettings, for the
-    // "Update Kodo in the background" sub-setting. Defaults to false
-    // (matching AppSettings.AutoUpdateAppInBackgroundEnabled's own default) so
-    // App.axaml.cs's launch-time check still shows the UpdateDialog prompt
-    // unless the user has explicitly opted into fully silent installs.
+    // Same standalone read, for "Update Kodo in the background"; defaults to false.
     public static bool IsAutoUpdateInBackgroundEnabledInSettings()
     {
         try
@@ -275,58 +257,28 @@ internal static class UpdateService
 
     // ── Install / restart ────────────────────────────────────────────────────
 
-    // Launches the downloaded installer with Inno Setup's silent + auto-restart
-    // flags, then immediately exits the current process so the installer can
-    // overwrite the running Kodo.exe.
-    //
-    //   /VERYSILENT          - no UI at all (no wizard pages, no progress window)
-    //   /SUPPRESSMSGBOXES    - suppress any message boxes Inno would otherwise show
-    //   /NORESTART           - never reboot the machine, even if a file is locked
-    //   /CLOSEAPPLICATIONS   - automatically close apps using files the installer
-    //                          needs to replace (requires AppMutex/CloseApplications
-    //                          to be set in the .iss script - if it isn't, this flag
-    //                          is simply ignored rather than failing)
-    //   /RESTARTAPPLICATIONS - relaunch Kodo automatically once setup finishes
-    //
-    // If the .iss script doesn't have CloseApplicationsFilter configured, the
-    // explicit Process.GetCurrentProcess().Kill() fallback below still ensures the
-    // running exe is unlocked before the installer tries to write to it.
+    // Launches the installer with Inno Setup's silent + auto-restart flags, then exits so it can overwrite the running Kodo.exe.
+    // /VERYSILENT no UI, /SUPPRESSMSGBOXES no message boxes, /NORESTART no reboot, /CLOSEAPPLICATIONS closes locking apps, /RESTARTAPPLICATIONS relaunches Kodo.
+    // If CloseApplicationsFilter isn't configured in the .iss, the explicit Process.Kill() fallback below still unlocks the exe.
     public static void LaunchInstallerAndExit(string installerPath)
     {
         var startInfo = new ProcessStartInfo
         {
             FileName        = installerPath,
-            // NOTE: no /SKIPIFSILENT. KodoInstaller.iss's [Run] "Launch Kodo"
-            // entry is what actually relaunches the app post-install; that
-            // entry is itself conditioned on a silent run, so /SKIPIFSILENT
-            // was suppressing the one thing that reliably restarts Kodo.
-            // /RESTARTAPPLICATIONS alone isn't sufficient because it depends
-            // on Restart Manager having already recorded this process, which
-            // needs more lead time than we were giving it (see Thread.Sleep
-            // below) before Environment.Exit(0) tears it down.
+            // No /SKIPIFSILENT: the .iss's "Launch Kodo" entry needs a silent run to fire, and /RESTARTAPPLICATIONS alone needs Restart Manager to have recorded this process.
             Arguments       = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
             UseShellExecute = true,
         };
 
         Process.Start(startInfo);
 
-        // Give the installer enough time to spin up AND for Restart Manager
-        // to register this process before we exit. 500ms was too tight - the
-        // installer's RM session would sometimes query process state after
-        // we'd already vanished, so it never saw Kodo as "needs restarting"
-        // and the post-update relaunch silently failed.
+        // Gives the installer time to start and Restart Manager to register this process - 500ms was too tight.
         Thread.Sleep(1500);
 
         Environment.Exit(0);
     }
 
-    // Downloads and installs an update with no UI at all - no dialog, no
-    // "Update Now" prompt, no progress bar. Used in place of UpdateDialog.ShowFor
-    // when the user has opted into "Update Kodo in the background"
-    // (MainWindow's IsAutoUpdateAppInBackgroundEnabled, or the equivalent flag
-    // read via IsAutoUpdateInBackgroundEnabledInSettings for the launch-time
-    // check). Mirrors UpdateDialog.BeginUpdateAsync's download -> launch
-    // sequence, minus anything that needs a window to report progress to.
+    // Downloads and installs with no UI, used for "Update Kodo in the background"; mirrors UpdateDialog's download-then-launch.
     public static async Task SilentlyInstallAsync(UpdateInfo update, CancellationToken ct = default)
     {
         try
@@ -336,9 +288,7 @@ internal static class UpdateService
         }
         catch (Exception ex)
         {
-            // Best-effort, like every other step of the update pipeline - log
-            // and move on. The user simply isn't bumped to this version until
-            // the next check picks it up again.
+            // Best-effort like the rest of the pipeline - log and move on; the user is picked up on the next check.
             KodoDiagnostics.WriteDiagnosticLog(
                 source: "UpdateService.SilentlyInstallAsync",
                 exception: ex,
@@ -348,27 +298,13 @@ internal static class UpdateService
         }
     }
 
-    // ── Consolidated check-then-act flow ─────────────────────────────────────
-    //
-    // Every call site that wants to "check for an update and do something
-    // about it" (the manual Settings button, the releases-page fallback, and
-    // the periodic background timer) used to duplicate this exact branch:
-    // check → if found, either silently install or show UpdateDialog. This
-    // is the single place that logic lives now; callers just decide what to
-    // do with the optional pre-install status callback and the final result.
+    // Consolidated check-then-act flow, replacing duplicated check/install/dialog branches at each call site.
 
     /// <summary>
-    /// Checks for an update and, if one is found, either installs it silently
-    /// or shows <see cref="UpdateDialog"/>, depending on <paramref name="installInBackground"/>.
-    /// Returns the <see cref="UpdateInfo"/> that was found (after handling it),
-    /// or <c>null</c> if no update was available. Never throws - failures are
-    /// already swallowed by <see cref="CheckForUpdateAsync"/> and <see cref="SilentlyInstallAsync"/>.
+    /// Checks for an update and installs silently or shows UpdateDialog, per installInBackground.
+    /// Returns the <see cref="UpdateInfo"/> found, or <c>null</c>. Never throws.
     /// </summary>
-    /// <param name="onUpdateFound">
-    /// Optional callback invoked the moment an update is found, before the
-    /// install/dialog branch runs - lets a caller update status text (e.g.
-    /// "Kodo vX is available.") without waiting for a silent install to finish.
-    /// </param>
+    /// onUpdateFound fires the moment an update is found, before the install/dialog branch runs.
     public static async Task<UpdateInfo?> CheckAndHandleUpdateAsync(
         bool installInBackground,
         Action<UpdateInfo>? onUpdateFound = null,
@@ -425,16 +361,10 @@ internal static class UpdateService
     }
 }
 
-// ── Update dialog UI ─────────────────────────────────────────────────────────
-// Sleek, self-contained update dialog. Built entirely in code (no AXAML) so it
-// has zero dependency on App.axaml/MainWindow.axaml resources, mirroring the
-// crash dialog's approach in App.axaml.cs. Walks the user through:
-//   "Update available" -> [Update Now] -> progress bar -> installer launch.
+// Update dialog UI: self-contained, built in code. Flow: Update available -> Update Now -> progress -> installer launch.
 internal sealed class UpdateDialog : Window
 {
-    // Same dark-surface palette used by every other Kodo dialog (see
-    // DialogPalette below), so every dialog looks consistent regardless of
-    // which theme/accent the user has selected.
+    // Same dark-surface palette as every other Kodo dialog, for visual consistency.
     private static readonly Color SurfaceColor   = DialogPalette.Surface;
     private static readonly Color SurfaceDeep    = DialogPalette.SurfaceDeep;
     private static readonly Color BorderColor    = DialogPalette.Border;
@@ -455,10 +385,7 @@ internal sealed class UpdateDialog : Window
     private readonly Button _laterButton;
     private readonly StackPanel _content;
 
-    // preDownloadedInstallerPath is set when KodoUpdater (the standalone
-    // background process) already fetched the installer and wrote the
-    // pending-update sentinel - in that case "Update Now" skips straight to
-    // launching it instead of re-downloading.
+    // preDownloadedInstallerPath means KodoUpdater already fetched the installer; Update Now skips straight to launching it.
     public UpdateDialog(UpdateInfo update, string? preDownloadedInstallerPath = null)
     {
         _update = update;
@@ -583,9 +510,7 @@ internal sealed class UpdateDialog : Window
         Content = _content;
     }
 
-    // Shows the dialog non-modally if no owner can be safely used, or as a
-    // modal dialog over the main window otherwise. Mirrors the crash dialog's
-    // owner-safety check (a closing/invisible window throws on ShowDialog).
+    // Shows non-modally if no owner can be safely used, modal otherwise - mirrors the crash dialog's owner-safety check.
     public static void ShowFor(UpdateInfo update, string? installerPath = null)
     {
         Dispatcher.UIThread.Post(() =>
@@ -680,13 +605,7 @@ internal sealed class UpdateDialog : Window
         }
     }
 }
-// ── Shared dialog palette ────────────────────────────────────────────────────
-// Single source of truth for the dark-surface colours used by every
-// code-built dialog in the app (crash dialog in App.axaml.cs, update dialog
-// below, and the various in-app dialogs in MainWindow.axaml.cs). Previously
-// each dialog kept its own duplicate copy of these hex values; centralising
-// them here means a single change actually propagates everywhere, rather than
-// only where a comment claimed it would.
+// Single source of truth for the dark-surface colours used by every code-built dialog.
 internal static class DialogPalette
 {
     public static readonly Color Surface     = Color.Parse("#1E1E1E");
@@ -699,26 +618,14 @@ internal static class DialogPalette
     public static readonly Color TokenOrange = Color.Parse("#CE9178");  // stack trace
 }
 
-// ── Accent colour resolution ─────────────────────────────────────────────────
-// Resolves the user's chosen accent colour outside of MainWindow, for dialogs
-// (crash dialog, update dialog, etc.) that may need to appear before a
-// MainWindow exists or independently of it. Mirrors MainWindow's
-// ApplyAccentColorMode resolution switch so every dialog in the app agrees on
-// what "the accent colour" currently means.
-//
-// NOTE on "theme" mode: MainWindow derives the theme accent at runtime from
-// whichever extension theme is actively loaded, and that value isn't persisted
-// to kodosettings.json. Since standalone dialogs can't safely load the extension
-// system themselves, "theme" mode falls back to the fixed Kodo purple here -
-// the same fallback MainWindow itself uses before any theme has loaded.
+// Resolves the accent colour outside MainWindow, for dialogs that may appear before or independently of it.
+// "Theme" mode falls back to Kodo purple, since standalone dialogs can't load the extension system.
 internal static class AccentResolver
 {
     private const string DefaultAccentHex = "#8C00FF";
     private const string SettingsFileName = "kodosettings.json";
 
-    // Cached for the lifetime of the process - dialogs are short-lived, and the
-    // accent rarely changes mid-session, so re-reading the registry/disk on
-    // every dialog open isn't worth the (tiny) risk of a stale read mattering.
+    // Cached for the process lifetime - dialogs are short-lived and the accent rarely changes mid-session.
     public static (Color Accent, Color Foreground) GetCurrentAccent()
     {
         var hex = ResolveAccentHex();
@@ -735,9 +642,7 @@ internal static class AccentResolver
 
         return settings.AccentColorMode switch
         {
-            // "theme" can't be resolved without the extension system loaded -
-            // fall back to the fixed Kodo purple, matching MainWindow's own
-            // pre-theme-load default.
+            // "Theme" falls back to Kodo purple without the extension system loaded.
             "theme"   => DefaultAccentHex,
             "windows" => GetWindowsAccentColor() ?? "#0078D4",
             "custom"  => string.IsNullOrWhiteSpace(settings.CustomAccentHex)
@@ -796,11 +701,7 @@ internal static class AccentResolver
         return GetWindowsAccentColorWindows();
     }
 
-    // Returns Brushes-equivalent White or Black colour depending on which gives
-    // better contrast against the supplied accent colour, using the WCAG
-    // relative-luminance formula. Identical logic to MainWindow's
-    // GetAccentForeground, duplicated here so dialogs don't need a MainWindow
-    // instance to call into.
+    // Returns White or Black, whichever contrasts better against the accent (WCAG luminance).
     private static Color GetAccentForeground(Color accent)
     {
         static double Lin(byte channel)
@@ -816,9 +717,7 @@ internal static class AccentResolver
         return whiteContrast >= blackContrast ? Colors.White : Colors.Black;
     }
 
-    // Minimal subset of MainWindow's AppSettings needed to resolve the accent.
-    // Kept separate (rather than reusing MainWindow's private AppSettings) so
-    // this file has zero compile-time dependency on MainWindow.
+    // Minimal AppSettings subset needed to resolve the accent, kept separate from MainWindow.
     private sealed class AccentSettings
     {
         public string AccentColorMode { get; set; } = "kodo";
@@ -826,23 +725,12 @@ internal static class AccentResolver
     }
 }
 
-// ── Pending-update sentinel ──────────────────────────────────────────────────
-// Reads the sentinel file written by the standalone KodoUpdater.exe background
-// process (see KodoUpdater/Program.cs). KodoUpdater runs independently of
-// Kodo - including while Kodo is closed - polling GitHub every 6 hours. When
-// it finds and downloads an update it either installs silently (if the user
-// has "install in background" enabled and Kodo isn't running) or, more
-// commonly, leaves the installer on disk and writes this file so Kodo's own
-// launch-time check can show UpdateDialog pre-loaded with the installer path,
-// skipping the download step entirely.
+// Reads KodoUpdater's sentinel file; it polls GitHub every 6 hours independently and either installs silently or leaves the installer with this file for Kodo's launch check.
 internal static class PendingUpdateService
 {
     private static string FilePath => Path.Combine(Path.GetTempPath(), "Kodo-Update", "pending.json");
 
-    // Returns the pending update only if it's still newer than the running
-    // version and the installer file it points to still exists on disk -
-    // otherwise treats it the same as "no pending update" (and cleans up a
-    // stale/invalid sentinel so it isn't re-checked every launch).
+    // Returns the pending update only if still newer and the installer file still exists; otherwise cleans up the stale sentinel.
     public static (string Version, string InstallerPath)? TryGetPendingUpdate()
     {
         try
@@ -882,14 +770,7 @@ internal static class PendingUpdateService
 
     private sealed record PendingUpdateRecord(string Version, string InstallerPath, DateTime DownloadedAtUtc);
 }
-// ── Periodic background app-update scheduler ────────────────────────────────
-//
-// Owns the DispatcherTimer that drives "check for a new Kodo build every six
-// hours while the app stays open" - the launch-time check itself still lives
-// in App.axaml.cs (CheckForUpdatesInBackground); this only covers everything
-// after that. MainWindow owns one instance and feeds it small accessors for
-// the settings it needs to read, rather than the scheduler reaching back into
-// MainWindow's full surface area.
+// Owns the timer that checks for a new build every six hours while the app is open.
 internal sealed class AppUpdateScheduler
 {
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromHours(6) };
@@ -898,11 +779,7 @@ internal sealed class AppUpdateScheduler
     private readonly Func<bool> _installInBackground;
 
     /// <param name="isEnabled">Mirrors the "Automatically check for and install Kodo updates" setting.</param>
-    /// <param name="isManualCheckInProgress">
-    /// True while a manual "Check for Updates" click (Settings page) is in
-    /// flight, so the periodic tick never races it or steps on the same
-    /// status text.
-    /// </param>
+    /// True while a manual Check for Updates click is in flight, so the tick doesn't race it.
     /// <param name="installInBackground">Mirrors the "Update automatically without asking" sub-setting.</param>
     public AppUpdateScheduler(Func<bool> isEnabled, Func<bool> isManualCheckInProgress, Func<bool> installInBackground)
     {
@@ -913,8 +790,7 @@ internal sealed class AppUpdateScheduler
     }
 
     /// <summary>
-    /// Starts or stops the timer to match the current value of <c>isEnabled</c>.
-    /// Call once at startup and again every time the setting is toggled.
+    /// Starts or stops the timer to match <c>isEnabled</c>. Call once at startup and again on toggle.
     /// </summary>
     public void UpdateLifecycle()
     {
@@ -926,9 +802,7 @@ internal sealed class AppUpdateScheduler
     /// <summary>Stops the timer outright - call when the window is closing.</summary>
     public void Stop() => _timer.Stop();
 
-    // Fires every six hours while Kodo stays open and the setting is enabled,
-    // so a release published mid-session isn't only picked up on next launch.
-    // Skips while a manual check from the Settings page is already in flight.
+    // Fires every six hours while enabled; skips while a manual check is in flight.
     private async Task OnTickAsync()
     {
         if (!_isEnabled() || _isManualCheckInProgress())

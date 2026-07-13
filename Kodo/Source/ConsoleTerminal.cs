@@ -16,8 +16,7 @@ namespace Kodo;
 // ── Public surface ────────────────────────────────────────────────────────────
 
 /// <summary>
-/// A self-contained Avalonia control that hosts a shell via Windows
-/// Pseudo Console (ConPTY) and renders its VT/ANSI output directly.
+/// A self-contained Avalonia control hosting a shell via ConPTY, rendering VT/ANSI output directly.
 /// Drop it into AXAML exactly where EmbeddedTerminalHost used to live.
 /// </summary>
 public sealed class ConsoleTerminal : Control
@@ -76,12 +75,7 @@ public sealed class ConsoleTerminal : Control
     private Stream? _readStream;
     private CancellationTokenSource? _cts;
 
-    // When non-zero, the read loop discards all shell output until this
-    // timestamp (from Environment.TickCount64) has passed. Set by Start()
-    // when a snapshot restore is pending; keeps discarding through the shell's
-    // entire startup sequence (including the CSI 2 J full-screen clear that
-    // PowerShell/cmd emit as part of drawing their first prompt), so the
-    // snapshot remains visible until the shell settles and redraws normally.
+    // Discards shell output until this timestamp passes, set during a pending snapshot restore.
     private long _suppressOutputUntilTick;
 
     // Blink timer for cursor
@@ -99,31 +93,21 @@ public sealed class ConsoleTerminal : Control
         _blinkTimer.Start();
 
         AttachedToVisualTree   += (_, _) => Focus();
-        // NOTE: Do NOT call Stop() on DetachedFromVisualTree. In Avalonia,
-        // toggling IsVisible on a parent Grid causes children to detach and
-        // re-attach from the visual tree, which would kill the ConPTY process
-        // every time the terminal panel is shown or hidden. The process is
-        // stopped explicitly by the MainWindow (via Stop() / ActiveTerminalSession
-        // setter) when a session is actually closed or the window is shutting down.
+        // Doesn't call Stop() on detach - toggling IsVisible would kill the ConPTY process.
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Fired when the shell process exits. The event argument is the process
-    /// handle (<c>_hProcess</c>) that was running when <see cref="Start"/> was
-    /// called. Subscribers use it to verify the exit belongs to the process they
-    /// started, not a stale wake-up from a previous <see cref="Stop"/> call.
+    /// Fired when the shell exits, with the process handle from Start().
+    /// Subscribers use it to reject a stale wake-up from a previous <see cref="Stop"/> call.
     /// </summary>
     public event EventHandler<IntPtr>? SessionExited;
 
     /// <summary>Start a shell. Stops any previously running session first.</summary>
     /// <param name="suppressOutputUntilRestored">
-    /// Pass <c>true</c> when the caller is about to call <see cref="RestoreSnapshot"/>
-    /// immediately after this returns. The read loop will discard shell output until
-    /// <see cref="RestoreSnapshot"/> clears the flag, preventing the shell's early
-    /// prompt from racing against and overwriting the restored buffer.
-    /// Leave <c>false</c> (default) for brand-new sessions with no saved buffer.
+    /// Pass true when restoring a snapshot right after, so output is discarded until then.
+    /// Leave <c>false</c> (default) for brand-new sessions.
     /// </param>
     public void Start(string shellPath, string arguments, string workingDirectory,
                       bool suppressOutputUntilRestored = false)
@@ -135,13 +119,7 @@ public sealed class ConsoleTerminal : Control
         {
             var (cols, rows) = CalcSize();
             _cols = cols; _rows = rows;
-            // Only allocate a fresh cell grid when we are NOT about to restore a
-            // snapshot. If a restore is pending, RestoreSnapshot() will write the
-            // grid contents and the dimensions are already correct from the last
-            // ArrangeOverride. Calling ResizeCells here with a potentially stale
-            // Bounds.Size would wipe the grid to the wrong size, causing the
-            // subsequent ArrangeOverride (which uses the real layout size) to see
-            // a dimension mismatch and wipe it again.
+            // Only allocates a fresh grid when no restore is pending.
             if (!suppressOutputUntilRestored)
                 ResizeCells(rows, cols);
 
@@ -173,10 +151,7 @@ public sealed class ConsoleTerminal : Control
             NativeConPty.LaunchProcess(cmdLine, workingDirectory, _hPcon,
                 out _hProcess, out _hThread);
 
-            // If the caller is about to restore a snapshot, suppress output for
-            // 500 ms - long enough for the shell's full startup sequence (including
-            // the CSI 2 J screen-clear that PowerShell/cmd/bash all send while
-            // drawing their first prompt) to pass without wiping the snapshot.
+            // Suppresses output for 500ms so the shell's startup redraw can't wipe a pending restore.
             _suppressOutputUntilTick = suppressOutputUntilRestored
                 ? Environment.TickCount64 + 500
                 : 0;
@@ -184,10 +159,7 @@ public sealed class ConsoleTerminal : Control
             // Start reading output
             _ = Task.Run(() => ReadOutputLoop(_cts.Token), _cts.Token);
 
-            // Watch for process exit. Capture the handle into a local so the
-            // background task holds the exact value that was alive at Start() time.
-            // The UI-thread post passes it as the event argument so the subscriber
-            // can reject stale wake-ups that belong to a since-stopped process.
+            // Watches for process exit, capturing the handle so stale wake-ups can be rejected.
             var watchedHandle = _hProcess;
             _ = Task.Run(() =>
             {
@@ -255,18 +227,12 @@ public sealed class ConsoleTerminal : Control
     public bool HasLiveProcess => _hPcon != IntPtr.Zero;
 
     /// <summary>
-    /// The process handle that was returned by the most recent successful
-    /// <see cref="Start"/> call. Used by the exit handler in MainWindow to
-    /// verify that a <see cref="SessionExited"/> post belongs to the process
-    /// it subscribed for, not a stale wake-up from a previous Stop().
-    /// Zero when no process is running.
+    /// The process handle from the most recent successful <see cref="Start"/> call.
+    /// Verifies a SessionExited post belongs to the subscribed process; zero if none running.
     /// </summary>
     public IntPtr CurrentProcessHandle => _hProcess;
 
-    /// <summary>
-    /// Captures the current screen buffer and cursor state so it can be
-    /// restored later when switching back to this session.
-    /// </summary>
+    /// Captures the screen buffer and cursor state for restoring this session later.
     public TerminalSnapshot SaveSnapshot()
     {
         lock (_lock)
@@ -280,22 +246,12 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
-    /// <summary>
-    /// Replaces the current screen buffer with a previously saved snapshot,
-    /// preserving the running ConPTY process. Called after switching sessions
-    /// so the incoming session's output is immediately visible.
-    /// </summary>
+    /// Replaces the screen buffer with a saved snapshot, keeping the ConPTY process running.
     public void RestoreSnapshot(TerminalSnapshot snap)
     {
         lock (_lock)
         {
-            // Restore cell content into the *current* grid dimensions rather than
-            // the snapshot's saved dimensions. This is critical: ArrangeOverride
-            // fires a layout pass shortly after this call and invokes Resize() with
-            // the current control size. If _rows/_cols already match the control
-            // size, Resize() is a no-op and the restored content survives. If we
-            // instead restored the snapshot's (possibly different) dimensions,
-            // the next Resize() would allocate a new grid and zero out everything.
+            // Restores into the current grid dimensions so the next Resize() is a no-op.
             var copyR = Math.Min(_rows, snap.Rows);
             var copyC = Math.Min(_cols, snap.Cols);
             var newCells = new TermCell[_rows, _cols];
@@ -316,10 +272,7 @@ public sealed class ConsoleTerminal : Control
             _csiParam.Clear();
             _csiParam.Append(snap.CsiParam);
 
-            // The suppression window set in Start() keeps the shell's startup
-            // sequence (including its CSI 2 J screen-clear) from wiping the
-            // snapshot. No need to clear it here - it will expire on its own
-            // after 500 ms, at which point the shell's redrawn prompt takes over.
+            // The suppression window already covers the startup screen-clear; expires on its own.
         }
         // Redraw immediately with the restored content.
         InvalidateVisual();
@@ -358,9 +311,7 @@ public sealed class ConsoleTerminal : Control
             }
         }
 
-        // 3. Alt+key → ESC-prefix the character so readline / vim get Alt sequences.
-        //    Only do this when it won't produce a TextInput event with the right text
-        //    (i.e. non-printable Alt combos like Alt+F, Alt+B used by readline).
+        // Alt+key ESC-prefixes the character for readline/vim, when it won't fire TextInput.
         if (e.KeyModifiers == KeyModifiers.Alt)
         {
             var altChar = AltKeyChar(e.Key);
@@ -388,9 +339,7 @@ public sealed class ConsoleTerminal : Control
 
     protected override Size ArrangeOverride(Size final)
     {
-        // Skip resizing the cell grid while a snapshot restore is pending.
-        // The suppression window covers the shell's full startup sequence so
-        // a layout pass can't wipe the restored content before it's visible.
+        // Skips resizing the grid while a snapshot restore is pending.
         if (Environment.TickCount64 >= _suppressOutputUntilTick)
         {
             var (cols, rows) = CalcSize(final);
@@ -510,11 +459,7 @@ public sealed class ConsoleTerminal : Control
                 var text = Encoding.UTF8.GetString(buf, 0, n);
                 lock (_lock)
                 {
-                    // Drain the pipe even while suppressed so the shell doesn't
-                    // block, but discard bytes until the suppression window expires.
-                    // This covers the shell's full startup sequence including the
-                    // CSI 2 J screen-clear that most shells emit while drawing their
-                    // first prompt - which would otherwise wipe the restored snapshot.
+                    // Drains the pipe while suppressed, discarding bytes until the window expires.
                     if (Environment.TickCount64 >= _suppressOutputUntilTick)
                         foreach (var ch in text) ProcessChar(ch);
                 }
@@ -639,9 +584,7 @@ public sealed class ConsoleTerminal : Control
             // Insert / delete / erase chars
             case '@': InsertChars(P(0)); break;
             case 'P': DeleteChars(P(0)); break;
-            // CSI <n> X - Erase Character: blank n cells at cursor without moving it.
-            // PSReadLine uses this to clear the tail of a longer previous command when
-            // a shorter history entry replaces it (e.g. after pressing Up arrow).
+            // CSI <n> X erases n cells at the cursor without moving it.
             case 'X': EraseChars(P(0)); break;
 
             // Scroll
@@ -860,9 +803,7 @@ public sealed class ConsoleTerminal : Control
         Key.Z => 26, _ => null
     };
 
-    // Returns the lowercase ASCII char for readline Alt+key sequences (ESC-prefixed).
-    // Only covers the common readline / vim bindings to avoid swallowing AltGr combos
-    // that should come through as TextInput (e.g. Alt+E → é on some keyboard layouts).
+    // Returns the lowercase char for readline Alt+key sequences.
     private static string? AltKeyChar(Key key) => key switch
     {
         Key.B => "b",   // Alt+B - move word back
@@ -907,11 +848,8 @@ public readonly record struct TermCell(
     bool  Bold,
     bool  Underline);
 
-// ── Screen snapshot ───────────────────────────────────────────────────────────
 /// <summary>
-/// Immutable capture of a <see cref="ConsoleTerminal"/> screen buffer.
-/// Stored on <see cref="Kodo.Models.TerminalSession"/> so that switching
-/// between sessions restores each session's last-visible output.
+/// Immutable capture of a terminal's screen buffer, stored per session.
 /// </summary>
 public sealed class TerminalSnapshot(
     TermCell[,] cells,

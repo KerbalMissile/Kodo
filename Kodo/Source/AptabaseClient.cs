@@ -31,24 +31,17 @@ internal static class AptabaseClient
     // Filled once at Initialize
     private static AptabaseSystemProps? _systemProps;
 
-    // Off by default - Program.Main runs before settings have loaded, so we
-    // can't know the user's choice yet. MainWindow calls SetEnabled() once
-    // kodosettings.json has been read, and again whenever the user flips the
-    // "Help improve Kodo" toggle in Settings or answers the consent prompt.
-    // This means nothing is ever sent before the user has explicitly opted in.
+    // Off by default until settings load; nothing sends before the user opts in.
     private static bool _isEnabled;
 
-    // Set once in Initialize(). Informational only - dev builds (version
-    // ending in "-DEV") are tracked like any other build; the previous
-    // blanket suppression in SetEnabled() has been removed.
+    // Set once in Initialize(). Informational only - dev builds are tracked like any other build.
     private static bool _isDevBuild;
 
     public static bool IsEnabled => _isEnabled;
     public static bool IsDevBuild => _isDevBuild;
 
     /// <summary>
-    /// Enables or disables sending analytics events. When disabling, any
-    /// events queued but not yet sent are discarded rather than sent later.
+    /// Enables or disables sending analytics events. When disabling, any events queued but not yet sent are discarded.
     /// Applies to all builds, including -DEV.
     /// </summary>
     public static void SetEnabled(bool enabled)
@@ -80,9 +73,7 @@ internal static class AptabaseClient
 
     public static void Initialize()
     {
-        // AssemblyInformationalVersion preserves the "-DEV" suffix from the
-        // csproj's <InformationalVersion>; Assembly.GetName().Version does not
-        // (System.Version is numeric-only), so we read it separately here.
+        // AssemblyInformationalVersion preserves the "-DEV" suffix; Version alone does not.
         var informationalVersion = System.Reflection.Assembly
             .GetExecutingAssembly()
             .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()

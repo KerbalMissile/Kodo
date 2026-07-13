@@ -10,47 +10,24 @@ using Microsoft.Win32;
 
 namespace Kodo;
 
-// ── Severity tiers ────────────────────────────────────────────────────────────
-//
-//  Critical  – unhandled exceptions, startup crashes, data-loss risk.
-//              Written to kodo.log.  Triggers crash.log generation (breadcrumbs
-//              + crash payload).  Always shows a crash dialog.
-//
-//  Warning   – recoverable operation failures (network, file I/O, extension
-//              load errors, etc.).  Written to kodo.log.  Shows the warning
-//              dialog in the UI.
-//
-//  Debug     – internal diagnostics that should not surface to the user
-//              (cache hits, suppressed duplicates, dev info).
-//              Written only to Debug output; never produces a file or dialog
-//              unless an exception is attached, in which case it appends to
-//              kodo.log silently.
-//
+// Severity tiers:
+// Critical: unhandled exceptions/crashes; logs to kodo.log, generates crash.log, shows a dialog.
+// Warning - recoverable failures (network, file I/O, extensions). Written to kodo.log, shows the warning dialog.
+// Debug: internal diagnostics, Debug output only unless an exception is attached.
 public enum KodoSeverity { Critical, Warning, Debug }
 
 internal static class KodoDiagnostics
 {
     public static string AppVersion { get; } = ResolveAppVersion();
 
-    // RuntimeInformation.OSDescription always returns "Microsoft Windows 10.0.XXXXX"
-    // on Windows 11 - the NT kernel version stayed at 10.0.x for compatibility, and
-    // the registry ProductName key also still says "Windows 10 Pro" on Windows 11.
-    // CurrentBuildNumber is the only reliable signal: Windows 11 starts at build 22000.
+    // CurrentBuildNumber is the only reliable Windows-11 signal; OSDescription still says 10.
     public static string OSDescription { get; } = ResolveOSDescription();
 
-    // When enabled (via the Developer Options panel), Debug-level traces that
-    // would normally only go to the Debug output are also appended to kodo.log,
-    // even when no exception is attached. Off by default so normal usage doesn't
-    // spam the log file.
+    // Debug traces also append to kodo.log when Developer Options is enabled.
     public static bool VerboseLoggingEnabled { get; set; }
 
-    // ── Breadcrumb buffer ─────────────────────────────────────────────────────
-    //
-    // A rolling window of the most recent log lines, held in memory.  On a
-    // Critical event we flush the buffer into crash.log ahead of the crash
-    // payload so there is context showing what Kodo was doing before it died.
-    // The buffer is never written to disk on its own - it only appears in
-    // crash.log when a crash actually occurs.
+    // Breadcrumb buffer: a rolling window of recent log lines held in memory.
+    // Flushed into crash.log ahead of the crash payload on a Critical event.
 
     private const int BreadcrumbCapacity = 50;
     private static readonly Queue<string> _breadcrumbs = new();
@@ -85,10 +62,7 @@ internal static class KodoDiagnostics
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion ?? "v0.0.0";
 
-        // .NET SDK projects automatically append +<git-commit-hash> to
-        // InformationalVersion (e.g. "v1.0.3+abc1234def"). Strip the suffix
-        // so the logged version matches the declared <InformationalVersion>
-        // in the .csproj and is not confused with a different build.
+        // Strips the +<git-hash> suffix so the logged version matches the csproj.
         var plusIndex = raw.IndexOf('+');
         return plusIndex >= 0 ? raw[..plusIndex] : raw;
     }
@@ -146,9 +120,7 @@ internal static class KodoDiagnostics
     // appends here.  The single file to check when diagnosing any issue.
     public static string MainLogFilePath => Path.Combine(LogDirectoryPath, "kodo.log");
 
-    // Crash-only log - generated solely when a Critical event fires.  Contains
-    // the recent breadcrumb buffer (what Kodo was doing before the crash) followed
-    // by the crash payload.  Easier to share for a bug report than the full kodo.log.
+    // Crash-only log: breadcrumb buffer plus crash payload, easier to share than kodo.log.
     public static string CrashLogFilePath => Path.Combine(LogDirectoryPath, "crash.log");
 
     // Legacy alias - points at the main log so existing callers still compile.
@@ -208,7 +180,7 @@ internal static class KodoDiagnostics
     // ── Typed logging API ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Log a Critical-severity event to kodo.log and generate crash.log.
+    /// Logs a Critical-severity event to kodo.log and generates crash.log.
     /// Use for unhandled exceptions and situations where data loss may have occurred.
     /// </summary>
     public static void LogCritical(
@@ -222,8 +194,8 @@ internal static class KodoDiagnostics
     }
 
     /// <summary>
-    /// Log a Warning-severity event to kodo.log.
-    /// Use for recoverable failures that the user has been (or will be) informed about.
+    /// Logs a Warning-severity event to kodo.log.
+    /// Use for recoverable failures the user has been (or will be) informed about.
     /// </summary>
     public static void LogWarning(
         string source,
@@ -232,8 +204,7 @@ internal static class KodoDiagnostics
         WriteToLog(source, exception, isTerminating: false, KodoSeverity.Warning, operation);
 
     /// <summary>
-    /// Emit a Debug trace.  Only writes to the Debug output; if an exception is
-    /// provided it is also appended silently to kodo.log.
+    /// Emits a Debug trace. Only writes to the Debug output; if an exception is provided it's also appended silently to kodo.log.
     /// </summary>
     public static void LogDebug(string message, Exception? exception = null)
     {
@@ -298,9 +269,7 @@ internal static class KodoDiagnostics
         WritePayloadToDisk(payload, MainLogFilePath);
     }
 
-    // Writes crash.log: the recent breadcrumb buffer (context) followed by the
-    // crash payload.  Called only from LogCritical so crash.log is never created
-    // for warnings or debug traces.
+    // Writes crash.log; called only from LogCritical.
     private static void WriteCrashLog(
         string source,
         Exception exception,

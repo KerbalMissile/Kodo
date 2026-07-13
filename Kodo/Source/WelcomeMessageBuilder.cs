@@ -9,13 +9,7 @@ using System.Threading.Tasks;
 
 namespace Kodo;
 
-// ── Welcome message construction ──────────────────────────────────────────
-//
-// All logic behind the Home screen's randomized welcome/greeting pool lives
-// here: holiday/calendar detection (Gregorian, lunar, Islamic, Hebrew),
-// real-world sporting-event theming (TheSportsDB + hardcoded tournament
-// windows), and the final message-pool builder consumed by MainWindow's
-// WelcomeMessage property.
+// Home screen welcome-pool logic: holiday detection, sporting-event theming, and the message-pool builder.
 internal static class WelcomeMessageBuilder
 {
     // ── Holiday / calendar helpers ────────────────────────────────────────────
@@ -23,9 +17,7 @@ internal static class WelcomeMessageBuilder
     private record HolidayEntry(string Name, string? Greeting);
 
     /// <summary>
-    /// Returns a <see cref="HolidayEntry"/> when <paramref name="date"/> is a
-    /// public holiday (or its eve) that is relevant for <paramref name="country"/>.
-    /// Returns <c>null</c> when no match is found.
+    /// Returns a HolidayEntry when date is a public holiday (or its eve) for country, or null.
     /// </summary>
     private static HolidayEntry? GetHolidayEntry(DateTime date, string country)
     {
@@ -202,9 +194,7 @@ internal static class WelcomeMessageBuilder
 
         return null;
     }
-    /// <summary>
-    /// Computes Easter Sunday for a given year using the Anonymous Gregorian algorithm.
-    /// </summary>
+    /// <summary>Computes Easter Sunday for a given year using the Anonymous Gregorian algorithm.</summary>
     private static DateTime ComputeEaster(int year)
     {
         int a = year % 19, b = year / 100, c = year % 100;
@@ -218,13 +208,10 @@ internal static class WelcomeMessageBuilder
         return new DateTime(year, month, day);
     }
 
-    // ── Astronomical calendar helpers ─────────────────────────────────────────
-    // These compute floating-date holidays algorithmically so they remain correct
-    // through 2100 without needing lookup tables.
+    // Astronomical calendar helpers: compute floating-date holidays algorithmically so they stay correct through 2100.
 
     /// <summary>
-    /// Julian Day Number of the kth new moon since J2000 (Meeus ch.49).
-    /// Pass k+0.5 for the corresponding full moon.
+    /// Julian Day Number of the kth new moon since J2000 (Meeus ch.49); pass k+0.5 for the full moon.
     /// </summary>
     private static double MoonPhaseJdn(double k)
     {
@@ -285,10 +272,7 @@ internal static class WelcomeMessageBuilder
         return new DateTime(year, month, day);
     }
 
-    /// <summary>
-    /// Finds the new moon (or full moon when fullMoon=true) that falls in the
-    /// given Gregorian year and month. Returns null if none falls in that month.
-    /// </summary>
+    /// <summary>Finds the new or full moon in a given Gregorian year/month, or null if none falls in it.</summary>
     private static DateTime? MoonInMonth(int year, int month, bool fullMoon = false)
     {
         double kApprox = (year - 2000) * 12.3685 + month - 1;
@@ -303,11 +287,7 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// <summary>
-    /// Lunar New Year: the new moon that falls between Jan 20 and Feb 20
-    /// (in China Standard Time, UTC+8). This is the first new moon after the
-    /// Sun enters Aquarius (~Jan 20), which is the standard Chinese calendar rule.
-    /// </summary>
+    /// Lunar New Year: the new moon between Jan 20-Feb 20 CST, after the sun enters Aquarius.
     private static DateTime? LunarNewYear(int year)
     {
         double kApprox = (year - 2000) * 12.3685;
@@ -322,10 +302,7 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// <summary>
-    /// Holi: the full moon of the Hindu month Phalguna, which falls in March
-    /// (or occasionally very late February).
-    /// </summary>
+    /// <summary>Holi: the full moon of the Hindu month Phalguna, falling in March (occasionally late February).</summary>
     private static DateTime? HoliDate(int year)
     {
         var march = MoonInMonth(year, 3, fullMoon: true);
@@ -334,18 +311,11 @@ internal static class WelcomeMessageBuilder
         return feb?.Day >= 20 ? feb : null;
     }
 
-    /// <summary>
-    /// Vesak (Buddha Day): the full moon of the month of Vaisakha, observed
-    /// on the full moon in May by Theravada countries.
-    /// </summary>
+    /// <summary>Vesak (Buddha Day): the full moon of Vaisakha, observed in May by Theravada countries.</summary>
     private static DateTime? VesakDate(int year) =>
         MoonInMonth(year, 5, fullMoon: true);
 
-    /// <summary>
-    /// Converts an Islamic (Hijri) civil date to a Gregorian DateTime,
-    /// using the standard tabular (Kuwaiti algorithmic) calendar.
-    /// Accurate to ±1 day vs actual moon-sighting dates.
-    /// </summary>
+    /// Converts an Islamic (Hijri) date to Gregorian via the tabular calendar, accurate to ±1 day.
     private static DateTime IslamicToGregorian(int iy, int im, int id)
     {
         int jdn = id
@@ -383,9 +353,7 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    // ── Hebrew calendar (Rosh Hashanah / Yom Kippur / Hanukkah) ──────────────
-    // Uses the traditional molad-based calculation (Maimonides / standard
-    // rabbinical algorithm). Exact for the proleptic Hebrew calendar.
+    // Hebrew calendar (Rosh Hashanah / Yom Kippur / Hanukkah): traditional molad-based calculation.
 
     private static bool IsHebrewLeapYear(int hy) => (7 * hy + 1) % 19 < 7;
 
@@ -425,9 +393,7 @@ internal static class WelcomeMessageBuilder
     }
 
     /// <summary>
-    /// Converts a Hebrew date to a Gregorian DateTime.
-    /// Month numbering: Tishrei=1, Cheshvan=2, Kislev=3, Tevet=4, Shevat=5,
-    /// Adar(I)=6, [AdarII=7 in leap years], Nisan=7(8), … Elul=12(13).
+    /// Converts a Hebrew date to Gregorian. Months: Tishrei=1 ... Elul=12(13), with AdarII=7 in leap years.
     /// </summary>
     private static DateTime HebrewToGregorian(int hy, int hm, int hd)
     {
@@ -478,10 +444,7 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// <summary>
-    /// Diwali: the new moon (Amavasya) of Kartika, falling in October or
-    /// early November.
-    /// </summary>
+    /// <summary>Diwali: the new moon (Amavasya) of Kartika, falling in October or early November.</summary>
     private static DateTime? DiwaliDate(int year)
     {
         // Try October new moon first; accept it if day >= 14 (Kartika new moon
@@ -493,10 +456,7 @@ internal static class WelcomeMessageBuilder
         return oct; // fallback
     }
 
-    /// <summary>
-    /// Sharad Navratri: begins on the day after the new moon of Ashwin
-    /// (Shukla Pratipada), which falls in September or early October.
-    /// </summary>
+    /// <summary>Sharad Navratri: begins the day after the new moon of Ashwin, falling in September or early October.</summary>
     private static DateTime? NavratriDate(int year)
     {
         // Ashwin new moon falls in Sep (day >= 15) or early Oct (day <= 10).
@@ -507,53 +467,27 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// <summary>
-    /// Returns true when <paramref name="date"/> falls on a Saturday or Sunday
-    /// or is sandwiched into a long weekend (i.e. Friday before a Monday holiday
-    /// or Tuesday after a Monday holiday, etc.).
-    /// </summary>
+    /// True when date is a weekend or sandwiched into a long weekend around a Monday holiday.
     private static bool IsWeekend(DateTime date) =>
         date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
 
-    /// <summary>
-    /// Returns true when <paramref name="date"/> is a Friday before a long weekend
-    /// (i.e. the following Monday is a public holiday for the given country).
-    /// </summary>
+    /// <summary>True when <paramref name="date"/> is the Friday before a Monday public holiday.</summary>
     private static bool IsLongWeekendEve(DateTime date, string country)
     {
         if (date.DayOfWeek != DayOfWeek.Friday) return false;
         return GetHolidayEntry(date.AddDays(3), country) is not null;
     }
 
-    /// <summary>
-    /// Returns true when <paramref name="date"/> is the Tuesday after a long weekend
-    /// (i.e. the preceding Monday was a public holiday).
-    /// </summary>
+    /// <summary>True when <paramref name="date"/> is the Tuesday after a Monday public holiday.</summary>
     private static bool IsPostLongWeekend(DateTime date, string country)
     {
         if (date.DayOfWeek != DayOfWeek.Tuesday) return false;
         return GetHolidayEntry(date.AddDays(-1), country) is not null;
     }
 
-    // ── Real-world sporting events ──────────────────────────────────────────
-    // Adds tournament-themed welcome messages (e.g. "World Cup fever!") to the
-    // Home screen greeting pool. Two layers, so the feature degrades gracefully:
-    //   1. A hardcoded table of major tournament date windows - always works,
-    //      even fully offline, and is what actually satisfies "FIFA World Cup"
-    //      style theming for the duration of the event.
-    //   2. A best-effort live lookup against TheSportsDB's free public API
-    //      (test key "3" - no signup/API key required, see
-    //      https://www.thesportsdb.com/free_sports_api) for today's specific
-    //      fixture, so the message can name the actual teams playing today.
-    // Any network/parse failure is swallowed; the hardcoded messages from (1)
-    // are still added, so the themed greeting keeps working either way.
-    //
-    // Dates below are the best publicly-known schedule as of when this was
-    // written. Single-day events (finals) get a small +/- buffer window so
-    // the message shows for the build-up, not just the exact date. Since
-    // these are mostly annual/biennial/quadrennial, this table needs a yearly
-    // top-up - past entries are harmless (they just never match) but won't
-    // auto-roll to next year's dates on their own.
+    // Tournament-themed messages, layered: a hardcoded window table (works offline) plus a live TheSportsDB lookup.
+    // Network/parse failures are swallowed; the hardcoded messages still work either way.
+    // Dates reflect the best known schedule as of writing; this table needs a yearly top-up, though stale entries are harmless.
     private static readonly (string Name, DateTime Start, DateTime End, string LeagueQuery, string[] Messages)[] MajorTournaments =
     {
         ("FIFA World Cup", new DateTime(2026, 6, 11), new DateTime(2026, 7, 19), "FIFA_World_Cup", new[]
@@ -613,9 +547,7 @@ internal static class WelcomeMessageBuilder
             "US Open season - let's ace this build.",
         }),
 
-        // Add future tournaments here, e.g.:
-        // ("UEFA Euro Championship", new DateTime(2028, 6, 1), new DateTime(2028, 7, 1), "UEFA_Euro_Championship", new[] { "..." }),
-        // ("Summer Olympics", new DateTime(2028, 7, 14), new DateTime(2028, 7, 30), "", new[] { "..." }),
+        // Add future tournaments here.
     };
 
 
@@ -634,13 +566,8 @@ internal static class WelcomeMessageBuilder
     }
 
     /// <summary>
-    /// Best-effort fetch of sporting-event-themed welcome messages. Always
-    /// includes the hardcoded tournament-window messages for any tournament
-    /// active today; additionally tries a live lookup against TheSportsDB's
-    /// free API for today's specific fixture. Returns null when nothing
-    /// applies (no active tournament) so the caller can leave its existing
-    /// pool untouched. Never throws - all failures are swallowed since this
-    /// feature is purely cosmetic.
+    /// Fetches sporting-event messages: hardcoded windows plus a live TheSportsDB lookup.
+    /// Returns null if nothing applies. Never throws.
     /// </summary>
     public static async Task<List<string>?> FetchSportingEventMessagesAsync(HttpClient httpClient)
     {
@@ -655,9 +582,7 @@ internal static class WelcomeMessageBuilder
                 if (now.Date < tournament.Start.Date || now.Date > tournament.End.Date)
                     continue;
 
-                // Generic tournament-themed messages always apply for the whole
-                // window, regardless of whether the live match lookup below
-                // succeeds - this is what guarantees the feature "works".
+                // Generic tournament messages always apply for the window, regardless of whether the live match lookup succeeds.
                 messages.AddRange(tournament.Messages);
 
                 if (string.IsNullOrWhiteSpace(tournament.LeagueQuery))
@@ -716,10 +641,7 @@ internal static class WelcomeMessageBuilder
     // ── Welcome message construction ──────────────────────────────────────────
 
     /// <summary>
-    /// Builds the full pool of candidate welcome/greeting messages for the
-    /// Home screen, given the user's personalization settings and any live
-    /// sporting-event messages already fetched. The caller picks one at
-    /// random from the returned array.
+    /// Builds the candidate welcome-message pool from personalization settings and fetched sporting messages.
     /// </summary>
     public static string[] BuildMessages(
         string userName,
@@ -771,20 +693,14 @@ internal static class WelcomeMessageBuilder
             messages.Add($"Your workspace is ready, {name}.");
         }
 
-        // ── 1. Holiday / special day ──────────────────────────────────────────
-        // Added multiple times so that on a special day the relevant greeting
-        // has a meaningfully higher chance of being shown than any single
-        // generic message. Weighted heavily (x8) so it dominates the pool on
-        // the day itself, similar to the Kodo birthday weighting below.
+        // Holiday / special day: added multiple times (x8) so it dominates the pool on the day itself.
         var holiday = GetHolidayEntry(now, country);
         if (holiday?.Greeting is not null)
         {
             for (var i = 0; i < 8; i++) messages.Add(holiday.Greeting);
         }
 
-        // ── 1a. Kodo birthday ─────────────────────────────────────────────────
-        // April 18 is Kodo's birthday. The greeting is weighted x5 so it
-        // dominates the pool on the day and is almost certain to be picked.
+        // Kodo birthday (April 18): weighted x5 so it dominates the pool that day.
         if (isKodoBirthday)
         {
             var age = kodoBirthdayAge;
@@ -796,39 +712,26 @@ internal static class WelcomeMessageBuilder
             messages.Add("One year of fast, focused editing. Here's to many more! 🎉");
         }
 
-        // ── 1b. 11:11 wish moment ────────────────────────────────────────────
-        // A small easter egg: at exactly 11:11 (AM or PM), add a "make a
-        // wish" greeting. Weighted heavily (x8) so it's very likely to be
-        // the one shown during that single minute, matching the treatment
-        // given to other special-moment greetings above.
+        // 11:11 wish moment: easter egg at exactly 11:11, weighted x8 like the other special-moment greetings.
         if (now.Minute == 11 && (now.Hour == 11 || now.Hour == 23))
         {
             for (var i = 0; i < 8; i++) messages.Add("11:11! Make a wish!");
         }
 
-        // ── 1b-i. Friday the 13th ───────────────────────────────────────────────
-        // Same pattern as the 11:11 check above: a small easter egg weighted
-        // heavily (x8) so it's very likely to be the greeting shown that day.
+        // Friday the 13th: easter egg weighted x8, same pattern as the 11:11 check.
         if (dow == DayOfWeek.Friday && now.Day == 13)
         {
             for (var i = 0; i < 8; i++) messages.Add("Friday the 13th... may your builds stay bug-free! 🖤");
             messages.Add("Unlucky for some, lucky for your commit history?");
         }
 
-        // ── 1b-ii. Leap Day ──────────────────────────────────────────────────────
-        // Feb 29 only exists once every 4 years, so it gets its own one-off
-        // greeting rather than folding into the generic day-of-week flavour.
+        // Leap Day: Feb 29 only exists every 4 years, so it gets its own one-off greeting.
         if (now.Month == 2 && now.Day == 29)
         {
             for (var i = 0; i < 8; i++) messages.Add("Leap Day! Enjoy the extra day - it only comes around every 4 years.");
         }
 
-        // ── 1b-iii. Programmer's Day / Pi Day ─────────────────────────────────────
-        // Programmer's Day is the 256th day of the year (2^8 - a number
-        // programmers appreciate), which lands on Sept 12 in leap years and
-        // Sept 13 otherwise. Pi Day (3/14) gets the same treatment since both
-        // fit a code editor's sense of humour better than some of the more
-        // generic observances above.
+        // Programmer's Day (256th day of the year, Sept 12/13) and Pi Day (3/14) get the same easter-egg treatment.
         if (now.DayOfYear == 256)
         {
             for (var i = 0; i < 8; i++) messages.Add("Happy Programmer's Day! 🖥️ Day 256 of the year - fitting, isn't it?");
@@ -838,23 +741,14 @@ internal static class WelcomeMessageBuilder
             for (var i = 0; i < 8; i++) messages.Add("Happy Pi Day! 🥧 3.14159265...");
         }
 
-        // ── 1b-iv. New Year's Eve countdown ───────────────────────────────────────
-        // During the final hour before midnight on Dec 31, layer a
-        // countdown-flavoured line on top of the generic "Happy New Year's
-        // Eve!" greeting from the holiday block above.
+        // New Year's Eve countdown: layers a countdown line over the last hour before midnight.
         if (now.Month == 12 && now.Day == 31 && now.Hour == 23)
         {
             for (var i = 0; i < 8; i++) messages.Add("Almost midnight - one more commit before the new year?");
             messages.Add("The countdown's on. Ship it before the ball drops!");
         }
 
-        // ── 1c. Real-world sporting events (e.g. FIFA World Cup) ───────────────
-        // Populated asynchronously by FetchSportingEventMessagesAsync via
-        // TheSportsDB's free API, with a hardcoded tournament-window fallback
-        // so themed messages still appear even if the API call hasn't
-        // completed yet or is unreachable. Weighting is baked in at the
-        // source (specific live matches are added more times than generic
-        // tournament lines), so we just add the whole pool here.
+        // Sporting events: added from FetchSportingEventMessagesAsync, weighting baked in at the source.
         if (sportingEventMessages is { Count: > 0 })
             messages.AddRange(sportingEventMessages);
 
@@ -994,9 +888,7 @@ internal static class WelcomeMessageBuilder
             messages.Add("Sweater weather, solid code.");
         }
 
-        // ── 6. Neutral standby messages ───────────────────────────────────────
-        // Excluded when a name is set so the pool isn't diluted by messages
-        // that could have addressed the user by name instead.
+        // Neutral standby messages: excluded when a name is set, so the pool isn't diluted by messages that could have used it.
         if (string.IsNullOrWhiteSpace(name))
         {
             messages.Add("Welcome back!");

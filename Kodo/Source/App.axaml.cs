@@ -18,24 +18,14 @@ using System.Threading.Tasks;
 
 namespace Kodo;
 
-// One of the main entry points for the application, responsible for initializing and
-// starting the app. Handles global unhandled-exception wiring, crash logging, and
-// the error/crash dialog UI - all built in code so this file has no AXAML dependency.
+// Handles global unhandled-exception wiring, crash logging, and the crash dialog UI.
 public partial class App : Application
 {
-    // Prevents crash-dialog storms: only one crash dialog may be in flight at a
-    // time. Set to 1 by the CompareExchange guard in ShowCrashDialog and held
-    // at 1 for the dialog's entire lifetime (build, show, and awaiting
-    // dismissal); reset to 0 in ShowCrashDialogOnUiThreadAsync's finally block
-    // once the dialog closes. The terminating-exception spin-wait in
-    // ShowCrashDialog also reads this flag to know when it's safe to let the
-    // CLR proceed with process teardown.
+    // Prevents crash-dialog storms: only one crash dialog may be in flight at a time.
+    // Set by the CompareExchange guard in ShowCrashDialog, held for its full lifetime.
+    // The terminating-exception spin-wait reads this flag too, to know when it's safe to proceed.
     private static int _isCrashDialogOpen;
-    // ── Shared colours ───────────────────────────────────────────────────────
-    // Sourced from DialogPalette (Updater.cs) so every code-built dialog in
-    // the app - crash dialog here, update dialog, and the in-app dialogs in
-    // MainWindow.axaml.cs - draws from one place. A single change there now
-    // actually propagates everywhere.
+    // Shared colours from DialogPalette, so every code-built dialog matches.
 
     private static readonly Color KodoDarkSurface     = DialogPalette.Surface;
     private static readonly Color KodoDarkSurfaceDeep = DialogPalette.SurfaceDeep;
@@ -58,9 +48,7 @@ public partial class App : Application
         AvaloniaXamlLoader.Load(this);
     }
 
-    // Called when the framework has finished initializing. Creates the main window,
-    // optionally pre-loading a file when Kodo is launched via "Open with" or by
-    // double-clicking a file in Explorer.
+    // Called once the framework finishes initializing; creates the main window.
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -81,13 +69,7 @@ public partial class App : Application
 #endif
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // The pending-update sentinel (written by the standalone
-            // KodoUpdater.exe background process) and the live GitHub check
-            // are independent of file-association registration, so they no
-            // longer live behind the same #if !DEBUG guard - that guard was
-            // why the updater never triggered at all in Debug builds. The
-            // sentinel check in particular is cheap (local file read) and is
-            // exactly the path that needs exercising during dev/testing.
+            // No longer behind #if !DEBUG - that guard blocked the updater in Debug builds.
             if (!CheckPendingUpdateSentinel())
                 CheckForUpdatesInBackground();
         }
@@ -97,14 +79,8 @@ public partial class App : Application
 
     // ── Auto-update ───────────────────────────────────────────────────────────
 
-    // Checks for a pending-update sentinel left by the standalone KodoUpdater
-    // background process (see KodoUpdater/Program.cs). If one exists and is
-    // still newer than the running version, shows UpdateDialog immediately
-    // with the installer path already filled in - no download needed, no
-    // wait for the 6h in-app check to rediscover the same release.
-    //
-    // Runs before CheckForUpdatesInBackground's live GitHub check so a
-    // pending sentinel always wins over kicking off a redundant download.
+    // Checks for a pending-update sentinel from KodoUpdater; shows UpdateDialog if newer.
+    // Runs before the live GitHub check so a pending sentinel always wins over a redundant download.
     private static bool CheckPendingUpdateSentinel()
     {
         try
@@ -131,12 +107,7 @@ public partial class App : Application
         }
     }
 
-    // Fires a one-shot, fire-and-forget update check a few seconds after launch
-    // so it never competes with startup for CPU/network. Entirely best-effort:
-    // any failure here is swallowed by UpdateService itself and never surfaces
-    // as a crash or dialog - the user simply won't see an update prompt.
-    // The recurring check after launch (every 6 hours, while Kodo stays open)
-    // is handled separately by MainWindow's _appAutoUpdateTimer.
+    // Fires a best-effort update check a few seconds after launch; failures are swallowed.
     private static void CheckForUpdatesInBackground()
     {
         _ = Task.Run(async () =>
@@ -227,9 +198,7 @@ public partial class App : Application
 
     private static void TaskScheduler_OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        // Warning: unobserved Task exception - recoverable, process keeps running.
-        // Logged to kodo.log as a Warning (not Critical) since the app is not crashing,
-        // so crash.log is not generated.
+        // Unobserved Task exception - recoverable; logged as a Warning, no crash.log.
         KodoDiagnostics.LogWarning("TaskScheduler.UnobservedTaskException", e.Exception, operation: "Background task");
         // Mark as observed first so the runtime does not re-throw it after we return.
         e.SetObserved();
@@ -246,11 +215,7 @@ public partial class App : Application
         e.Handled = true;
     }
 
-    // ── Crash dialog ─────────────────────────────────────────────────────────
-    //
-    // ShowCrashDialog dispatches a modal error dialog to the UI thread. See the
-    // "WHY Post()..." comment below for the reasoning behind the dispatch
-    // strategy on terminating vs. recoverable exceptions.
+    // ShowCrashDialog dispatches a modal error dialog to the UI thread.
 
     private static void ShowCrashDialog(string source, Exception exception, bool isTerminating)
     {
@@ -268,19 +233,8 @@ public partial class App : Application
                 return;
             }
 
-            // WHY Post() instead of InvokeAsync().GetAwaiter().GetResult():
-            //
-            // AppDomain.UnhandledException fires on a thread-pool thread after the
-            // UI thread has already faulted. Calling GetResult() here blocks the
-            // thread-pool thread waiting for the UI thread to drain its queue - but
-            // if the UI thread is dead, that queue is never drained and the entire
-            // process freezes at the OS level. The freeze is permanent: no window,
-            // no crash log flush, nothing. Task Manager shows 0 % CPU forever.
-            //
-            // Instead, we Post() the dialog (non-blocking) and, for terminating
-            // crashes, pump the dispatcher on this thread long enough for the dialog
-            // to appear and for the user to dismiss it. The 30-second ceiling keeps
-            // the process from hanging if the UI thread never recovers.
+            // Posts rather than blocking, since the UI thread may already be dead.
+            // For terminating crashes, pumps the dispatcher here so the dialog can show, capped at 30s.
             if (isTerminating)
             {
                 // Non-blocking post - returns immediately even if the UI thread is busy.
@@ -288,10 +242,7 @@ public partial class App : Application
                     () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
                     DispatcherPriority.MaxValue);
 
-                // Give the UI thread up to 30 s to show and dismiss the dialog
-                // before the CLR tears the process down. We sleep in short bursts
-                // so we don't spin-waste CPU, and we exit the loop the moment the
-                // dialog reports it has been dismissed.
+                // Gives the UI thread up to 30s to show/dismiss the dialog before teardown.
                 for (var i = 0; i < 300 && _isCrashDialogOpen == 1; i++)
                     Thread.Sleep(100);
             }

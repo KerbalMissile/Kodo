@@ -44,9 +44,7 @@ using Kodo.Models;
 
 namespace Kodo;
 
-// Compares strings the way humans expect: "1.9" < "1.10" < "1.11"
-// by splitting each string into alternating non-digit / digit chunks and
-// comparing digit chunks numerically instead of lexicographically.
+// Compares strings the way humans expect - splits into digit/non-digit chunks, compares digits numerically.
 public sealed class NaturalSortComparer : IComparer<string>
 {
     public static readonly NaturalSortComparer OrdinalIgnoreCase = new();
@@ -189,12 +187,7 @@ public class FileTreeItem : INotifyPropertyChanged
     }
 }
 
-// Single source of truth for well-known built-in extension ids. Several
-// colorizers/highlighters independently need to know "is this the built-in
-// Markdown extension?" (to switch between plain token-rule highlighting and
-// Markdown's own block/inline rules) - previously each of those five call
-// sites hardcoded the literal "markdown-kodo-extension" string, so a future
-// rename to any one of them would silently desync from the others.
+// Single source of truth for the built-in Markdown extension id, used by several colorizers.
 public static class KodoExtensionIds
 {
     public const string Markdown = "markdown-kodo-extension";
@@ -224,9 +217,7 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string CommentBlockEnd { get; set; } = "*/";
     public string[] StringDelimiters { get; set; } = ["\"", "'"];
     public string[] MultiLineStringDelimiters { get; set; } = [];
-    // When true, the open-ended single-quote span is replaced with a precise
-    // char-literal regex. Set via "disableSingleQuoteStrings": true in language.json.
-    // Use for languages like C# where ' appears in non-string contexts.
+    // True: use a precise char-literal regex instead of an open string span (disableSingleQuoteStrings in language.json).
     public bool DisableSingleQuoteStrings { get; set; }
     public Dictionary<string, string> ColorTokens { get; set; } = new();
     public List<LanguageSyntaxProfile> SyntaxProfiles { get; } = [];
@@ -337,9 +328,7 @@ public class ExtensionThemeDefinition
 }
 
 /// <summary>
-/// A named group of one or more theme cards from a single extension.
-/// Groups with more than one theme are shown as a collapsible section
-/// under Installed Theme Extensions.
+/// A named group of theme cards from one extension; multi-theme groups render as a collapsible section.
 /// </summary>
 public class ThemeExtensionGroup : INotifyPropertyChanged
 {
@@ -352,8 +341,7 @@ public class ThemeExtensionGroup : INotifyPropertyChanged
     public bool IsMultiTheme => Themes.Count > 1;
 
     /// <summary>
-    /// Controls whether the card row is visible.
-    /// Single-theme groups are always expanded (no collapse chrome shown).
+    /// Whether the card row is expanded; single-theme groups are always shown.
     /// </summary>
     public bool IsExpanded
     {
@@ -402,11 +390,7 @@ public sealed class FormattedRun
     public bool   IsBold { get; init; }
 }
 
-// One paragraph (or bullet/ordered-list item) in the release notes.
-// Runs are rendered inline (WrapPanel) so bold/normal text flows together.
-// The list marker (bullet glyph or "1.") is kept separate from the runs and
-// rendered in its own fixed-width column so wrapped lines hang-indent and
-// align under the first word instead of sliding back under the marker.
+// One release-notes paragraph; the bullet/number marker is kept separate so wrapped lines hang-indent.
 public sealed class FormattedParagraph
 {
     public IReadOnlyList<FormattedRun> Runs      { get; init; } = [];
@@ -594,26 +578,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string AutoSaveSavedMessage = "Saved.";
     private const string AutoSaveSavingMessage = "Saving...";
     private const string AutoSaveFailedMessagePrefix = "Save failed:";
-    // Read from <InformationalVersion> in Kodo.csproj (e.g. "v1.3.0-BETA").
-    // To update the app version, change only that tag in the csproj.
-    // Resolved via KodoDiagnostics.AppVersion (strips the +<git-hash> suffix).
+    // App version read from <InformationalVersion> in Kodo.csproj (bump only that tag).
     private static readonly string CurrentAppVersion = KodoDiagnostics.AppVersion;
     public string CopyrightText => $"© {DateTime.Now.Year} KerbalMissile and SS-YYC. Licensed under GPL-3.0.";
-    // GitHub Contents API endpoint for the extension index JSON.
-    // All Kodo-hosted assets (index JSON, extension .kox packages, and repo-hosted
-    // icon images) are fetched via the Contents API with the raw+json Accept header,
-    // which makes GitHub return file bytes directly - no base64 unwrapping needed.
-    // Third-party icon URLs (e.g. Wikipedia, Wikimedia) are fetched as plain GETs
-    // since the Contents API only applies to files inside this repository.
+    // GitHub Contents API endpoint for the extension index JSON, fetched with the raw+json Accept header for direct file bytes.
     private const string DefaultMarketplaceIndexUrl = "https://api.github.com/repos/KerbalMissile/Kodo/contents/Indexs/ExtensionsIndex.json";
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases/latest";
     private const string ReleasesApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases";
     private const string ReleasesPageUrl = "https://github.com/KerbalMissile/Kodo/releases";
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
     private const string WebsiteUrl = "https://kerbalmissile.github.io/Kodo-Website/";
-    // GitHub Contents API endpoint for ANNOUNCEMENTS.md.  Uses the same raw+json
-    // Accept header as the marketplace index so GitHub returns the file bytes directly
-    // with no base64 unwrapping, and benefits from the same generous rate limits.
+    // GitHub Contents API endpoint for ANNOUNCEMENTS.md, same raw+json Accept header as the marketplace index.
     private const string AnnouncementsUrl = "https://api.github.com/repos/KerbalMissile/Kodo/contents/Announcements/ANNOUNCEMENTS.md";
 
     private bool _isNewsLoading = true;
@@ -634,10 +609,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // live without requiring the Microsoft.Win32.SystemEvents NuGet package.
     private readonly DispatcherTimer _windowsAccentPollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private string _lastSeenWindowsAccentHex = string.Empty;
-    // Polls the Windows "AppsUseLightTheme" registry value (same cadence/approach
-    // as the accent poll above) so the System Default theme blob's preview swatch
-    // - and the active palette, when System mode is selected - track a live
-    // Windows light/dark toggle without requiring an app restart.
+    // Polls Windows' light/dark registry setting so the System Default preview swatch and active palette track it live.
     private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private string _lastSeenWindowsThemeName = string.Empty;
     private readonly RainbowBracketColorizer _rainbowBracketColorizer = new();
@@ -660,23 +632,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // so it never overlaps with itself or with the manual "Update All" button.
     private bool _isAutoUpdatingExtensions;
     private bool _isAutoUpdateExtensionsEnabled;
-    // Sub-setting under IsAutoUpdateExtensionsEnabled: when on, the silent
-    // extension-update sweep doesn't touch ExtensionsStatusText while it
-    // works, so nothing visibly changes on the Extensions page either.
+    // Sub-setting of auto-update extensions: silent sweeps skip updating ExtensionsStatusText so nothing visibly changes.
     private bool _isAutoUpdateExtensionsInBackgroundEnabled;
-    // Mirrors _isAutoUpdateExtensionsEnabled, but for whole-app updates
-    // (downloading and installing newer Kodo releases from GitHub) rather
-    // than marketplace extensions. Kept as a separate flag since a user may
-    // want one without the other.
+    // Whether whole-app updates (not just extensions) auto-install; kept separate since users may want one without the other.
     private bool _isAutoUpdateAppEnabled = true;
-    // Sub-setting under _isAutoUpdateAppEnabled: when on, a found update is
-    // downloaded and installed straight away (UpdateService.SilentlyInstallAsync)
-    // instead of showing UpdateDialog's "Update Now" / "Later" prompt.
+    // Sub-setting: installs a found app update immediately instead of showing the Update Now/Later prompt.
     private bool _isAutoUpdateAppInBackgroundEnabled;
-    // Backs the manual "Check for Updates" button in Settings. Separate from
-    // the silent startup check (App.axaml.cs) and from the auto-update toggle
-    // above - clicking the button should always give feedback regardless of
-    // whether automatic checking is on.
+    // Backs the manual Check for Updates button; separate from the silent startup check and the auto-update toggle.
     private bool _isCheckingForUpdatesManually;
     private string _checkForUpdatesStatusText = string.Empty;
     private string _developerOptionsStatusText = string.Empty;
@@ -687,20 +649,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _tutorialOpenedFromSettings;
     private bool _isWhatsNewPageVisible;
     private bool _isWhatsNewExpanded;
-    // True whenever the consolidated "opening splash" is on screen. It can carry
-    // release notes, a diagnostics-consent ask, or both at once - see
-    // _openingSplashShowsReleaseNotes and IsDataTrackingPromptVisible, and the
-    // sequencing comment above the trigger logic in LoadStartupTabsAsync.
+    // Whether the opening splash (release notes and/or consent ask) is on screen.
     private bool _isUpdateSplashVisible;
-    // True when the *current* showing of the opening splash includes release
-    // notes (i.e. it was triggered by a version bump). False means this
-    // occurrence is a diagnostics-consent-only ask, so the release notes
-    // section and "What's New" heading are hidden. Set once when the splash
-    // is triggered; not recomputed while it's on screen.
+    // Whether this showing of the opening splash includes release notes vs. a consent-only ask.
     private bool _openingSplashShowsReleaseNotes;
-    // The version string that was running the last time the user launched Kodo.
-    // When it differs from CurrentAppVersion we show release notes in the
-    // opening splash once.
+    // Version running at last launch; if older than current, release notes show once in the opening splash.
     private string _lastSeenVersion = string.Empty;
     private bool _isHomePageVisible;
     private bool _isFileExplorerVisible;
@@ -712,9 +665,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isRestoreOpenTabsOnLaunchEnabled;
     private bool _isMarketplaceTabSelected;
     private bool _suppressDirtyTracking;
-    // True during the constructor + OnOpened startup sequence so that incidental
-    // SaveSettings() calls (tab restore, CollectionChanged, ApplyTheme) cannot
-    // overwrite the just-loaded settings before the window is fully initialised.
+    // True during startup so incidental SaveSettings() calls can't overwrite just-loaded settings.
     private bool _suppressSettingsSave;
     private bool _isDeveloperOptionsVisible;
     private bool _isVerboseLoggingEnabled;
@@ -737,10 +688,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // True when settings.json did not exist on this launch - used to show the tutorial once.
     private bool _isFirstLaunch;
     private bool _hasCompletedTutorial;
-    // Anonymous usage/analytics opt-in. Defaults to false (nothing is ever sent) until
-    // the user explicitly answers the consent prompt shown once on first launch of a
-    // new Kodo install, or once on first launch of a new version. Can always be
-    // changed afterwards from the Privacy card in Settings.
+    // Anonymous analytics opt-in; defaults to false until the user answers the consent prompt, changeable later in Settings.
     private bool _isDataTrackingEnabled;
     private bool _hasRespondedToDataTrackingPrompt;
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
@@ -757,22 +705,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private FileSystemWatcher? _extensionsFolderWatcher;
     private FileSystemWatcher? _projectExtensionsFolderWatcher;
     private readonly DispatcherTimer _extensionsRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
-    // Periodic background check for extension updates while Kodo stays open.
-    // Only runs (see UpdateExtensionAutoUpdateLifecycle) when the user has
-    // opted into "Automatically update extensions" in Settings.
+    // Periodic background check for extension updates; only runs when auto-update extensions is enabled.
     private readonly DispatcherTimer _extensionAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
-    // Periodic background check for new Kodo releases while the app stays
-    // open. Encapsulated in AppUpdateScheduler (Updater.cs), which owns its
-    // own DispatcherTimer and start/stop lifecycle gated by
-    // IsAutoUpdateAppEnabled. The launch-time check itself still lives in
-    // App.axaml.cs (CheckForUpdatesInBackground) - this covers everything
-    // after that. Constructed in the constructor body (needs settings-backed
-    // properties to already exist), not here as a field initializer.
+    // Periodic check for new Kodo releases, handled by AppUpdateScheduler.
     private readonly AppUpdateScheduler _appUpdateScheduler;
-    // Refreshes the marketplace listing (not extension auto-install) once an
-    // hour while Kodo stays open. Always runs - unlike _extensionAutoUpdateTimer
-    // this isn't gated by IsAutoUpdateExtensionsEnabled, since it only refreshes
-    // what's shown in the Marketplace tab rather than installing anything.
+    // Refreshes the marketplace listing hourly; always runs regardless of the auto-update-extensions setting.
     private readonly DispatcherTimer _marketplaceRefreshTimer = new() { Interval = TimeSpan.FromHours(1) };
     private readonly IndentGuideBackgroundRenderer _indentGuideRenderer = new();
     private readonly List<string> _startupOpenTabPaths = [];
@@ -781,12 +718,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly Dictionary<string, DateTime> _warningDialogCooldowns = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _iconFetchSemaphore = new(4, 4);
     private static readonly TimeSpan ExtensionsRefreshCooldown = TimeSpan.FromSeconds(8);
-    // Disk cache for the marketplace index JSON.  Sits next to settings in
-    // %LocalAppData%\Kodo so it survives across sessions and network outages.
-    // The sidecar .etag file holds the ETag returned by the last successful
-    // GitHub Contents API response; sent as If-None-Match on subsequent requests
-    // so a 304 Not Modified short-circuits the fetch without consuming a rate-limit
-    // slot (304s are free against GitHub's 60 req/hr anonymous quota).
+    // Disk cache for the marketplace index JSON, alongside its ETag so an unchanged index returns a free 304.
     private string MarketplaceIndexCachePath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "marketplace-index.json");
     private string MarketplaceIndexETagPath =>
@@ -794,15 +726,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // In-memory ETag kept in sync with every successful 200 response.
     // Null means no cache exists yet; loaded lazily from disk on first fetch.
     private string? _marketplaceIndexETag;
-    // Prevents the exact same error (same context + exception type + message) from
-    // spawning duplicate dialogs within a short burst.  3 s is enough to debounce
-    // rapid retries while still letting a genuinely new occurrence through quickly.
+    // Debounces duplicate error dialogs (same context/exception/message) within a short burst.
     private static readonly TimeSpan WarningDialogCooldown   = TimeSpan.FromSeconds(3);
 
-    // Hard ceiling for any GitHub network operation (index fetch, announcements,
-    // release info, icon downloads).  If the operation does not *complete* - both
-    // headers and body - within this window we cancel it, log a warning, and show
-    // the standard Kodo error dialog so the user knows the panel is stale.
+    // Timeout ceiling for any GitHub network op; past this we cancel, log, and show the standard error dialog.
     private static readonly TimeSpan GitHubOperationTimeout  = TimeSpan.FromSeconds(7);
     private static readonly HashSet<string> ImagePreviewExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -815,11 +742,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _extensionSearchText = string.Empty;
     private string _selectedInstalledExtensionSort = ExtensionSortModes.Alphabetical;
     private string _selectedMarketplaceExtensionSort = ExtensionSortModes.Alphabetical;
-    // Personalization - set in Settings, persisted in settings.json.
-    // _userCountry:        ISO 3166-1 alpha-2 country code (e.g. "CA", "US", "GB").
-    //                      Empty → auto-detected from the OS regional settings.
-    // _userHemisphere:     0 = auto-detect from country, 1 = northern, 2 = southern.
-    // _userTimezoneOffset: UTC offset string (e.g. "-5", "+1"). Empty → auto-detect.
+    // Personalization, persisted in settings.json:
+    // _userCountry: ISO country code, empty = auto-detect.
+    // _userHemisphere: 0 auto, 1 north, 2 south.
+    // _userTimezoneOffset: UTC offset string, empty = auto-detect.
     private string _userCountry = string.Empty;
     private int    _userHemisphere = 0;
     private string _userTimezoneOffset = string.Empty;
@@ -829,10 +755,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isPointerOverEditorLink;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
     private TerminalSession? _activeTerminalSession;
-    // Holds the currently subscribed SessionExited handler so it can be
-    // explicitly unsubscribed before a new one is attached on every Start().
-    // Without this, switching sessions accumulates stale handlers that fire
-    // on the wrong session when any future process exits.
+    // Tracks the subscribed SessionExited handler so it can be unsubscribed before a new one attaches on Start().
     private EventHandler<IntPtr>? _activeSessionExitedHandler;
     private TerminalShellOption? _selectedTerminalShell;
     private int _nextTerminalNumber = 1;
@@ -843,19 +766,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private double _terminalPanelDragStartPointerY;
     private double _terminalPanelDragStartHeight;
 
-    // Caches compiled KodoHighlightingDefinition instances by LoadedExtension identity.
-    // Building one involves compiling multiple Regex objects (RegexOptions.Compiled), which
-    // is expensive enough to cause a noticeable delay on every tab switch. The cache lives
-    // for the session and is cleared whenever extensions are reloaded so it never goes stale.
+    // Caches compiled KodoHighlightingDefinition per extension; building one compiles several regexes, expensive per tab switch.
     private readonly Dictionary<LoadedExtension, KodoHighlightingDefinition> _highlightingCache =
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<LoadedExtension, CompiledSyntaxProfile> _compiledSyntaxProfileCache =
         new(ReferenceEqualityComparer.Instance);
-    // Caches the result of the content-sniff (first-line language detection) per absolute
-    // file path. Avoids re-opening and reading the file on every tab switch for files that
-    // have no matching extension (e.g. Makefile, Dockerfile, .csproj opened from a folder).
-    // Entries are never stale within a session because the language mapping is fixed once
-    // the file is first opened; the cache is small (one string key per opened file).
+    // Caches content-sniffed language per file path to avoid re-reading extensionless files on every tab switch.
     private readonly Dictionary<string, LoadedExtension?> _contentSniffCache =
         new(StringComparer.OrdinalIgnoreCase);
     private string _findText = string.Empty;
@@ -1101,13 +1017,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public MainWindow(string? startupFilePath)
     {
-        // Suppress all SaveSettings() calls for the entire constructor + OnOpened
-        // startup sequence.  The flag is cleared (and a clean write is forced) in
-        // OnOpened's finally block, so nothing is lost.  Setting it here - rather
-        // than only at the top of OnOpened - closes the window between the
-        // constructor start and the Opened event where incidental saves from
-        // CollectionChanged, ActiveEditorTab, or any future constructor-path call
-        // could overwrite the just-loaded settings with a partial snapshot.
+        // Suppresses SaveSettings() for the whole constructor + OnOpened sequence; cleared in OnOpened's finally block.
         _suppressSettingsSave = true;
 
         var trimmedStartupPath = startupFilePath?.Trim().Trim('"');
@@ -1126,16 +1036,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_emojiTypefaceColorizer);
         EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
-        // Replace AvaloniaEdit's default LinkElementGenerator with a stricter one that
-        // trims trailing punctuation (e.g. ')' ')' ']') so prose text ending with those
-        // characters isn't swept into a link span.
+        // Replaces the default LinkElementGenerator with one that trims trailing punctuation from link spans.
         var defaultLinkGen = EditorTextBox.TextArea.TextView.ElementGenerators.OfType<LinkElementGenerator>().FirstOrDefault();
         if (defaultLinkGen is not null)
             EditorTextBox.TextArea.TextView.ElementGenerators.Remove(defaultLinkGen);
         EditorTextBox.TextArea.TextView.ElementGenerators.Add(new StrictLinkElementGenerator());
-        // Show a "Ctrl+click to open" tooltip whenever the pointer hovers over a URL in the editor.
-        // We hit-test the document position under the pointer and scan the line text with the same
-        // regex used by StrictLinkElementGenerator, so the tooltip only appears over actual links.
+        // Shows a Ctrl+click tooltip over URLs, using the same regex as StrictLinkElementGenerator.
         EditorTextBox.TextArea.TextView.PointerMoved += EditorTextView_OnPointerMoved;
         EditorTextBox.TextArea.TextView.PointerExited += EditorTextView_OnPointerExited;
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
@@ -1148,10 +1054,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
         EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
         AddHandler(InputElement.KeyDownEvent, MainWindow_EditorKeyIntercept_OnKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
-        // Register Ctrl+wheel zoom on the image scroll viewer in the tunnel phase so we
-        // intercept before ScrollViewer processes the event. Without tunnel registration
-        // the ScrollViewer consumes the wheel event for scrolling before our handler runs,
-        // meaning Ctrl+wheel appears to stop working once the image overflows its container.
+        // Registers Ctrl+wheel zoom in the tunnel phase so it fires before ScrollViewer consumes the scroll.
         ImageScrollViewer.AddHandler(
             InputElement.PointerWheelChangedEvent,
             ImageScrollViewer_OnPointerWheelChanged,
@@ -1176,16 +1079,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _hasCompletedTutorial = settings.HasCompletedTutorial;
         _isDataTrackingEnabled = settings.AllowDataTracking;
         _hasRespondedToDataTrackingPrompt = settings.HasRespondedToDataTrackingPrompt;
-        // Bring the Aptabase client in line with the just-loaded consent choice.
-        // Before this call it defaults to disabled, so nothing can be sent
-        // between process start and this point regardless of a prior choice.
+        // Syncs the Aptabase client with the loaded consent choice (it defaults to disabled until now).
         AptabaseClient.SetEnabled(_isDataTrackingEnabled);
         _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom" or "theme"
             ? settings.AccentColorMode : "kodo";
-        // Migration: before "theme" was a distinct mode, "kodo" with a theme active
-        // meant "follow the theme accent". Detect this case and upgrade the saved value
-        // so existing users don't silently lose their theme accent preference.
-        // (The theme hasn't loaded yet here, so we defer the check to after ApplyThemeBrushes.)
+        // Migration: upgrade legacy "kodo" mode with an active theme to "theme" mode so the accent preference isn't lost.
         _customAccentHex = string.IsNullOrWhiteSpace(settings.CustomAccentHex)
             ? "#8C00FF" : settings.CustomAccentHex;
         _tabSize = NormalizeTabSize(settings.TabSize);
@@ -1219,31 +1117,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             installInBackground: () => IsAutoUpdateAppInBackgroundEnabled);
         _marketplaceRefreshTimer.Tick += MarketplaceRefreshTimer_OnTick;
 
-        // ── Pre-DataContext theme bootstrap ────────────────────────────────────
-        // Extensions must be loaded before ApplyTheme so custom themes are available.
-        // Both calls happen before DataContext = this so that when bindings first
-        // evaluate, all brush properties already carry the correct values.
-        // This eliminates the one-frame flash / re-paint that was visible on startup
-        // when using the Light theme or any high-contrast extension theme.
+        // Extensions load before ApplyTheme, both before DataContext = this, avoiding a startup flash.
         EnsureExtensionsFolder();
         SetupExtensionFolderWatchers();
         LoadExtensions();
         ApplyThemeBrushes(_requestedThemeName);
 
-        // Migration: if the user saved "kodo" mode but a theme is active (legacy behaviour
-        // where "kodo" followed the theme accent), silently upgrade to "theme" mode so
-        // the Kodo purple option remains independently selectable going forward.
+        // Migration: legacy "kodo" mode with an active theme is upgraded to "theme" mode.
         if (_accentColorMode == "kodo" && _hasThemeAccent)
             _accentColorMode = "theme";
 
         DataContext = this;
         IsHomePageVisible = true;
 
-        // Kick off the full async refresh (marketplace fetch, icon loading, etc.)
-        // now that the UI is live. The synchronous LoadExtensions() above already
-        // populated the theme; the async path below will update everything else
-        // (marketplace data, update badges) without touching the brush values again
-        // unless the user has changed settings while offline.
+        // Kicks off the async marketplace refresh; LoadExtensions() already populated the theme synchronously.
         UpdateDiscordRichPresenceLifecycle();
         UpdateExtensionAutoUpdateLifecycle();
         _appUpdateScheduler.UpdateLifecycle();
@@ -1376,35 +1263,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsRefreshingExtensions = true;
         ExtensionsStatusText = "Refreshing extensions...";
 
-        // ── Refresh watchdog ────────────────────────────────────────────────
-        // If the entire refresh (disk scan + marketplace fetch) does not complete
-        // within GitHubOperationTimeout (7 s) we fire the standard Kodo warning
-        // dialog so the user knows the panel is stuck - not just silently spinning.
-        //
-        // HOW IT WORKS:
-        //   A CancellationTokenSource drives a parallel Task.Delay watchdog.
-        //   The watchdog races the real work; whichever finishes first wins.
-        //   • Real work finishes first  → watchdog CTS is cancelled, delay exits
-        //     cleanly, no dialog is shown.
-        //   • Watchdog fires first      → the delay elapses, the watchdog posts
-        //     a TimeoutException to the UI thread (dialog + log), then exits.
-        //     The real work is NOT hard-cancelled: network ops already carry their
-        //     own 7-second CancellationToken (RunWithGitHubTimeoutAsync), so they
-        //     will fail shortly after and clean up normally via the catch block.
-        //
-        // WHY NOT Task.WhenAny + hard cancel on the work task?
-        //   The work awaits Dispatcher.UIThread.InvokeAsync in several places.
-        //   Cancelling an InvokeAsync continuation from a background token is not
-        //   safe - it can leave the ObservableCollections mid-mutation and corrupt
-        //   the binding state.  The watchdog-only approach lets the work unwind
-        //   itself cleanly while giving the user immediate feedback.
-        //
-        // suppressWatchdog = true when called as a sub-step of an install/uninstall.
-        // In those flows the outer operation already owns error reporting (download
-        // timeout, write failure, etc.) and has its own RunWithGitHubTimeoutAsync
-        // guard on the network work.  Firing a second independent watchdog here
-        // would race against the outer handler and produce a misleading
-        // "Marketplace refresh" dialog for what is actually an install timeout.
+        // Refresh watchdog: warns if the full refresh doesn't finish within GitHubOperationTimeout.
+        // A parallel delay races the real work; the real work isn't hard-cancelled.
+        // suppressWatchdog=true when called from an install/uninstall step that already owns its own timeout handling.
         using var watchdogCts = new CancellationTokenSource();
         var watchdogToken = watchdogCts.Token;
         if (!suppressWatchdog)
@@ -1445,12 +1306,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            // ScanInstalledExtensions is pure I/O - run it off the UI thread.
-            // Everything after the scan (collection mutations, PropertyChanged
-            // notifications, marketplace fetch) MUST run on the UI thread because
-            // Avalonia's binding engine requires it.  We marshal explicitly with
-            // InvokeAsync rather than relying on the SynchronizationContext, which
-            // is not guaranteed to be the UI context after a Task.Run await.
+            // ScanInstalledExtensions runs off the UI thread; everything after is marshalled via InvokeAsync.
             var extensionScan = await Task.Run(ScanInstalledExtensions);
             await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(extensionScan));
             await LoadMarketplaceExtensionsAsync();
@@ -1496,9 +1352,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private ExtensionScanResult ScanInstalledExtensions()
     {
-        // Compiled highlighting definitions are keyed by LoadedExtension reference.
-        // Extension reload creates new instances, so the old entries are now orphaned;
-        // drop them here to avoid a memory leak and ensure fresh definitions are built.
+        // Drops cached highlighting definitions on reload since old LoadedExtension instances are now orphaned.
         var loadedExtensions = new List<LoadedExtension>();
         var extensionLoadErrors = new List<string>();
         var searchPaths = GetExtensionSearchPaths().ToList();
@@ -1559,10 +1413,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
         SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
 
-        // Decode icon bitmaps here on the UI thread. The background scan stored raw
-        // PNG/SVG bytes in IconBytes to avoid creating Avalonia Bitmaps off-thread (which
-        // is unsafe and causes silent failures). Now that we're on the UI thread we
-        // can safely decode them and clear the staging bytes to free the memory.
+        // Decodes icon bitmaps on the UI thread, then clears the staged raw bytes.
         foreach (var ext in LoadedExtensions)
         {
             if (ext.IconImage is null && ext.SvgData is null && ext.IconBytes is not null)
@@ -1581,10 +1432,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // Re-stamp IsActiveTheme on every theme extension now that the collection
-        // may contain brand-new LoadedExtension instances (SyncObservableCollection
-        // adds new objects with IsActiveTheme = false). The CurrentThemeName setter
-        // only ran once during ApplyThemeBrushes, before these objects existed.
+        // Re-stamps IsActiveTheme since new LoadedExtension instances may have joined since it was set.
         foreach (var ext in ThemeExtensions)
             ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, _currentThemeName, StringComparison.OrdinalIgnoreCase);
 
@@ -1607,35 +1455,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState());
 
-        // -- Disk-cache fast path ---------------------------
-        // Seed the collection from the on-disk cache so the marketplace appears
-        // immediately even before the network round-trip completes. Subsequent
-        // refreshes in the same session skip this (collection is already populated).
+        // Seeds the marketplace list from the disk cache so it appears immediately, before the network round-trip completes.
         var diskJson = TryReadMarketplaceIndexCache();
         if (diskJson is not null && !MarketplaceExtensions.Any())
             ParseAndApplyMarketplaceIndex(diskJson, marketplaceExtensions, extensionLoadErrors);
 
         try
         {
-            // -- Conditional ETag fetch --------------------------
-            // Send If-None-Match with the stored ETag so GitHub can reply 304 Not
-            // Modified when the index hasn't changed.  304 responses do NOT count
-            // against the 60 req/hr anonymous rate limit, so repeated refreshes
-            // (startup, post-install, manual) are free as long as nothing changed.
-            // Only a real 200 response burns one rate-limit slot.
-            //
-            // Only attach the conditional header when marketplaceExtensions is
-            // already non-empty (seeded above from the disk cache, or already
-            // populated earlier this session) - i.e. we actually have something
-            // to fall back on if the server answers 304.  The ETag file and the
-            // cache JSON file are written independently below, so they can fall
-            // out of sync (a killed process, a locked file, a cache folder that
-            // got cleared without the ETag alongside it). A stale-but-valid ETag
-            // sent with nothing to reuse would let a 304 "succeed" with zero
-            // marketplace extensions and no error to explain why - which is
-            // silent and only "fixable" by luck on a manual retry. Dropping the
-            // conditional header in that case forces an unconditional 200 with a
-            // full body instead.
+            // Sends If-None-Match so an unchanged index returns a free 304.
+            // Only attaches the conditional header when we already have marketplace data to fall back on.
             _marketplaceIndexETag ??= TryReadMarketplaceIndexETag();
             var hasLocalDataToReuseOn304 = marketplaceExtensions.Count > 0;
             using var indexRequest = new HttpRequestMessage(HttpMethod.Get, DefaultMarketplaceIndexUrl);
@@ -1755,10 +1583,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private async Task FetchMarketplaceIconsAsync(IReadOnlyDictionary<string, string> marketplaceIconMap)
     {
-        // Apply icons whose bytes are already cached synchronously on the UI thread -
-        // this covers entries that came in via SyncMarketplaceExtensionCollection without
-        // a bitmap (e.g. a brand-new item that happened to share a URL with a previously
-        // fetched icon) and avoids an unnecessary async round-trip for them.
+        // Applies already-cached icon bytes synchronously, skipping an async round-trip.
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             foreach (var entry in MarketplaceExtensions)
@@ -1812,9 +1637,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         await Task.WhenAll(tasks);
 
-        // Log a warning if every icon fetch failed - suggests a network or rate-limit
-        // problem - but don't surface a dialog: icons are decorative and a modal here
-        // would block the marketplace from appearing while extensions loaded fine.
+        // Logs a warning if every icon fetch failed, but doesn't show a dialog since icons are purely decorative.
         if (iconAttempts > 0 && iconFailures == iconAttempts && lastIconException is not null)
         {
             KodoDiagnostics.LogDebug(
@@ -1853,16 +1676,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out bytes))
             {
-                // Per-request timeout so a single stalled icon fetch cannot hold
-                // up the entire FetchMarketplaceIconsAsync Task.WhenAll.
-                // Uses GitHubOperationTimeout (7 s) - the same ceiling applied to
-                // every other GitHub operation - so icon fetches are consistent.
+                // Per-request timeout (GitHubOperationTimeout) so one stalled icon fetch can't hold up the whole Task.WhenAll.
                 using var cts = new CancellationTokenSource(GitHubOperationTimeout);
 
-                // Kodo-hosted icon URLs use the GitHub Contents API
-                // (api.github.com/repos/.../contents/...) so the raw+json Accept header
-                // is required to get file bytes directly rather than a base64-wrapped
-                // JSON response.  Third-party URLs (Wikipedia, etc.) are plain GETs.
+                // Kodo-hosted icon URLs go through the Contents API with the raw+json header; third-party URLs are plain GETs.
                 using var request = new HttpRequestMessage(HttpMethod.Get, iconUrl);
                 if (IsGitHubContentsApiUrl(iconUrl))
                     request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
@@ -1979,12 +1796,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            // Use the GitHub Contents API with the raw+json Accept header so GitHub
-            // returns the file bytes directly (no base64 wrapping) at the same
-            // generous rate limits as the marketplace index fetch.
-            // The entire operation - headers + body - must complete within
-            // GitHubOperationTimeout (7 s); a stall past that point throws
-            // TimeoutException and surfaces the standard Kodo error dialog.
+            // Fetches ANNOUNCEMENTS.md via the Contents API under GitHubOperationTimeout.
             using var request = new HttpRequestMessage(HttpMethod.Get, AnnouncementsUrl);
             request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
             request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
@@ -2010,10 +1822,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             KodoDiagnostics.LogDebug("Failed to fetch announcements", ex);
             IsNewsError = true;
 
-            // Show the Kodo warning dialog so the user knows the news panel is stale
-            // and can see the specific reason (timeout, HTTP error, parse failure, etc.).
-            // Fire-and-forget is intentional: IsNewsLoading must be cleared immediately
-            // in the finally block; we must not await the modal here.
+            // Shows the warning dialog on a failed news fetch; fire-and-forget.
             _ = ShowWarningDialogAsync("News / Announcements fetch", ex);
         }
         finally
@@ -2024,14 +1833,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Parses the ANNOUNCEMENTS.md format:
-    //   ## Title
-    //   > 2024-06-01          ← optional date line (blockquote)
-    //   body lines...
-    //   ---   (separator between posts)
-    //
-    // Items are returned in reverse order so the last entry in the file
-    // appears at the top of the news panel.
+    // Parses ANNOUNCEMENTS.md: "## Title", optional "> yyyy-MM-dd" date blockquote, body lines, then "---" between posts.
+    // Returned in reverse order so the latest entry appears first.
     private static List<NewsItem> ParseAnnouncementsMd(string md)
     {
         var items = new List<NewsItem>();
@@ -2055,9 +1858,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else if (title is not null && updatedAt is null && line.StartsWith("> "))
                 {
-                    // A blockquote immediately after the heading is treated as the date.
-                    // Try to parse yyyy-MM-dd and reformat to e.g. "June 12, 2026";
-                    // fall back to the raw string if it doesn't match that pattern.
+                    // Blockquote after the heading is the date; parsed as yyyy-MM-dd, or kept raw.
                     var raw = line[2..].Trim();
                     updatedAt = DateTime.TryParseExact(
                         raw,
@@ -2175,9 +1976,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
     }
 
-    // Extracts marketplace entries from a raw JSON string and appends them to
-    // the provided lists.  Shared by the disk-cache seed path and the live-200
-    // parse path so both go through identical validation logic.
+    // Extracts marketplace entries from raw JSON; shared by the disk-cache seed and live-fetch paths.
     private static void ParseAndApplyMarketplaceIndex(
         string json,
         List<MarketplaceExtension> marketplaceExtensions,
@@ -2379,11 +2178,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Like SyncObservableCollection<MarketplaceExtension>, but carries the already-fetched
-    // IconImage bitmap across to the replacement object instead of discarding it.
-    // Without this, every LoadMarketplaceExtensionsAsync call (including the one triggered
-    // after an install) replaces items with freshly-parsed objects whose IconImage is null,
-    // causing a flicker back to the abbreviation placeholder and an unnecessary re-fetch.
+    // Like SyncObservableCollection, but carries over the already-fetched icon bitmap.
     private static void SyncMarketplaceExtensionCollection(
         ObservableCollection<MarketplaceExtension> target,
         IList<MarketplaceExtension> source)
@@ -2495,11 +2290,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var installedExtension = GetPreferredLoadedExtension(marketplaceExtension.Id);
             var outputPath = ResolveExtensionInstallPath(marketplaceExtension, installedExtension);
 
-            // Download the package under GitHubOperationTimeout (7 s) so a stalled
-            // download cannot silently hold up the entire install pipeline and then
-            // trigger the RefreshExtensionsDataAsync watchdog as a false positive.
-            // Previously used GetByteArrayAsync with no CancellationToken, meaning
-            // the download could block for the full 30-second HttpClient.Timeout.
+            // Downloads the package under GitHubOperationTimeout so a stall can't silently block the install pipeline.
             var bytes = await RunWithGitHubTimeoutAsync(
                 $"Extension download - {marketplaceExtension.Name}",
                 async ct =>
@@ -2520,10 +2311,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await File.WriteAllBytesAsync(outputPath, bytes);
             NormalizeKoxManifestVersion(outputPath);
 
-            // suppressWatchdog: true - the download above already carried its own
-            // RunWithGitHubTimeoutAsync guard. A second independent watchdog here
-            // would race the outer install handler and emit a misleading
-            // "Marketplace refresh" dialog for what was actually an install timeout.
+            // suppressWatchdog=true: the download already has its own timeout guard.
             await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
             ExtensionsStatusText = $"{marketplaceExtension.Name} {(wasUpdate ? "updated" : "installed")}.";
         }
@@ -2773,13 +2561,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Converts a GitHub blob viewer URL
-    /// (https://github.com/{owner}/{repo}/blob/{branch}/{path}) to the
-    /// Contents API (https://api.github.com/repos/{owner}/{repo}/contents/{path})
-    /// so it can be fetched as raw bytes.  Raw CDN URLs
-    /// (raw.githubusercontent.com), Contents API URLs, and all other URLs are
-    /// returned unchanged - this rewrite is only needed for blob viewer links,
-    /// which return an HTML page rather than file bytes when fetched directly.
+    /// Converts a GitHub blob-viewer URL to the Contents API form for raw bytes.
     /// </summary>
     private static string NormalizeGitHubBlobViewerUrl(string url)
     {
@@ -2806,18 +2588,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Normalises any GitHub file URL to the Contents API so it can be fetched
-    /// as raw bytes using the <c>application/vnd.github.raw+json</c> Accept header.
-    ///
-    /// All three GitHub URL forms are accepted and rewritten:
-    ///   https://github.com/{owner}/{repo}/blob/{branch}/{path}      (viewer)
-    ///   https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}  (raw CDN)
-    ///   https://api.github.com/repos/{owner}/{repo}/contents/{path} (already correct)
-    ///   -> https://api.github.com/repos/{owner}/{repo}/contents/{path}
-    ///
-    /// This means contributors can use any of the three forms in the extension
-    /// index and the app will normalise them transparently at parse time.
-    /// Third-party URLs (e.g. Wikipedia, Wikimedia) are returned unchanged.
+    /// Normalises any of GitHub's three URL forms to the Contents API form.
+    /// Third-party URLs are returned unchanged.
     /// </summary>
     private static string NormalizeGitHubUrl(string url)
     {
@@ -2864,10 +2636,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Returns true when <paramref name="url"/> is a GitHub Contents API endpoint
-    /// (api.github.com/repos/.../contents/...).  Used to decide whether to add
-    /// the <c>application/vnd.github.raw+json</c> Accept header to a request so
-    /// GitHub returns file bytes directly instead of a base64-wrapped JSON object.
+    /// True when the URL is a GitHub Contents API endpoint, used to decide whether to add the raw+json Accept header.
     /// </summary>
     private static bool IsGitHubContentsApiUrl(string url) =>
         !string.IsNullOrWhiteSpace(url) &&
@@ -3384,9 +3153,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ext.NotifyAllBrushesChanged();
         }
 
-        // Keep the active-theme dot in sync whenever brushes are refreshed.
-        // This covers the case where a new LoadedExtension instance was added
-        // after CurrentThemeName was last set (e.g. post-startup extension load).
+        // Keeps the active-theme dot in sync after brushes refresh, covering newly-added LoadedExtension instances.
         foreach (var ext in ThemeExtensions)
             ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, _currentThemeName, StringComparison.OrdinalIgnoreCase);
     }
@@ -3442,9 +3209,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return effectiveExtension;
     }
 
-    // Peeks at the first non-empty line of a file and tries to match it against known
-    // XML/MSBuild root elements so that extensionless or ambiguous files (e.g. a bare
-    // "Makefile" that is actually an MSBuild .proj) get syntax highlighting anyway.
+    // Peeks at the first line to match known XML/MSBuild root elements, so ambiguous files still get highlighting.
     private LoadedExtension? TryDetectLanguageFromContent(string filePath)
     {
         try
@@ -3510,9 +3275,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return ImagePreviewExtensions.Contains(ext);
     }
 
-    // Returns true when the byte content of a file indicates it is binary (non-text).
-    // We sample up to 8 KB and treat the file as binary if it contains any null bytes,
-    // which is the standard heuristic used by git and most editors.
+    // Binary detection: sample up to 8 KB and flag null bytes, the standard git/editor heuristic.
     private static bool IsBinaryContent(string path)
     {
         try
@@ -3856,10 +3619,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return score;
     }
 
-    // Inline-code language detection now lives in SyntaxColorEngine.cs
-    // (InlineCodeLanguageDetector) so all syntax-matching logic stays in the
-    // engine rather than the window's code-behind. This wrapper just supplies
-    // the currently loaded extensions.
+    // Inline-code language detection now lives in SyntaxColorEngine.cs; this just supplies the loaded extensions.
     private LoadedExtension? ResolveInlineCodeLanguageExtension(string codeSnippet) =>
         InlineCodeLanguageDetector.Resolve(LoadedExtensions, codeSnippet);
 
@@ -3970,9 +3730,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Master visibility flag for the consolidated opening splash. Whether it
-    // shows release notes, a diagnostics-consent ask, or both is decided once
-    // at trigger time - see the sequencing comment in LoadStartupTabsAsync.
+    // Master visibility flag for the opening splash (release notes and/or consent ask).
     public bool IsUpdateSplashVisible
     {
         get => _isUpdateSplashVisible;
@@ -3987,9 +3745,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Gates the release-notes heading + scrollable notes box inside the opening
-    // splash. False for a diagnostics-consent-only showing (no version bump
-    // pending), so the splash reduces to just the consent card in that case.
+    // Gates the release-notes section of the opening splash; false means a consent-only showing.
     public bool IsReleaseNotesSectionVisible => _isUpdateSplashVisible && _openingSplashShowsReleaseNotes;
 
     public string OpeningSplashTitleText => _openingSplashShowsReleaseNotes
@@ -4000,12 +3756,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? LatestReleaseDisplayName
         : "One quick question before you get back to it.";
 
-    // Backs the "Help improve Kodo" checkbox in Settings, and the Accept/Decline
-    // buttons on the consent card (shown in the tutorial's setup step for new
-    // installs, and in the opening splash - alongside release notes, on its
-    // own, or not at all, depending on why the splash was triggered). Any
-    // explicit interaction with this setting counts as the user having made a
-    // choice, so the consent card never asks again afterwards.
+    // Backs the "Help improve Kodo" consent checkbox; any interaction counts as answered.
     public bool IsDataTrackingEnabled
     {
         get => _isDataTrackingEnabled;
@@ -4028,9 +3779,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // True until the user has accepted or declined the data-tracking consent
-    // prompt at least once. Drives the consent card's visibility in both the
-    // tutorial setup step and the update splash.
+    // True until the user has answered the consent prompt at least once.
     public bool IsDataTrackingPromptVisible => !_hasRespondedToDataTrackingPrompt;
 
     // Base width 240 + extra pixels per character beyond 2 in the longest icon label.
@@ -4106,11 +3855,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool HasThemeExtensions => ThemeExtensions.Any();
 
     /// <summary>
-    /// ThemeExtensions grouped by extension name.  Multi-theme extensions
-    /// (e.g. "Dark Themes" with 4 cards) become a single collapsible group;
-    /// single-theme extensions appear as a group of one (always expanded,
-    /// no collapse chrome).  Bind the Settings and tutorial theme lists to
-    /// this instead of <see cref="ThemeExtensions"/>.
+    /// ThemeExtensions grouped by name; multi-theme extensions collapse into one group.
+    /// Bind Settings/tutorial theme lists to this instead of <see cref="ThemeExtensions"/>.
     /// </summary>
     public IEnumerable<ThemeExtensionGroup> GroupedThemeExtensions =>
         ThemeExtensions
@@ -4252,14 +3998,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static bool IsDevBuild =>
         CurrentAppVersion.Contains("-DEV", StringComparison.OrdinalIgnoreCase);
 
-    // Suffix priority for comparing two tags with the same numeric core, low to
-    // high: -DEV < -ALPHA < -BETA < (unrecognized suffix) < -RC < stable (no
-    // suffix). "-RC" is deliberately closest to a full release. Any suffix
-    // Kodo doesn't specifically recognize (e.g. "-PREVIEW") is still treated
-    // as *some* kind of pre-release - ranked below "-RC" and stable, but above
-    // the earlier known stages - so a new tag invented later can't silently
-    // outrank a real release candidate or a stable build, without needing a
-    // code change every time one shows up.
+    // Pre-release suffix ranking: -DEV < -ALPHA < -BETA < unrecognized < -RC < stable.
     private static int VersionPriority(string tag)
     {
         var dash = tag.IndexOf('-');
@@ -4295,10 +4034,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return VersionPriority(CurrentAppVersion) > VersionPriority(lastSeen);
     }
 
-    // Core version check - dismissal has no effect here.
-    // -DEV builds always return false (updates suppressed entirely).
-    // Priority: stable > beta > dev. A stable latest beats a beta current
-    // of the same numeric version; a beta latest beats a dev current, etc.
+    // Core version check ignores dismissal; -DEV builds never report updates. Priority: stable > beta > dev.
     public bool IsNewerVersionAvailable
     {
         get
@@ -4347,9 +4083,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? "No release notes available."
         : ConvertMarkdownToDisplayText(LatestRelease.Notes);
 
-    // Structured version of the release notes: a list of paragraphs, each containing
-    // inline runs that carry bold/normal weight. Used by the formatted notes template
-    // in both the Settings What's New card and the update splash screen.
+    // Structured release notes: paragraphs of bold/normal runs, used by both the Settings and splash templates.
     public IReadOnlyList<FormattedParagraph> LatestReleaseFormatted =>
         string.IsNullOrWhiteSpace(LatestRelease?.Notes)
             ? [new FormattedParagraph { Runs = [new FormattedRun { Text = "No release notes available." }] }]
@@ -4426,11 +4160,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Matches **bold** and __bold__ spans for inline run splitting.
     private static readonly Regex MdInlineBoldRegex = new(@"\*\*(.+?)\*\*|__(.+?)__", RegexOptions.Compiled | RegexOptions.Singleline);
 
-    // Parses raw GitHub markdown into a flat list of FormattedParagraphs.
-    // Each paragraph carries a list of FormattedRuns (bold / normal) so the
-    // AXAML template can render them inline with correct FontWeight.
-    // Handles: bullet lines (* / - / +), numbered lists, headings (as bold),
-    // horizontal rules (skipped), code fences (stripped), and inline **bold**.
+    // Parses raw GitHub markdown into bold/normal runs for AXAML rendering.
     private static IReadOnlyList<FormattedParagraph> ParseMarkdownParagraphs(string markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown))
@@ -4504,10 +4234,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             line = line.Trim();
             if (string.IsNullOrEmpty(line)) continue;
 
-            // Split the line into bold/normal runs. The list marker (if any)
-            // is tracked separately rather than injected as a leading run, so
-            // it can be rendered in its own fixed-width column and wrapped
-            // lines hang-indent under the first word, not under the marker.
+            // Splits the line into bold/normal runs; the list marker is tracked separately.
             var runs = new List<FormattedRun>();
 
             var marker = isBullet ? "•"
@@ -4634,9 +4361,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string TutorialShortcutText => CurrentTutorialStep.Shortcut;
 
-    // Step 4 ("Settings") SpotlightTitle is "Personalize the experience" in the static array.
-    // Step 5 ("Set up") SpotlightTitle is "Why personalise?" in the static array.
-    // Swap to the correct regional form for each.
+    // Swaps the regional wording for the Settings/Setup tutorial step titles.
     public string TutorialSpotlightTitle => TutorialStepIndex switch
     {
         4 => IsAmericanEnglish ? "Personalize the experience"  : "Personalise the experience",
@@ -4740,9 +4465,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// When on, Debug-level traces are also appended to kodo.log (not just
-    /// the Debug output), which is useful when diagnosing an issue but noisy
-    /// enough that it stays off by default.
+    /// When on, also appends Debug-level traces to kodo.log; useful for diagnosing issues but noisy, so off by default.
     /// </summary>
     public bool IsVerboseLoggingEnabled
     {
@@ -4903,9 +4626,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Settings toggle: when on, Kodo silently installs marketplace updates for
-    // installed extensions on launch and every few hours afterwards, instead of
-    // requiring a manual click on "Update" / "Update All" in the Marketplace.
+    // Settings toggle: silently install extension updates instead of requiring a manual click.
     public bool IsAutoUpdateExtensionsEnabled
     {
         get => _isAutoUpdateExtensionsEnabled;
@@ -4922,10 +4643,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Sub-setting: only takes effect while IsAutoUpdateExtensionsEnabled is on
-    // (see the indented checkbox under it in Settings). Suppresses the
-    // "Auto-updating X of Y..." progress text in AutoUpdateExtensionsIfEnabledAsync
-    // so the silent sweep makes no visible change to the Extensions page at all.
+    // Sub-setting: suppresses the "Auto-updating..." progress text so the silent sweep makes no visible change.
     public bool IsAutoUpdateExtensionsInBackgroundEnabled
     {
         get => _isAutoUpdateExtensionsInBackgroundEnabled;
@@ -4939,10 +4657,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Settings toggle: when on, Kodo checks GitHub Releases for a newer build
-    // a few seconds after launch and offers to download/install it. Turning
-    // this off skips the background check entirely - the app stays on the
-    // installed version until the user updates manually.
+    // Settings toggle: check GitHub Releases for a newer build after launch and offer to install it.
     public bool IsAutoUpdateAppEnabled
     {
         get => _isAutoUpdateAppEnabled;
@@ -4957,12 +4672,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Sub-setting: only takes effect while IsAutoUpdateAppEnabled is on (see
-    // the indented checkbox under it in Settings). When on, a found update is
-    // downloaded and installed immediately via UpdateService.SilentlyInstallAsync
-    // instead of showing UpdateDialog's "Update Now" / "Later" prompt - across
-    // the launch check, the periodic timer, and the manual "Check for Updates"
-    // button alike.
+    // Sub-setting: installs a found app update immediately, no Update Now/Later prompt.
     public bool IsAutoUpdateAppInBackgroundEnabled
     {
         get => _isAutoUpdateAppInBackgroundEnabled;
@@ -4976,9 +4686,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Drives the "Check for Updates" button in Settings while a manual check
-    // is in flight - disables the button and swaps its label so a slow/rate
-    // limited GitHub response doesn't look like a dead click.
+    // Drives the Check for Updates button's disabled/label state while a manual check is running.
     public bool IsCheckingForUpdatesManually
     {
         get => _isCheckingForUpdatesManually;
@@ -5114,15 +4822,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ── Terminal panel resize splitter ───────────────────────────────────────
-    // Manual drag handling (rather than Avalonia's GridSplitter) so the dragged
-    // value flows straight through the TerminalPanelHeight property - which is
-    // what gets persisted to settings.json and is the same value the AXAML
-    // binds the panel's Height to. The actual ConPTY/grid resize underneath
-    // needs no special handling here: ConsoleTerminal.ArrangeOverride
-    // already reacts to any bounds change (this one included) by recalculating
-    // rows/cols and calling Resize(), which resizes both the cell buffer and
-    // the native pseudo console via ResizePseudoConsole.
+    // Manual drag handling so the value flows straight into TerminalPanelHeight.
     private void TerminalPanelSplitter_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is not InputElement element) return;
@@ -5139,9 +4839,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (!_isResizingTerminalPanel) return;
 
-        // The splitter sits above the terminal panel, so dragging it up (toward
-        // smaller Y) should grow the panel and dragging it down should shrink it -
-        // the inverse of the pointer's own delta.
+        // The splitter sits above the panel, so dragging up should grow it - the inverse of the pointer's delta.
         var deltaY = _terminalPanelDragStartPointerY - e.GetPosition(this).Y;
         TerminalPanelHeight = _terminalPanelDragStartHeight + deltaY;
         e.Handled = true;
@@ -5153,17 +4851,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _isResizingTerminalPanel = false;
         e.Pointer.Capture(null);
-        // Flush the final height to disk right away instead of waiting on the
-        // debounce timer, so a quick resize-then-close can't lose the change to
-        // the same shutdown race the immediate/synchronous save guards against.
+        // Flushes the final height immediately instead of waiting on the debounce timer, in case of a quick resize-then-close.
         SaveSettings(immediate: true);
         e.Handled = true;
     }
 
-    // Defends against a stray PointerCaptureLost (e.g. dragging the splitter past
-    // the window edge, or the window losing focus mid-drag) leaving the panel
-    // permanently in "resizing" mode, which would make it keep tracking pointer
-    // moves anywhere in the window after the drag should have ended.
+    // Guards against a stray PointerCaptureLost leaving the panel stuck in resize mode.
     private void TerminalPanelSplitter_OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
         if (!_isResizingTerminalPanel) return;
@@ -5181,11 +4874,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (ReferenceEquals(_activeTerminalSession, value))
                 return;
 
-            // ── Save the outgoing session's screen buffer ─────────────────────
-            // ConsoleTerminal hosts exactly one ConPTY at a time. Switching
-            // sessions stops the outgoing process, but the tab remains
-            // restorable from its saved snapshot, so show it as paused instead
-            // of exited.
+            // Saves the outgoing session's screen buffer; the tab stays restorable and shows as paused instead of exited.
             if (_activeTerminalSession is not null)
             {
                 if (TerminalHostControl.HasLiveProcess)
@@ -5206,10 +4895,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RefreshTerminalStatusBindings();
             if (_activeTerminalSession is not null)
             {
-                // Cold-start the incoming session's process. Start() internally calls
-                // ResizeCells which allocates a fresh empty cell grid, so we must
-                // restore the snapshot AFTER Start() - not before - otherwise the
-                // newly allocated grid would immediately overwrite the restored buffer.
+                // Cold-starts the incoming session; restores the snapshot after Start().
                 var shell = AvailableTerminalShells.FirstOrDefault(s =>
                     string.Equals(s.Id, _activeTerminalSession.ShellId, StringComparison.OrdinalIgnoreCase))
                     ?? GetSelectedTerminalShellOrFallback();
@@ -5217,12 +4903,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     try
                     {
-                        // Unhook the previous handler BEFORE calling Start(), because
-                        // Start() calls Stop() internally which signals the old process
-                        // to exit. If the old handler is still subscribed when that
-                        // WaitForSingleObject wake-up is posted to the UI thread, it
-                        // will fire after the new OnExited is registered and - if the
-                        // post races past the guard - will close the brand-new session.
+                        // Unhooks the previous handler before Start() so it can't fire on the new session.
                         if (_activeSessionExitedHandler is not null)
                         {
                             TerminalHostControl.SessionExited -= _activeSessionExitedHandler;
@@ -5236,20 +4917,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         _activeTerminalSession.IsRunning = true;
                         _activeTerminalSession.StatusText = "Ready";
 
-                        // Capture the handle that Start() just launched. SessionExited
-                        // fires with this same value as its argument, so we can reject
-                        // any post whose handle doesn't match - meaning it's a stale
-                        // wake-up from a process that Stop() already killed.
+                        // Captures the handle Start() launched to reject stale SessionExited posts.
                         var expectedHandle = TerminalHostControl.CurrentProcessHandle;
 
                         var watchedSession = _activeTerminalSession;
                         void OnExited(object? s, IntPtr exitedHandle)
                         {
-                            // Reject stale posts: Stop() inside a subsequent Start() kills
-                            // the old process, which wakes WaitForSingleObject and queues
-                            // a SessionExited post. By the time the UI thread drains it the
-                            // new handler is already subscribed. Comparing handles ensures
-                            // we only act on the exit of the process we actually started.
+                            // Rejects stale SessionExited posts by comparing the exiting process's handle to the one we started.
                             if (exitedHandle != expectedHandle)
                                 return;
 
@@ -5271,9 +4945,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     }
                 }
 
-                // Restore the saved screen buffer now that Start() has finished
-                // initialising the cell grid. This makes the previous session output
-                // visible immediately while the new shell process is still starting up.
+                // Restores the saved screen buffer once Start() finishes initialising the grid.
                 if (_activeTerminalSession.Snapshot is not null)
                     TerminalHostControl.RestoreSnapshot(_activeTerminalSession.Snapshot);
             }
@@ -5412,8 +5084,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // ── Personalization settings ─────────────────────────────────────────────
 
     /// <summary>
-    /// ISO 3166-1 alpha-2 country code entered (or auto-detected) for the user.
-    /// Used to pick region-appropriate holiday / long-weekend messages.
+    /// ISO country code for the user, used to pick region-appropriate holiday messages.
     /// </summary>
     public string UserCountry
     {
@@ -5438,16 +5109,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// True when the user's country is US, driving American English spelling
-    /// (e.g. "Color" / "Personalization") instead of the default British/Canadian spelling.
+    /// True when the user's country is US, driving American spelling instead of British/Canadian.
     /// </summary>
     public bool IsAmericanEnglish => _userCountry == "US";
 
-    // Regional spelling labels - swap between American and British/Canadian English
-    // based on the selected country. US gets "Color" / "Personalization" / "personalize";
-    // everyone else gets "Colour" / "Personalization" - wait, "Personalisation" is the
-    // British form but "Personalization" is widely accepted internationally; only
-    // "colour" vs "color" and "personalise" vs "personalize" are the real visible splits.
+    // Regional spelling: US gets "Color"/"personalize"; everyone else gets "Colour"/"personalise".
     public string LabelAccentColour        => IsAmericanEnglish ? "Accent Color"      : "Accent Colour";
     public string LabelPersonalization     => IsAmericanEnglish ? "Personalization"   : "Personalisation";
     public string LabelPersonalizationDescription => IsAmericanEnglish
@@ -5455,8 +5121,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         : "These settings personalise the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible.";
 
     /// <summary>
-    /// Hemisphere override: 0 = auto-detect from country, 1 = northern, 2 = southern.
-    /// Affects which season is inferred for welcome-message flavour text.
+    /// Hemisphere override: 0 auto-detect, 1 north, 2 south; affects the inferred season for greetings.
     /// </summary>
     public int UserHemisphereIndex
     {
@@ -5473,8 +5138,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// UTC offset string entered by the user (e.g. "-5", "+1").
-    /// When non-empty, overrides the system clock for time-of-day greetings.
+    /// UTC offset entered by the user; overrides the system clock for time-of-day greetings when set.
     /// </summary>
     public string UserTimezoneOffset
     {
@@ -5491,8 +5155,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Optional display name used to personalise greetings (e.g. "Good morning, Alex!").
-    /// Empty means greetings won't include a name.
+    /// Optional display name for personalised greetings; empty omits the name.
     /// </summary>
     public string UserName
     {
@@ -5512,9 +5175,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // ── Welcome message ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// Tries to infer the user's country from the OS regional settings.
-    /// Returns an uppercase ISO 3166-1 alpha-2 code (e.g. "CA", "US") or an
-    /// empty string when no reliable mapping is available.
+    /// Infers the user's country from OS regional settings; returns an ISO code or empty string if unknown.
     /// </summary>
     private static string DetectCountryCode()
     {
@@ -5526,20 +5187,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { return string.Empty; }
     }
 
-    // ── Welcome message ──────────────────────────────────────────────────────
-    // Holiday/calendar detection, real-world sporting-event theming, and the
-    // greeting-pool builder itself all live in WelcomeMessageBuilder.cs.
+    // Holiday, sporting-event, and greeting-pool logic all live in WelcomeMessageBuilder.cs.
 
-    // Populated by FetchSportingEventMessagesAsync; passed into
-    // WelcomeMessageBuilder.BuildMessages so sporting-event lines can join
-    // the greeting pool once they're available.
+    // Populated by FetchSportingEventMessagesAsync and joined into the greeting pool once available.
     private List<string>? _sportingEventMessages;
 
     /// <summary>
-    /// Best-effort fetch of sporting-event-themed welcome messages via
-    /// WelcomeMessageBuilder. Invalidates the welcome-message cache only if
-    /// the Home screen hasn't shown a greeting yet, to avoid a visible
-    /// flicker right after launch.
+    /// Best-effort fetch of sporting-event greeting lines.
     /// </summary>
     private async Task FetchSportingEventMessagesAsync()
     {
@@ -5548,14 +5202,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _sportingEventMessages = messages;
 
-        // Only rebuild the pool if the Home screen hasn't actually shown a
-        // greeting yet. If it has, the greeting is already on screen and
-        // resetting the cache here would make the WelcomeMessage binding
-        // re-roll a *different* random message a moment after launch -
-        // a visible flicker from one greeting to another. Leaving the
-        // already-chosen message in place means the sporting-themed lines
-        // simply join the pool the next time it's genuinely rebuilt
-        // (e.g. a personalization setting change, or the next launch).
+        // Only rebuilds the pool if Home hasn't shown a greeting yet, to avoid a flicker.
         if (_selectedWelcomeMessage is null)
         {
             _welcomeMessagesCache = null;
@@ -5567,12 +5214,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // which are read from settings before DataContext is set.
     private string[]? _welcomeMessagesCache;
 
-    // The single message picked for this "generation" of the pool. Cached so that
-    // repeated reads of WelcomeMessage (multiple binding evaluations, layout passes,
-    // etc.) all return the same text instead of each landing on a different random
-    // pick - which is what caused the greeting to visibly flicker right after launch.
-    // Reset alongside _welcomeMessagesCache whenever the pool genuinely needs to be
-    // re-rolled (e.g. a personalization setting change).
+    // The message picked for this pool generation, cached to avoid re-rolling on every read.
     private string? _selectedWelcomeMessage;
 
     // Evaluated once per launch: true one in ten thousand times, showing the "Code fast. Stay light" tagline.
@@ -5584,9 +5226,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly DateTime _kodoBirthDate = new(2026, 4, 18);
 
     /// <summary>
-    /// True on April 18 every year- Kodo's birthday. Drives celebratory UI accents
-    /// throughout the app (wordmark flourish, window title suffix, status bar note,
-    /// and birthday messages in the welcome pool).
+    /// True on April 18, Kodo's birthday; drives celebratory UI accents throughout the app.
     /// </summary>
     public bool IsKodoBirthday
     {
@@ -5612,8 +5252,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Short celebratory note shown in the status bar on Kodo's birthday, e.g.
-    /// "Kodo turns 1 today! 🎂". Empty on every other day.
+    /// Short status-bar note shown on Kodo's birthday; empty every other day.
     /// </summary>
     public string StatusBarBirthdayText
     {
@@ -5628,9 +5267,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     /// <summary>True only when StatusBarBirthdayText is non-empty (i.e. on the birthday).</summary>
     public bool IsStatusBarBirthdayVisible => IsKodoBirthday;
 
-    // Evaluated once per launch: true one in ten thousand times, swapping the
-    // "Get Started" card's subtitle for a rare alternate line. Same odds as
-    // IsTaglineGreeting above, by design - keeps the two easter eggs consistent.
+    // One-in-ten-thousand chance per launch of an alternate Get Started subtitle, matching IsTaglineGreeting's odds.
     private readonly bool _isRareGetStartedMessage = Random.Shared.Next(10_000) == 0;
     public string GetStartedSubtitleText => _isRareGetStartedMessage
         ? "Legend has it the code writes itself if you wait long enough. (It doesn't - open a file.)"
@@ -5656,17 +5293,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsDarkThemeActive  => !IsSystemThemeActive && string.Equals(CurrentThemeName, "Dark",  StringComparison.OrdinalIgnoreCase);
     public bool IsLightThemeActive => !IsSystemThemeActive && string.Equals(CurrentThemeName, "Light", StringComparison.OrdinalIgnoreCase);
 
-    // True when the user picked "follow Windows" rather than an explicit
-    // Dark/Light/extension theme. Tracked off _requestedThemeName (not
-    // CurrentThemeName) so the System Default blob - not the Dark or Light
-    // blob - shows the active ring, even though CurrentThemeName still
-    // resolves to a concrete "Dark"/"Light" for the colour-application logic.
+    // True when the user picked "follow Windows"; tracked off _requestedThemeName.
     public bool IsSystemThemeActive => string.Equals(_requestedThemeName, "System", StringComparison.OrdinalIgnoreCase);
 
-    // Live preview swatch for the System Default blob. Reflects whatever
-    // Windows is currently reporting (Light or Dark) regardless of which
-    // theme mode is actually active, refreshed by _windowsThemePollTimer -
-    // mirrors how WindowsAccentPreviewBrush stays live for the accent blob.
+    // Live preview for the System Default blob, reflecting Windows' current light/dark state regardless of the active theme.
     public IBrush SystemThemePreviewBackground { get; private set; } = Brush.Parse("#1E1E1E");
     public IBrush SystemThemePreviewBorder     { get; private set; } = Brush.Parse("#2B2B2B");
 
@@ -5791,9 +5421,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush SurfaceBorderBrush    { get; private set; } = Brush.Parse("#2B2B2B");
     public IBrush AccentBrush           { get; private set; } = Brush.Parse("#8C00FF");
 
-    // Black or white - whichever contrasts better against the current AccentBrush.
-    // Used wherever text or icons sit directly on an AccentBrush background so that
-    // dark accent colours (e.g. black, navy) don't make content invisible.
+    // Black or white, whichever contrasts better against AccentBrush, for text/icons drawn on the accent color.
     public IBrush AccentForegroundBrush { get; private set; } = Brushes.White;
 
     // Returns Brushes.White or Brushes.Black depending on which gives better contrast
@@ -5835,16 +5463,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : Brushes.Black;
     }
 
-    // Theme extension packs (.kox files, including third-party marketplace
-    // ones) supply their own text colours as raw hex strings, and nothing
-    // guarantees an author's PrimaryText/MutedText actually reads against
-    // their own background colours - a copy-paste mistake or a near-duplicate
-    // hex is enough to produce invisible ("black on black") text anywhere
-    // that colour is used. Built-in Light/Dark are hand-picked and don't need
-    // this, but anything sourced from an extension does: check the candidate
-    // text colour against every surface it might actually be drawn on, and if
-    // it fails the WCAG AA minimum (4.5:1) against the worst of them, fall
-    // back to whichever of white/black reads best there instead.
+    // Checks the candidate text color against every surface it's on, falls back to WCAG-safe black/white.
     private static IBrush EnsureReadableTextBrush(IBrush candidate, params IBrush[] backgrounds)
     {
         const double MinimumReadableContrast = 4.5; // WCAG AA, normal text
@@ -6171,9 +5790,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_discordRpcClient is null || !IsDiscordRichPresenceEnabled) return;
 
-        // Guard against string allocation on every 75 ms tick by comparing the
-        // primitive inputs that drive the presence strings first. Only when
-        // something actually changed do we build strings and call SetPresence.
+        // Compares primitive inputs first to avoid rebuilding presence strings every tick.
         var currentKey = GetDiscordPresenceKey();
         if (currentKey == _lastDiscordPresenceKey) return;
         _lastDiscordPresenceKey = currentKey;
@@ -6477,9 +6094,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var dir = Path.GetDirectoryName(SettingsFilePath);
                 if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
 
-                // Write to a temp file first, then atomically replace the real file.
-                // This prevents settings from being wiped if the app is killed or
-                // crashes mid-write, which leaves File.WriteAllText with a zero-byte file.
+                // Writes to a temp file first, then atomically replaces the real file.
                 var tempPath = SettingsFilePath + ".tmp";
                 File.WriteAllText(tempPath, JsonSerializer.Serialize(snapshot));
                 File.Move(tempPath, SettingsFilePath, overwrite: true);
@@ -6487,16 +6102,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch (Exception ex) { KodoDiagnostics.LogWarning("MainWindow.PersistSettingsSnapshot", ex, operation: $"Failed to save settings to '{SettingsFilePath}'"); }
         }
 
-        // The "synchronous" path exists for shutdown: PersistSettingsSnapshot used to
-        // always hand the write off to Task.Run, which schedules it on a background
-        // thread-pool thread. On window close, Main() returns right after
-        // StartWithClassicDesktopLifetime, and the process exits as soon as it does -
-        // .NET does not wait for background thread-pool work to finish. That created a
-        // race where the very last settings save (the one that matters most) could be
-        // dropped silently if the process tore down before the background write landed.
-        // Writing synchronously on the UI thread during shutdown guarantees the file is
-        // on disk before the app exits; it's a small, fast JSON write so this adds no
-        // perceptible delay.
+        // Shutdown save runs synchronously so the last write reaches disk before exit.
         if (synchronous)
         {
             WriteToDisk();
@@ -6519,19 +6125,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // ── Theme application ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Sets all theme brush fields and <see cref="Application.RequestedThemeVariant"/>
-    /// without firing <see cref="INotifyPropertyChanged"/>, saving settings, or
-    /// triggering a state refresh.  Call this <em>before</em> <c>DataContext = this</c>
-    /// so that bindings read the correct colours on their very first evaluation and
-    /// the window never renders with the wrong (default) palette.
+    /// Sets theme brushes and <see cref="Application.RequestedThemeVariant"/> without notifications, saves, or refresh.
+    /// Call before <c>DataContext = this</c> so bindings read correct colors on first evaluation.
     /// </summary>
     private void ApplyThemeBrushes(string themeName)
     {
         _requestedThemeName = themeName;
-        // "System" isn't a real palette - resolve it to whatever Windows is
-        // currently reporting before doing the extension/built-in lookup below.
-        // _requestedThemeName stays "System" so persistence and the blob's
-        // active-ring binding still recognise the user's actual selection.
+        // "System" isn't a real palette - resolve it to Windows' current setting first.
         var effectiveThemeName = string.Equals(themeName, "System", StringComparison.OrdinalIgnoreCase)
             ? ResolveSystemThemeName()
             : themeName;
@@ -6555,9 +6155,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CardBrush             = GetCachedBrush(extensionTheme.Card);
             PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
             MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
-            // Theme-pack colours aren't guaranteed to be readable against
-            // each other (author mistakes, near-duplicate hexes) - verify and
-            // fall back to a safe colour rather than risk invisible text.
+            // Theme-pack colors aren't guaranteed readable - verify and fall back to a safe color.
             PrimaryTextBrush = EnsureReadableTextBrush(PrimaryTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
             MutedTextBrush   = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
             SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
@@ -6607,16 +6205,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ThemeAccentPreviewBrush = GetCachedBrush("#8C00FF");
         }
 
-        // Apply the accent override (kodo / windows / custom) silently.
-        // We can't call the full ApplyAccentOverride() here because it calls
-        // ApplyThemeToEditor(), which touches the AvaloniaEdit TextEditor before
-        // it has been fully laid out, but we CAN silently resolve the accent hex
-        // so AccentBrush is correct when bindings first read it.
-        //
-        // WindowsAccentPreviewBrush must also be initialised here from the live
-        // registry value. Without this it stays at its field-initialiser default
-        // (#0078D4) until the poll timer fires ~2 s later, causing the Windows
-        // blob in Settings to flash the wrong colour on every launch.
+        // Silently resolves the accent hex without the full ApplyAccentOverride().
+        // WindowsAccentPreviewBrush is initialised from the live registry here too.
         var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
         try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); }
         catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
@@ -6632,19 +6222,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { AccentBrush = GetCachedBrush("#8C00FF"); }
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
 
-        // Same reasoning as WindowsAccentPreviewBrush above: initialise the
-        // System Default blob's preview from the live registry value now so
-        // it doesn't flash a stale default before the poll timer's first tick.
+        // Initialises the System Default preview from the registry now, not on the first poll tick.
         RefreshSystemThemePreview();
     }
 
     private void ApplyTheme(string themeName)
     {
         _requestedThemeName = themeName;
-        // "System" isn't a real palette - resolve it to whatever Windows is
-        // currently reporting before doing the extension/built-in lookup below.
-        // _requestedThemeName stays "System" so persistence and the blob's
-        // active-ring binding still recognise the user's actual selection.
+        // "System" isn't a real palette - resolve it to Windows' current reporting before the lookup below.
         var effectiveThemeName = string.Equals(themeName, "System", StringComparison.OrdinalIgnoreCase)
             ? ResolveSystemThemeName()
             : themeName;
@@ -6668,9 +6253,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CardBrush             = GetCachedBrush(extensionTheme.Card);
             PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
             MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
-            // Theme-pack colours aren't guaranteed to be readable against
-            // each other (author mistakes, near-duplicate hexes) - verify and
-            // fall back to a safe colour rather than risk invisible text.
+            // Theme-pack colors aren't guaranteed readable against each other - verify and fall back to a safe color.
             PrimaryTextBrush = EnsureReadableTextBrush(PrimaryTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
             MutedTextBrush   = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
             SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
@@ -6738,9 +6321,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsDarkThemeActive));
         OnPropertyChanged(nameof(IsLightThemeActive));
         RefreshSystemThemePreview();
-        // Always run ApplyAccentOverride: it updates both AccentBrush (for all
-        // three modes) and WindowsAccentPreviewBrush (so the blob stays live
-        // even when "kodo" or "custom" mode is active).
+        // Always runs ApplyAccentOverride: updates AccentBrush for all three modes and keeps WindowsAccentPreviewBrush live.
         ApplyAccentOverride();
         ApplyThemeToEditor();
         SaveSettings();
@@ -6804,9 +6385,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return null;
     }
 
-    // Reads the same registry value Windows itself uses to decide whether
-    // apps should render light or dark chrome. Null means "couldn't tell"
-    // (non-Windows, locked-down system, etc.), not "light" or "dark".
+    // Reads the same registry value Windows uses for light/dark chrome; null means unreadable, not a definite answer.
     private static bool? GetWindowsAppsUseLightTheme()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
@@ -6821,15 +6400,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return null;
     }
 
-    // Resolves the "System" theme selection to the concrete built-in theme
-    // ("Light" or "Dark") that Windows is currently reporting. Falls back to
-    // Dark - Kodo's overall default - when the registry value can't be read.
+    // Resolves "System" to the concrete Light/Dark theme Windows currently reports, falling back to Dark.
     private static string ResolveSystemThemeName() =>
         GetWindowsAppsUseLightTheme() == true ? "Light" : "Dark";
 
-    // Keeps the System Default blob's preview swatch live, independent of
-    // which theme mode is actually active - mirrors how ApplyAccentOverride
-    // keeps WindowsAccentPreviewBrush live for the accent blob.
+    // Keeps the System Default preview live regardless of the active theme mode.
     private void RefreshSystemThemePreview()
     {
         var isLight = GetWindowsAppsUseLightTheme() == true;
@@ -7196,18 +6771,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
         SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
-        // Restore scroll position. ScrollToLine is applied synchronously first (it works
-        // immediately after SetEditorContent on line numbers without a layout pass) so the
-        // viewport is already close to correct before the frame is painted. Then we post a
-        // precise pixel-offset restore at Background priority - after AvaloniaEdit has
-        // completed its own layout - to land exactly where the user left off.
+        // Restores scroll position: ScrollToLine first, then a pixel offset at Background priority.
         EditorTextBox.ScrollToLine(tab.TopLineNumber);
         var savedOffsetY = tab.ScrollOffsetY;
         if (savedOffsetY > 0.0)
         {
-            // Post at Background priority so AvaloniaEdit finishes its own layout pass
-            // before we reposition the viewport. ScrollViewer.Offset is a plain settable
-            // Vector property - no interface cast needed, compiles against all Avalonia versions.
+            // Posts at Background priority so AvaloniaEdit finishes its layout pass before we reposition the viewport.
             Dispatcher.UIThread.Post(() =>
             {
                 var sv = EditorTextBox.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
@@ -7371,9 +6940,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        // Navigate away from home BEFORE adding the tab, so the CollectionChanged
-        // notification evaluates IsEditorTabsVisible with IsHomePageVisible already false.
-        // This mirrors the same pattern used in NewFile().
+        // Navigates away from Home before adding the tab (mirrors NewFile()).
         NavigateTo(Page.Editor);
 
         var tab = new EditorTab(path, Path.GetFileName(path), content);
@@ -7409,21 +6976,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Opened -= MainWindow_OnOpened;
 
-        // ApplyThemeBrushes() (called during the constructor) resolves AccentBrush
-        // correctly but intentionally skips ApplyThemeToEditor() because the
-        // AvaloniaEdit TextEditor isn't fully laid out yet at that point.
-        // Now that the window is open and the editor exists, apply the editor theme
-        // so that SelectionBrush (and other editor-specific properties) reflect the
-        // actual accent colour rather than AvaloniaEdit's built-in defaults.
+        // Applies the editor theme now that the window and editor exist.
         ApplyThemeToEditor();
 
-        // _suppressSettingsSave was set at the very top of the constructor and has
-        // been blocking incidental saves throughout the entire startup sequence.
-        // It stays true here while we restore tabs and open the startup file so
-        // that each intermediate CollectionChanged / ActiveEditorTab notification
-        // doesn't overwrite OpenTabPaths with a partial snapshot.
-        // The flag is cleared in a finally block so an exception can never leave
-        // it permanently set (which would silently disable all future saves).
+        // _suppressSettingsSave stays true while tabs restore, cleared in a finally block.
         try
         {
             if (IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0)
@@ -7457,14 +7013,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // a setting, opening/closing a tab, etc.) persists normally.
             _suppressSettingsSave = false;
 
-            // Only force an immediate write here if a settings file already
-            // existed on disk. On first launch (or whenever the file is missing,
-            // e.g. the user deleted it to reset the app) there is nothing to
-            // "clean up" - the state is just in-memory defaults - and
-            // unconditionally writing it back out would silently recreate the
-            // file the user just removed. Once the user actually changes
-            // something, the normal SaveSettings() calls in the property
-            // setters will create the file at that point instead.
+            // Only forces a write if a settings file already existed.
             if (!_isFirstLaunch)
             {
                 SaveSettings(immediate: true);
@@ -7476,36 +7025,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = FetchAnnouncementsAsync();
         _ = FetchSportingEventMessagesAsync();
 
-        // ── Opening splash sequencing ────────────────────────────────────────
-        // Exactly one of these shows per launch, never both, never twice:
-        //
-        //   - Tutorial: true first-ever launch (no completed tutorial yet).
-        //     Covers both orientation content and the diagnostics-consent ask
-        //     itself, inline in its setup step.
-        //   - Opening splash: everyone else ("returning" = has completed the
-        //     tutorial at least once, checked instead of "!_isFirstLaunch" so
-        //     an interrupted first run - settings file exists but the tutorial
-        //     was never finished - still gets routed to the tutorial, not
-        //     here). It can carry release notes, a diagnostics-consent ask, or
-        //     both, depending on what's actually pending:
-        //       - Release notes show only with positive evidence of an
-        //         upgrade: a stored LastSeenVersion older than the running
-        //         build (same parser as IsNewerVersionAvailable, so v-prefixes
-        //         and pre-release suffixes are handled consistently). No
-        //         stored version at all means nothing to compare against, so
-        //         no release notes - not "show every time" as a fallback.
-        //         DEV builds never show release notes, same as the update banner.
-        //       - The consent ask shows only for returning users who have
-        //         never responded (e.g. upgrading from a build that predates
-        //         this prompt). It's independent of the release-notes check
-        //         above, so an unanswered consent prompt still surfaces even
-        //         when there's no version bump pending.
-        //
-        // A user who just finished the tutorial for the first time never sees
-        // this splash right after - _hasCompletedTutorial flips to true and
-        // _hasRespondedToDataTrackingPrompt is already true if they answered
-        // the consent card in the tutorial (declining counts as answering),
-        // so neither condition below can be true on that same launch.
+        // Opening splash sequencing: exactly one of tutorial or splash shows per launch, never both.
+        // Tutorial: true first-ever launch, covers orientation plus the consent ask inline.
+        // Splash can show release notes and/or an unanswered consent ask, independently.
+        // A user who just finished the tutorial never sees this splash right after, since both flags are already set true.
         var isReturningUser = _hasCompletedTutorial;
 
         if (_isFirstLaunch && !_hasCompletedTutorial)
@@ -7753,23 +7276,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         RecentFiles.Clear();
 
-        // Note: we deliberately do NOT filter out files whose path happens to fall
-        // under a recent folder's directory tree here. AddRecentFile already
-        // collapses a file into its parent folder entry at write time, but only
-        // when that file was actually opened while that folder was the active
-        // project (_currentFolderPath). A file opened standalone (e.g. via
-        // File > Open with no folder open, or with a different folder open) that
-        // happens to physically live inside some other recent folder's tree is a
-        // distinct, legitimate recent entry and must not be dropped on load -
-        // doing so previously caused standalone-opened and newly-created files to
-        // silently vanish from Recent Files after a restart.
-        //
-        // We also deliberately do NOT filter by File.Exists / Directory.Exists here.
-        // A path that is currently unreachable (USB drive unplugged, network share
-        // offline, file temporarily moved) is still a valid recent entry - it should
-        // reappear as soon as the path becomes available again. Existence is checked
-        // at open time in RecentFileButton_OnClick; entries are only removed when the
-        // user explicitly clears them, not automatically on load.
+        // Doesn't filter files under a recent folder's tree - only active-folder files collapse.
+        // Doesn't filter by File/Directory.Exists - unreachable paths should still reappear.
         foreach (var entry in (recentFiles ?? [])
             .Where(entry => !string.IsNullOrWhiteSpace(entry.Path))
             .OrderByDescending(entry => entry.IsPinned)
@@ -7922,9 +7430,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string GetDocumentDisplayName() =>
         HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
 
-    // Builds the OS-level window title with context-aware page and file state.
-    // Mirrors the logic of the improved Discord RPC but kept simpler:
-    // page views are labelled plainly, and dirty files get a ● prefix.
+    // Builds the OS window title with page/file state, simpler than the Discord RPC logic.
     private string BuildWindowTitle()
     {
         var birthday = IsKodoBirthday ? " 🎂" : string.Empty;
@@ -8155,11 +7661,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void StartTerminalProcess(TerminalSession session, TerminalShellOption shell)
     {
-        // Mark the session as launching so the UI shows the right status text
-        // while ConPTY is starting. The exit watcher is wired by the
-        // ActiveTerminalSession setter on every Start() call - subscribing here
-        // as well would add a duplicate handler that fires on the wrong session
-        // after switch-away/switch-back cycles.
+        // Marks the session as launching; the exit watcher is wired elsewhere to avoid duplicates.
         session.IsRunning = true;
         session.StatusText = "Launching...";
     }
@@ -8197,24 +7699,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshTerminalWindows()
     {
-        // ConsoleTerminal is a native Avalonia control - it handles its own
-        // layout and rendering. Showing / hiding is driven by IsVisible bindings on
-        // the host Grid in AXAML, so there is nothing to manually synchronise here.
-        // The method is kept so call-sites that still reference it compile cleanly.
+        // ConsoleTerminal handles its own layout; kept only so call-sites still compile.
     }
 
     private void FocusActiveTerminal()
     {
-        // Post at DispatcherPriority.Background so our Focus() call fires after all
-        // pending layout and visibility work has fully settled.
-        //
-        // When a session is created, HasActiveTerminal flips to true, which makes the
-        // placeholder Border IsVisible=false. Avalonia's layout pass on that visibility
-        // change moves focus to the window root at DispatcherPriority.Layout. A post
-        // at DispatcherPriority.Loaded (lower than Layout) was intended to win that
-        // race, but Loaded can still tie with residual layout work, causing the Focus()
-        // call to be immediately overwritten. Background is lower than both Layout and
-        // Loaded, guaranteeing all layout-driven focus resets have completed first.
+        // Posts at Background priority so Focus() wins after Avalonia's layout pass.
         Dispatcher.UIThread.Post(() =>
         {
             if (IsTerminalVisible && ActiveTerminalSession is not null)
@@ -8385,9 +7875,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (sender is Button { Tag: TerminalSession session })
         {
             CloseTerminalSession(session);
-            // The × button has Focusable=False but the click still moves focus away
-            // on some Avalonia versions. Explicitly return focus to the terminal so
-            // the user can keep typing without having to click the terminal again.
+            // The × button can steal focus; explicitly return it to the terminal.
             FocusActiveTerminal();
         }
     }
@@ -8434,10 +7922,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        // Only toggle panel visibility - never clear the folder state.
-        // Previously this called CloseFolder() when a project was open, which wiped
-        // _currentFolderPath and FileTreeItems; reopening with Ctrl+B then showed an
-        // empty sidebar because there was nothing left to repopulate from.
+        // Only toggles panel visibility - previously wiped folder state via CloseFolder().
         IsFileExplorerVisible = !IsFileExplorerVisible;
     }
 
@@ -8455,9 +7940,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsMarketplaceTabSelected = false;
 
-    // Used by the tab strip inside the Extensions page - switches the tab and
-    // refreshes the marketplace listing (respects the normal cooldown, so rapid
-    // tab-switching doesn't spam the GitHub API).
+    // Switches the Extensions tab and refreshes the marketplace listing (respecting the normal refresh cooldown).
     private void MarketplaceTabButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsMarketplaceTabSelected = true;
@@ -8489,19 +7972,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = RefreshLatestReleaseAsync();
     }
 
-    // Only reachable once the consent ask (if any) is already resolved - see
-    // the "Got it" button's IsVisible binding - so this never lets someone
-    // dismiss the opening splash past a pending consent question unanswered.
+    // Only reachable once any pending consent ask is resolved, so the splash can't be dismissed past an unanswered question.
     private void DismissUpdateSplashButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsUpdateSplashVisible = false;
 
-    // Shared by the consent card wherever it appears (tutorial setup step and
-    // the opening splash, whether or not release notes are also showing).
-    // "Not now" (Decline) counts as answering just as much as "Accept" - once
-    // clicked, _hasRespondedToDataTrackingPrompt is true and the ask never
-    // reappears; the user can still flip it on later from Settings. Accepting
-    // or declining also dismisses the opening splash immediately if that's
-    // where the card was shown, so the user doesn't need a second click.
+    // Shared consent card: declining counts as answering, same as accepting.
     private void AcceptDataTrackingButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsDataTrackingEnabled = true;
@@ -8556,12 +8031,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void CheckForUpdatesButton_OnClick(object? sender, RoutedEventArgs e) =>
         await CheckForUpdatesManuallyAsync();
 
-    // Explicit, user-initiated update check from the Settings page. Unlike
-    // the silent startup check (App.axaml.cs's CheckForUpdatesInBackground),
-    // this always reports its result - found, not found, or failed - since
-    // the user just asked for one. On finding an update it hands off to the
-    // same UpdateDialog the auto-updater uses, so the download/install flow
-    // is identical either way.
+    // Explicit Settings-page update check; always reports its result.
     private async Task CheckForUpdatesManuallyAsync()
     {
         if (IsCheckingForUpdatesManually) return;
@@ -8584,9 +8054,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            // CheckAndHandleUpdateAsync already swallows its own failures and
-            // returns null, but guard here too so a manual click can never
-            // crash the settings page.
+            // CheckAndHandleUpdateAsync already swallows failures, but guard here too so a manual click can never crash the page.
             CheckForUpdatesStatusText = "Couldn't check for updates. Check your connection and try again.";
             KodoDiagnostics.LogDebug("Manual check-for-updates failed", ex);
         }
@@ -8609,18 +8077,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            // Mirror the silent startup auto-update flow (App.axaml.cs's
-            // CheckForUpdatesInBackground): hit GitHub for the actual
-            // downloadable installer asset, then either hand off to
-            // UpdateDialog (which downloads it and launches the silent
-            // install) or, if "Update automatically without asking" is on,
-            // skip the dialog and install silently - instead of just sending
-            // the user to the releases page in a browser.
+            // Mirrors the silent startup flow: fetch the asset, then show or silently install.
             var update = await UpdateService.CheckAndHandleUpdateAsync(IsAutoUpdateAppInBackgroundEnabled);
             if (update is null)
-                // No installer asset could be found (rate-limited, draft
-                // release, no .exe attached, etc.) - fall back to the releases
-                // page so the user isn't left stuck.
+                // No installer asset found (rate-limited, draft release, etc.) - fall back to the releases page.
                 OpenUrl(ReleasesPageUrl);
         }
         finally
@@ -8908,9 +8368,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 : "No logs to clear.";
     }
 
-    // Builds a bug-report snapshot covering environment, editor state, appearance,
-    // RPC, extensions, and log/settings paths.  Used by both "Copy Diagnostic Info"
-    // (clipboard) and "Export Kodo Data" (file) so the two are always in sync.
+    // Builds a bug-report snapshot shared by Copy Diagnostic Info and Export Kodo Data.
     private string BuildDiagnosticReport()
     {
         var sb = new StringBuilder();
@@ -9385,9 +8843,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// After a rename or move, update every open tab whose path falls under
-    /// <paramref name="oldPath"/> so it points to the new location.
-    /// Also patches <c>_currentFilePath</c> when the active tab is affected.
+    /// After a rename or move, updates every open tab under <paramref name="oldPath"/> to the new location,
+    /// patching <c>_currentFilePath</c> if the active tab is affected.
     /// </summary>
     private void RetargetTabPaths(string oldPath, string newPath, bool wasDirectory)
     {
@@ -9419,8 +8876,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Shows a small modal asking the user for a new name.
-    /// Returns the trimmed input, or null if cancelled / empty.
+    /// Shows a small modal asking for a new name; returns the trimmed input, or null if cancelled/empty.
     /// </summary>
     private async Task<string?> ShowRenameDialogAsync(string currentName)
     {
@@ -9833,8 +9289,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // ── Encoding detection & change ──────────────────────────────────────────
 
     /// <summary>
-    /// Detects the encoding of <paramref name="path"/> by inspecting its BOM.
-    /// Falls back to UTF-8 (no BOM) when no BOM is present.
+    /// Detects a file's encoding from its BOM, falling back to UTF-8 (no BOM).
     /// </summary>
     private static System.Text.Encoding DetectFileEncoding(string path)
     {
@@ -9863,8 +9318,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Shows a small encoding-picker dialog and, if a different encoding is chosen,
-    /// immediately re-saves the file with that encoding.
+    /// Shows an encoding picker and immediately re-saves the file if a different encoding is chosen.
     /// </summary>
     private async void EncodingStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -9899,10 +9353,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         System.Text.Encoding? chosen = null;
         Window? dialog = null;
 
-        // Resolve the live accent colour the same way ApplyThemeToEditor does,
-        // so the "current encoding" highlight matches whatever accent the user
-        // has chosen (Kodo / Windows / custom / theme) instead of always being
-        // purple. Falls back to Kodo purple only if AccentBrush can't be read.
+        // Resolves the live accent color so the encoding highlight matches the active theme.
         var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
             ? accentSolid.Color
             : Color.Parse("#8C00FF");
@@ -10142,10 +9593,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ── Extension auto-updater ───────────────────────────────────────────────
-    // Starts/stops the periodic background check timer to match the current
-    // value of IsAutoUpdateExtensionsEnabled. Called once at startup and again
-    // every time the setting is toggled in Settings.
+    // Starts/stops the extension auto-update timer to match IsAutoUpdateExtensionsEnabled; called at startup and on toggle.
     private void UpdateExtensionAutoUpdateLifecycle()
     {
         _extensionAutoUpdateTimer.Stop();
@@ -10153,10 +9601,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _extensionAutoUpdateTimer.Start();
     }
 
-    // ── App auto-updater ──────────────────────────────────────────────────────
-    // The periodic timer, its start/stop lifecycle, and the tick handler that
-    // checks-and-handles a found update all live in AppUpdateScheduler
-    // (Updater.cs) now - see _appUpdateScheduler above.
+    // The app auto-updater's timer and tick handler now live in AppUpdateScheduler (Updater.cs).
 
     // Fires every few hours while Kodo is open and the setting is enabled, so
     // extensions published mid-session aren't only picked up on next launch.
@@ -10165,40 +9610,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!IsAutoUpdateExtensionsEnabled)
             return;
 
-        // suppressWatchdog: true - this is a silent background check; a stalled
-        // network shouldn't pop the "Marketplace refresh" timeout dialog while
-        // the user is busy working on something unrelated.
+        // suppressWatchdog=true: this is a silent background check, so a stall shouldn't pop a timeout dialog.
         await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
         await AutoUpdateExtensionsIfEnabledAsync();
     }
 
-    // Fires once an hour while Kodo stays open so the Marketplace tab's listing
-    // (new extensions, version bumps) stays current during long sessions, even
-    // when "Automatically update extensions" is switched off. Unlike
-    // ExtensionAutoUpdateTimer_OnTick above, this never installs anything - it
-    // only refreshes the data shown in the marketplace.
+    // Fires hourly to keep the Marketplace tab current, even with auto-update off.
     private async void MarketplaceRefreshTimer_OnTick(object? sender, EventArgs e)
     {
-        // suppressWatchdog: true for the same reason as the extension auto-update
-        // sweep - a slow network shouldn't pop a timeout dialog over a silent
-        // hourly background refresh.
+        // suppressWatchdog=true for the same reason as the extension sweep - a silent hourly refresh shouldn't pop a dialog.
         await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
     }
 
-    // Used on startup: runs the normal extension/marketplace refresh first
-    // (which computes IsUpdateAvailable for every installed extension), then
-    // silently installs any pending updates if the user has opted in.
+    // Used on startup: refreshes extensions/marketplace first, then silently installs pending updates if opted in.
     private async Task RefreshExtensionsAndAutoUpdateAsync()
     {
         await RefreshExtensionsDataAsync();
         await AutoUpdateExtensionsIfEnabledAsync();
     }
 
-    // Silently installs every pending marketplace update when the user has
-    // opted into "Automatically update extensions" in Settings. Mirrors the
-    // manual "Update All" flow above, but is meant to run unattended (startup,
-    // periodic timer, or right after the setting is switched on) so it guards
-    // against overlapping with itself or with a manual Update All in progress.
+    // Silently installs pending updates when opted in; guards against overlap.
     private async Task AutoUpdateExtensionsIfEnabledAsync()
     {
         if (!IsAutoUpdateExtensionsEnabled || _isAutoUpdatingExtensions || IsUpdatingAllExtensions)
@@ -10284,10 +9715,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await UninstallExtensionAsync(extension);
     }
 
-    // Shows a "Ctrl+click to open link" tooltip when the pointer hovers over a URL,
-    // and switches the cursor to a Hand. Only fires tooltip/cursor changes on state
-    // transitions (not → over link, over link → not) so Avalonia's tooltip system
-    // is not disturbed on every pixel of movement.
+    // Shows a Ctrl+click tooltip and hand cursor over URLs; only fires on state transitions, not every pixel of movement.
     private void EditorTextView_OnPointerMoved(object? sender, PointerEventArgs e)
     {
         var textView = EditorTextBox.TextArea.TextView;
@@ -10365,9 +9793,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RestartAutoSaveTimerIfNeeded();
     }
 
-	// Fires BEFORE the character is written into the document.
-    // Used to skip-over an already-present auto-inserted closing character
-    // instead of inserting a duplicate.
+	// Fires before the character is written; skips an auto-inserted closing character.
     private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
     {
         if (!IsSmartSyntaxEnabled()) return;
@@ -10399,10 +9825,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (offset >= doc.TextLength) return;
         if (doc.GetCharAt(offset) != ch) return;
 
-        // Asymmetric pairs (closing char differs from opener): always safe to skip.
-        // Symmetric pairs (" and '): only skip when the char immediately behind the
-        // caret is the same quote, meaning we auto-inserted it and the caret is
-        // sitting between the pair.
+        // Asymmetric pairs are always safe to skip; symmetric pairs only skip mid-pair.
         bool skip = ch is ')' or ']' or '}' or '>';
         if (!skip && (ch == '"' || ch == '\''))
             skip = offset > 0 && doc.GetCharAt(offset - 1) == ch;
@@ -10446,16 +9869,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // Don't intercept keys destined for the terminal - it handles all input itself.
-        // Without this guard the tunnel handler (registered with handledEventsToo: true)
-        // fires before ConsoleTerminal.OnKeyDown and marks Enter / Tab / Back /
-        // Ctrl+V as handled, so the control never receives them and the terminal freezes.
-        //
-        // NOTE: We use TopLevel FocusManager instead of e.Source. In a tunnel event
-        // e.Source is the element that originated the route, which can still point to the
-        // previously-focused control during the first frames after the terminal panel opens
-        // (FocusActiveTerminal posts at DispatcherPriority.Input while the tunnel fires
-        // synchronously). Reading the focus manager gives the true current focus owner.
+        // Doesn't intercept keys destined for the terminal.
+        // Uses the TopLevel FocusManager, not e.Source, for the true current focus owner.
         if (IsTerminalVisible && ActiveTerminalSession is not null)
         {
             var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
@@ -11026,10 +10441,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Runs on the UI thread every 2 s; mirrors WindowsAccentPollTimer_OnTick.
-    // Refreshes the System Default blob's preview whenever Windows' light/dark
-    // setting changes, and re-applies the theme too when System mode is the
-    // user's active selection so switching Windows' setting takes effect live.
+    // Runs every 2s; refreshes the System Default preview on a Windows theme change.
     private void WindowsThemePollTimer_OnTick(object? sender, EventArgs e)
     {
         var current = ResolveSystemThemeName();
@@ -11059,12 +10471,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             networkInterface.NetworkInterfaceType is not NetworkInterfaceType.Loopback &&
             networkInterface.NetworkInterfaceType is not NetworkInterfaceType.Tunnel);
 
-    // GitHub answers an over-quota request with 403 (anonymous "60 req/hr" limit)
-    // or 429 (secondary rate limit, e.g. too many requests in a short burst).
-    // EnsureSuccessStatusCode() turns either into an HttpRequestException whose
-    // .Message is a generic, unhelpful "Response status code does not indicate
-    // success: 403 (Forbidden)." Recognize those two status codes specifically
-    // and swap in a tight, actionable message instead of showing that verbatim.
+    // Recognizes GitHub's 403/429 responses and swaps in a clearer message.
     private static bool IsGitHubRateLimitException(Exception exception) =>
         exception is HttpRequestException { StatusCode: HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests };
 
@@ -11088,10 +10495,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else if (exception is not null)
         {
-            // Show a message for any exception when internet is available - not just
-            // known connectivity failures. This covers rate-limit responses, JSON parse
-            // errors, unexpected HTTP status codes, and other non-network failures that
-            // would otherwise be silent.
+            // Shows a message for any exception when online, not just connectivity failures.
             message = IsGitHubRateLimitException(exception)
                 ? "GitHub's API rate limit was hit. Marketplace refreshes will resume once it resets."
                 : hasWirelessConnection
@@ -11137,11 +10541,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NavigateTo(Page.Home);
     }
 
-    // Gate for every path that can end the tutorial (Finish button, Skip
-    // button, Escape key). If the diagnostics-consent question hasn't been
-    // answered yet, we don't let the tutorial close - instead we route the
-    // user to the setup step, where the consent card (Accept / Not now)
-    // lives, so they're never stuck with no way to make progress.
+    // Gates every path that can end the tutorial until consent is answered.
     private bool TryFinishTutorial()
     {
         if (IsDataTrackingPromptVisible)
@@ -11176,10 +10576,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // Don't swallow keys when the terminal is focused. ConsoleTerminal.OnKeyDown
-        // marks Ctrl+letter and VT sequences as Handled=true, so this handler normally
-        // won't see them via the bubble phase - but be explicit as a safety net, and to
-        // stop Escape from stealing focus from the terminal.
+        // Doesn't swallow keys when the terminal is focused; also stops Escape stealing focus.
         if (IsTerminalVisible && ActiveTerminalSession is not null)
         {
             var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
@@ -11327,9 +10724,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 e.Handled = true;
                 break;
 
-            // Image zoom: Ctrl++ / Ctrl+= / Ctrl+NumpadAdd  →  zoom in
-            //             Ctrl+-  / Ctrl+NumpadSubtract      →  zoom out
-            //             Ctrl+0  / Ctrl+Numpad0             →  reset to 100 %
+            // Image zoom: Ctrl++/= zooms in, Ctrl+- zooms out, Ctrl+0 resets to 100%.
             case Key.OemPlus:
             case Key.Add:
                 if (HasImagePreview)
@@ -11363,9 +10758,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static int NormalizeTabSize(int value) => value is 2 or 4 or 8 ? value : 4;
 
-    // Guards against NaN/Infinity (which Math.Clamp does not reject) coming from a
-    // hand-edited or corrupted settings.json, in addition to clamping to the
-    // draggable range.
+    // Guards against NaN/Infinity from a hand-edited settings.json, in addition to clamping to the draggable range.
     private static double NormalizeTerminalPanelHeight(double value) =>
         double.IsFinite(value)
             ? Math.Clamp(value, MinTerminalPanelHeight, MaxTerminalPanelHeight)
@@ -11472,11 +10865,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
-    // ── First-launch tutorial ────────────────────────────────────────────────
-    //
-    // Shown once when settings.json doesn't exist (genuine first run). The flag
-    // HasCompletedTutorial is written to settings afterward so subsequent launches
-    // skip it even if the user never explicitly dismissed the window.
+    // Shown once when settings.json doesn't exist; HasCompletedTutorial is then persisted so later launches skip it.
 
     private Task ShowTutorialAsync()
     {
@@ -11494,14 +10883,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return Task.CompletedTask;
     }
 
-    // Shows a non-fatal warning dialog that mirrors the crash dialog in App.axaml.cs
-    // but uses softer wording. Call this from any recoverable error path where the
-    // user needs to know something went wrong.
-    // Shown when a recent file/folder path is unreachable at open time.
-    // Unlike ShowWarningDialogAsync, this is not an error - the path may simply
-    // be on a drive that isn't currently connected. The entry is kept in recents
-    // so it reappears automatically when the path becomes available again.
-    // A "Remove from recents" button is offered as an explicit opt-in to deletion.
+    // Shown when a recent file/folder path is unreachable at open time - not an error, since the entry may simply be offline.
+    // Kept in recents so it reappears once available; offers an explicit "Remove from recents" button.
     private async Task ShowNotFoundDialogAsync(string path, bool isFolder)
     {
         try
@@ -11585,16 +10968,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ── Generic confirmation dialog ───────────────────────────────────────────
-    //
-    // A lightweight "are you sure?" prompt for destructive-but-recoverable
-    // actions (e.g. clearing recent files). Shares the same visual language
-    // as ShowNotFoundDialogAsync/ShowWarningDialogAsync (CardBrush window,
-    // AccentBrush primary action) but is intentionally generic - callers
-    // supply the title/body/button text and get a bool back for whether the
-    // user confirmed. Defaults to a "Cancel" / "Confirm" pair; pass
-    // isDestructive: true to render the confirm button in a warning color
-    // instead of the accent color, for actions that can't be undone.
+    // Generic "are you sure?" prompt for destructive-but-recoverable actions.
     private async Task<bool> ShowConfirmationDialogAsync(
         string title,
         string body,
@@ -11686,19 +11060,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ── Two-tier warning dialog ───────────────────────────────────────────────
-    //
-    // Critical (isCritical = true):  file-save failures and any operation where
-    //   data may be at risk.  Shown with an amber warning banner, logged to
-    //   kodo.log, and the title reads "Kodo - Warning".
-    //
-    // Non-critical (default):  network/marketplace/update failures and other
-    //   recoverable errors.  No banner, softer subtitle, same log destination.
-    //   Title reads "Kodo - Notice".
-    //
-    // Both tiers share the same visual structure as the crash dialog (source
-    // badge, metadata line, scrollable stack trace, Copy button) so the UI
-    // language is consistent across all error surfaces.
+    // Two-tier warning dialog: Critical shows an amber banner, non-critical is softer.
     private async Task ShowWarningDialogAsync(string context, Exception exception, bool isCritical = false)
     {
         // Classify automatically: file-save and auto-save failures always
@@ -11928,16 +11290,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ── GitHub timeout helper ─────────────────────────────────────────────────
-    //
-    // Runs <paramref name="factory"/> with a CancellationToken that fires after
-    // GitHubOperationTimeout (7 s).  On expiry the task is cancelled and a
-    // TimeoutException (with the operation name embedded) is thrown so the
-    // caller's existing catch block can route it straight to ShowWarningDialogAsync.
-    //
-    // Usage:
-    //   var result = await RunWithGitHubTimeoutAsync("Marketplace index fetch",
-    //       ct => MarketplaceHttpClient.SendAsync(request, ct));
+    // Runs factory with a timeout, throwing a named TimeoutException on expiry.
     private static async Task<T> RunWithGitHubTimeoutAsync<T>(
         string operationName,
         Func<CancellationToken, Task<T>> factory)
@@ -12000,14 +11353,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Sub-setting under AutoUpdateExtensionsEnabled - see
         // IsAutoUpdateExtensionsInBackgroundEnabled for what it controls.
         public bool AutoUpdateExtensionsInBackgroundEnabled { get; set; }
-        // Defaults to true: most users want Kodo to keep itself current
-        // without thinking about it, mirroring how the auto-update dialog
-        // already behaved before this setting existed.
+        // Defaults to true - most users want Kodo to stay current without thinking about it.
         public bool AutoUpdateAppEnabled { get; set; } = true;
-        // Sub-setting under AutoUpdateAppEnabled - see
-        // IsAutoUpdateAppInBackgroundEnabled for what it controls. Defaults to
-        // false so the "Update Now" / "Later" prompt still shows unless the
-        // user explicitly opts into fully silent installs.
+        // Sub-setting: defaults to false so Update Now/Later still shows.
         public bool AutoUpdateAppInBackgroundEnabled { get; set; }
         public string? PreferredTerminalShellId { get; set; }
         public bool TerminalVisible { get; set; }
@@ -12617,9 +11965,7 @@ public sealed class EmojiTypefaceColorizer : DocumentColorizingTransformer
         codePoint is >= 0x1F3FB and <= 0x1F3FF;
 }
 
-// ── Syntax highlighting ──────────────────────────────────────────────────────
-// Builds an AvaloniaEdit IHighlightingDefinition at runtime from the data
-// declared in a LoadedExtension (keywords, types, comment markers, color tokens).
+// Builds an AvaloniaEdit IHighlightingDefinition from a LoadedExtension's rules.
 public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
 {
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
@@ -12861,13 +12207,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
 
         var expressionText = text.Substring(expressionStart, expressionEnd - expressionStart);
 
-        // Reserve each match's range so earlier (more specific) rules can't be
-        // partially overwritten by later, more generic ones - e.g. the
-        // catch-all "variable" rule repainting part of an already-coloured
-        // preprocessor/attribute/function match. This mirrors the same fix in
-        // EmbeddedSyntaxProfile.Process() (SyntaxColorEngine.cs) and keeps
-        // interpolated-expression highlighting consistent with how the same
-        // rule list is resolved for real files and embedded/Markdown code.
+        // Reserves each match's range so specific rules can't be overwritten by generic ones.
         var protectedRanges = new bool[expressionText.Length];
 
         foreach (var rule in _rules)
@@ -13441,15 +12781,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             MarkRange(protectedRanges, markers.Index, markers.Index + markers.Length);
         }
 
-        // Code spans bind tighter than any other inline construct (CommonMark:
-        // code spans/autolinks/raw HTML > links > emphasis), so they must be
-        // reserved and colourised before HTML comments/tags, table pipes,
-        // links, or autolinks get a chance to claim the same text. Doing this
-        // later (as before) meant an inline code span containing a '|', a
-        // `[text](url)`-shaped substring, or a `<tag>`-shaped substring would
-        // get misread as a table separator / link / HTML tag, and the code
-        // span itself would then fail to reserve its range and render
-        // uncoloured instead of using the resolved language's own colours.
+        // Code spans bind tighter than any inline construct, so they're colorized first.
         foreach (Match match in InlineCodeRegex.Matches(text))
         {
             if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
@@ -13529,12 +12861,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             }
         }
 
-        // Table-pipe coloring runs last among these passes and must respect
-        // ranges already claimed above (was previously unconditional, so a
-        // '|' inside an inline code span, link, or autolink got recoloured
-        // and re-marked as protected regardless of what already owned it -
-        // which could also make an *earlier*-processed code span's own
-        // TryReserveRange fail on a later pass over the same text).
+        // Table-pipe coloring runs last and respects ranges already claimed.
         foreach (Match match in TablePipeRegex.Matches(text))
         {
             if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
@@ -13576,9 +12903,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
         if (fence.Profile is null)
         {
-            // Unknown/plain language (e.g. ```text, ```plain, unlabelled fence):
-            // paint the whole line white so no syntax rules bleed in from the
-            // KodoHighlightingDefinition or any other transformer.
+            // Unknown/plain fenced language: paint the whole line white so no other rules bleed in.
             ApplyBrush(lineOffset, 0, text.Length, Brushes.White);
             return;
         }
@@ -13702,10 +13027,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             return;
         }
 
-        // Try to recognise the snippet's language from installed .kox language
-        // extensions and colourise it the same way that language's own files
-        // are coloured. Falls back to the flat string colour (previous
-        // behaviour) when no installed extension's keywords/types/etc. match.
+        // Tries to recognize the snippet language, falling back to a flat color.
         var profile = ResolveInlineEmbeddedProfile(content.Value);
         if (profile is null)
         {
@@ -13744,12 +13066,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         return profile;
     }
 
-    // Detects the inline code snippet's language from actual installed .kox
-    // language extensions (see InlineCodeLanguageDetector in
-    // SyntaxColorEngine.cs for the scoring/heuristics) and resolves it to the
-    // same kind of EmbeddedSyntaxProfile that fenced blocks use, so a one-liner
-    // like `var x = 5;` is colourised with that language's actual
-    // keyword/type/string/comment colours instead of one flat colour.
+    // Detects an inline snippet's language and resolves the matching syntax profile.
     private EmbeddedSyntaxProfile? ResolveInlineEmbeddedProfile(string content)
     {
         if (string.IsNullOrWhiteSpace(content) || _inlineLanguageResolver is null)
@@ -14313,9 +13630,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
     private sealed record ActiveHtmlBlock(string TagName, EmbeddedSyntaxProfile? Profile, EmbeddedSyntaxState State, EmbeddedBlockContentMode ContentMode);
 }
 
-// ── Syntax highlighting ──────────────────────────────────────────────────────
-// Builds an AvaloniaEdit IHighlightingDefinition at runtime from the data
-// declared in a LoadedExtension (keywords, types, comment markers, color tokens).
+// Builds an AvaloniaEdit IHighlightingDefinition from a LoadedExtension's rules.
 public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 {
     private const string VariableIdentifierBodyPattern =
@@ -14366,15 +13681,8 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
         var isMarkdown = KodoExtensionIds.IsMarkdown(ext.Id);
 
-        // ── Inner rulesets ────────────────────────────────────────────────────────────
-        // codeRuleSet  - holds keyword/type/number rules; used as the inner ruleset of
-        //                spans that should still syntax-colour their contents.
-        //                (Currently unused as inner ruleset, but kept for clarity.)
-        // emptyRuleSet - no rules; used as the inner ruleset of comment and string spans
-        //                so that keyword/number rules cannot fire inside them.
-        //                AvaloniaEdit applies SpanColor to the entire span body, so the
-        //                correct span colour is provided by the outer SpanColor property.
-        //                The inner ruleset only needs to be empty - no DefaultColor needed.
+        // Inner rulesets: codeRuleSet holds keyword/type/number rules (kept for clarity, unused directly);
+        // emptyRuleSet is empty so keyword/number rules can't fire inside comment/string spans.
         var codeRuleSet  = new HighlightingRuleSet();
         var emptyRuleSet = new HighlightingRuleSet();
 
@@ -14430,15 +13738,9 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        // Char literal rule for non-Markdown languages with disableSingleQuoteStrings
-        // (already handled inside the !isMarkdown block above; this guard is now a no-op
-        // for Markdown but kept outside to satisfy the original structure expectation).
+        // Char-literal rule for disableSingleQuoteStrings is handled above; this guard is a no-op for Markdown.
 
-        // ── Main ruleset ──────────────────────────────────────────────────────────────
-        // Spans are checked in order - first match wins. SpanColor is applied by
-        // AvaloniaEdit to the entire span (start delimiter + body + end delimiter),
-        // modulated by SpanColorIncludesStart / SpanColorIncludesEnd for the delimiters.
-        // The inner emptyRuleSet ensures no keyword/number rules fire inside the span.
+        // Main ruleset: spans checked in order, first match wins.
         var mainRuleSet = new HighlightingRuleSet();
 
         // Block comment /* … */ - added first so it takes priority over // on the same line.
@@ -14455,14 +13757,10 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        // ── Markdown heading spans ────────────────────────────────────────────────────
-        // Added before the generic commentLine span so that #-headings are coloured
-        // with keywordColor rather than commentColor (which handles blockquotes via >).
+        // Added before the generic comment-line span so #-headings get keywordColor, not commentColor.
         if (isMarkdown)
         {
-            // Fenced code blocks (``` or ~~~) - added first so they take priority over
-            // all inline rules. The emptyRuleSet means no bold/italic/link rules fire
-            // inside the fence body, matching what the MarkdownColorizer handles itself.
+            // Fenced code blocks are added first, taking priority over inline rules.
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
                 StartExpression        = new Regex(@"^(?:`{3,}|~{3,})[^\r\n]*$", RegexOptions.Compiled | RegexOptions.Multiline),
@@ -14484,9 +13782,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        // Single-line comment // … end-of-line.
-        // Use $ as the explicit end-of-line anchor so the whole remainder of the
-        // line is coloured with the extension's configured comment colour.
+        // Single-line comment to end-of-line; $ anchors so the whole remainder is colored.
         if (!isMarkdown && !string.IsNullOrEmpty(ext.CommentLine))
         {
             mainRuleSet.Spans.Add(new HighlightingSpan
@@ -14517,24 +13813,11 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
         if (ext.DisableSingleQuoteStrings && ext.StringDelimiters.Contains("\""))
         {
-            // $@"..."/@$"...": interpolated verbatim. Escaping is via a
-            // doubled "" (handled by the (?!"") lookahead below), never via
-            // backslash - isVerbatim:true so a literal trailing backslash
-            // (e.g. $@"C:\Users\") doesn't get mistaken for an escape and
-            // swallow the rest of the file.
+            // Interpolated verbatim strings escape only via doubled quotes, never backslash.
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"(?:\$@|@\$)""", @"""(?!"")", stringColor, emptyRuleSet, allowEndOfLineFallback: false, isVerbatim: true));
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"\$""", @"""", stringColor, emptyRuleSet, allowEndOfLineFallback: true));
 
-            // Bare verbatim string (@"..."): no backslash escaping at all, can
-            // span multiple lines, and a literal quote is written as a
-            // doubled "" rather than \". There was previously no standalone-
-            // file equivalent of this at all - a verbatim string in a .cs
-            // file fell through to the ordinary backslash-escaped '"' span
-            // below, so e.g. @"C:\Users\" (a literal trailing backslash) would
-            // be misread as an escaped delimiter and the string would never
-            // close. This mirrors TryMatchCSharpStringPrefix's "@\"" case in
-            // EmbeddedSyntaxProfile so a verbatim string looks the same in a
-            // .cs file as it does inside a fenced ```cs block.
+            // Bare verbatim strings use doubled quotes for escaping and can span multiple lines.
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"@""", @"""(?!"")", stringColor, emptyRuleSet, allowEndOfLineFallback: false, isVerbatim: true));
         }
 
@@ -14554,9 +13837,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         foreach (var delimiter in stringDelimiters)
             mainRuleSet.Spans.Add(CreateStringSpan(delimiter, stringColor, emptyRuleSet, allowEndOfLineFallback: true));
 
-        // Copy keyword/type/number/char-literal rules from codeRuleSet into mainRuleSet.
-        // When the engine enters a comment or string span it switches to emptyRuleSet,
-        // so these rules are automatically suppressed inside those regions.
+        // Copies keyword/type/number/char rules into mainRuleSet.
         foreach (var rule in codeRuleSet.Rules)
             mainRuleSet.Rules.Add(rule);
 
@@ -14613,24 +13894,8 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         bool allowEndOfLineFallback,
         bool isVerbatim = false)
     {
-        // For backslash-escaped strings, a closing delimiter only actually
-        // closes the string when it's preceded by an *even* number of
-        // backslashes - an odd run means the last backslash escapes the
-        // delimiter itself (e.g. \"), not the other way around. The old
-        // "(?<!\\)" guard only ever looked one character back, so it got this
-        // wrong for any string ending in an escaped backslash followed by the
-        // delimiter - e.g. a perfectly ordinary "C:\\Users\\" path literal -
-        // and would keep scanning past the real end of the string. This
-        // mirrors the correct counting done by IsEscaped/IsStringTerminator in
-        // EmbeddedSyntaxProfile (SyntaxColorEngine.cs) so a string literal
-        // looks the same whether it's in a standalone file or inside a fenced
-        // code block / embedded <script>/<style> tag.
-        //
-        // Verbatim-style strings (e.g. C#'s @"...") don't use backslash
-        // escapes at all - a doubled delimiter is the escape, which the
-        // caller already encodes as a lookahead in endDelimiterPattern - so
-        // no backslash guard is applied for those; a backslash right before
-        // the closing delimiter is just a literal character.
+        // A closing delimiter ends a string only after an even number of backslashes.
+        // Mirrors EmbeddedSyntaxProfile's escape logic; verbatim strings don't use it.
         var unescapedDelimiterGuard = isVerbatim ? string.Empty : @"(?<=(?:^|[^\\])(?:\\\\)*)";
         var endPattern = allowEndOfLineFallback
             ? $@"{unescapedDelimiterGuard}{endDelimiterPattern}|$"
@@ -14648,9 +13913,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
     }
 
     public HighlightingColor GetNamedColor(string name) => new();
-    // Named ruleset lookups are only used when span definitions reference an inner
-    // ruleset by name. This definition uses only anonymous inline rulesets, so no
-    // name will ever be looked up - return an empty set for all names.
+    // Named ruleset lookups are unused - this definition only uses anonymous inline rulesets.
     public HighlightingRuleSet GetNamedRuleSet(string name) => new HighlightingRuleSet();
 }
 
@@ -14709,9 +13972,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             lineDepths[i] = Math.Min(above, below);
         }
 
-        // Measure true text-start X from first visible line.
-        // AvaloniaEdit's DrawingContext for background renderers is NOT pre-scrolled,
-        // so we subtract ScrollOffset for both X and Y.
+        // Measures true text-start X, subtracting ScrollOffset.
         var scrollX = textView.ScrollOffset.X;
         var scrollY = textView.ScrollOffset.Y;
 
@@ -14736,9 +13997,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 
             for (var level = 1; level <= depth; level++)
             {
-                // Each guide sits at the first character of that indent level:
-                // level 1 → column TabSize, level 2 → column 2*TabSize, etc.
-                // originX is the pixel X of column 1, so offset by (level*TabSize - 1) chars.
+                // Each guide sits at the first character of its indent level: column TabSize, 2*TabSize, etc.
                 var x = originX + (level * TabSize - 1) * spaceWidth;
                 if (x < 0 || x > textView.Bounds.Width) continue;
 
@@ -14760,10 +14019,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
     }
 }
 
-// Replaces AvaloniaEdit's default LinkElementGenerator with one that:
-// 1. Only matches genuine http:// / https:// URLs (not bare words or www. paths)
-// 2. Trims trailing punctuation so ')' etc. at the end of a URL stay white
-// 3. Requires Ctrl+click to open (RequireControlModifierForClick = true)
+// Replaces the default LinkElementGenerator: genuine URLs only, Ctrl+click to open.
 public sealed class StrictLinkElementGenerator : LinkElementGenerator
 {
     private static readonly char[] TrailingPunctuation = [')', ']', '}', '.', ',', ':', ';', '!', '?', '\'', '"'];
@@ -14802,9 +14058,7 @@ public sealed class StrictLinkElementGenerator : LinkElementGenerator
     }
 }
 
-// Converts bool → FontWeight for the release-notes inline run template.
-// True  → SemiBold (bold spans from **…** or __…__)
-// False → Regular  (normal text)
+// Converts bold flag to FontWeight for the release-notes run template.
 public sealed class BoolToFontWeightConverter : Avalonia.Data.Converters.IValueConverter
 {
     public static readonly BoolToFontWeightConverter Instance = new();
