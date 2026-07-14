@@ -34,6 +34,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Rendering;
@@ -137,8 +138,10 @@ public class FileTreeItem : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
-    // Returns a simple file-type icon based on extension
-    private static string GetFileIcon(string fileName)
+    // Returns a simple file-type icon based on extension. Internal (not private) so
+    // RecentFileItem can reuse this exact same lookup + fallback for its own icons,
+    // instead of maintaining a second, potentially-drifting copy of the mapping.
+    internal static string GetFileIcon(string fileName)
     {
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
         return ext switch
@@ -605,6 +608,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
     private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(175) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    // Every non-synchronous PersistSettingsSnapshot() call used to spawn its own
+    // Task.Run, so two saves fired close together (e.g. pinning a file, then
+    // immediately opening another) could race: both write the same ".tmp" path
+    // and File.Move concurrently, and whichever snapshot happens to finish LAST
+    // wins even if it was actually the OLDER one - silently reverting a pin or
+    // a just-added recent entry. These two fields turn concurrent saves into a
+    // single coalesced background writer that always ends on the latest snapshot.
+    private readonly object _settingsWriteLock = new();
+    private AppSettings? _pendingSettingsSnapshot;
+    private bool _isPersistingSettings;
     // Polls the Windows accent registry key so the blob and active accent stay
     // live without requiring the Microsoft.Win32.SystemEvents NuGet package.
     private readonly DispatcherTimer _windowsAccentPollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -617,6 +630,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly HtmlEmbeddedColorizer _htmlEmbeddedColorizer = new();
     private readonly MarkdownColorizer _markdownColorizer = new();
     private readonly EmojiTypefaceColorizer _emojiTypefaceColorizer = new();
+    // Predictive IntelliSense: engine tracks per-file variables + language candidates,
+    // _completionWindow is the currently-open popup (null when nothing is showing).
+    private readonly IntelliSenseEngine _intelliSenseEngine = new();
+    private CompletionWindow? _completionWindow;
     private EditorTab? _activeEditorTab;
     private int _nextUntitledTabNumber = 1;
     private string? _autoSaveStatusMessage;
@@ -1046,6 +1063,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.PointerExited += EditorTextView_OnPointerExited;
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
+        // TerminalHostControl is shared across sessions (snapshot/restore), so one subscription for the window's lifetime is enough.
+        TerminalHostControl.TitleChanged += TerminalHostControl_OnTitleChanged;
         FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
@@ -3266,6 +3285,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                ext.Equals(".log", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsMarkdownFile(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return false;
+
+        var ext = Path.GetExtension(filePath);
+        return ext.Equals(".md", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".markdown", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool IsImagePreviewFile(string? filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -5433,6 +5462,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return GetReadableForeground(solid.Color);
     }
 
+    private static void SyncSystemAccentResources(IBrush accent)
+    {
+        if (accent.ToImmutable() is not ISolidColorBrush solid) return;
+        var resources = Application.Current?.Resources;
+        if (resources is null) return;
+
+        var c = solid.Color;
+        resources["SystemAccentColor"] = c;
+        resources["SystemAccentColorLight1"] = LightenColor(c, 0.15);
+        resources["SystemAccentColorLight2"] = LightenColor(c, 0.30);
+        resources["SystemAccentColorLight3"] = LightenColor(c, 0.45);
+        resources["SystemAccentColorDark1"]  = DarkenColor(c, 0.15);
+        resources["SystemAccentColorDark2"]  = DarkenColor(c, 0.30);
+        resources["SystemAccentColorDark3"]  = DarkenColor(c, 0.45);
+    }
+
+    private static Color LightenColor(Color c, double amount)
+    {
+        byte Adjust(byte ch) => (byte)Math.Clamp(ch + (255 - ch) * amount, 0, 255);
+        return Color.FromArgb(c.A, Adjust(c.R), Adjust(c.G), Adjust(c.B));
+    }
+
+    private static Color DarkenColor(Color c, double amount)
+    {
+        byte Adjust(byte ch) => (byte)Math.Clamp(ch * (1 - amount), 0, 255);
+        return Color.FromArgb(c.A, Adjust(c.R), Adjust(c.G), Adjust(c.B));
+    }
+
     // Shared relative-luminance calculation (WCAG 2.x), used both for picking
     // accent-button text and for the theme-pack text safety net below.
     private static double GetRelativeLuminance(Color c)
@@ -5995,7 +6052,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             settings.RecentFiles = settings.RecentFiles?
                 .Where(e => !string.IsNullOrWhiteSpace(e.Path))
                 .GroupBy(e => e.Path, StringComparer.OrdinalIgnoreCase)
-                .Select(g => g.First())
+                .Select(g => g.OrderByDescending(e => e.IsPinned).ThenByDescending(e => e.LastOpened).First())
                 .ToList() ?? [];
             settings.OpenTabPaths = settings.OpenTabPaths?
                 .Where(path => !string.IsNullOrWhiteSpace(path))
@@ -6087,7 +6144,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void PersistSettingsSnapshot(AppSettings snapshot, bool synchronous = false)
     {
-        void WriteToDisk()
+        void WriteToDisk(AppSettings toWrite)
         {
             try
             {
@@ -6096,20 +6153,54 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
                 // Writes to a temp file first, then atomically replaces the real file.
                 var tempPath = SettingsFilePath + ".tmp";
-                File.WriteAllText(tempPath, JsonSerializer.Serialize(snapshot));
+                File.WriteAllText(tempPath, JsonSerializer.Serialize(toWrite));
                 File.Move(tempPath, SettingsFilePath, overwrite: true);
             }
             catch (Exception ex) { KodoDiagnostics.LogWarning("MainWindow.PersistSettingsSnapshot", ex, operation: $"Failed to save settings to '{SettingsFilePath}'"); }
         }
 
         // Shutdown save runs synchronously so the last write reaches disk before exit.
+        // Taking the same lock a background writer uses means this waits for any
+        // in-flight write to finish first, then writes this (freshest) snapshot -
+        // never races it.
         if (synchronous)
         {
-            WriteToDisk();
+            lock (_settingsWriteLock)
+            {
+                WriteToDisk(snapshot);
+                _pendingSettingsSnapshot = null;
+            }
             return;
         }
 
-        Task.Run(WriteToDisk);
+        lock (_settingsWriteLock)
+        {
+            // Always replace, never queue multiple - only the most recent snapshot
+            // matters, and this is how concurrent calls get coalesced into one write.
+            _pendingSettingsSnapshot = snapshot;
+            if (_isPersistingSettings) return; // a writer loop is already running and will pick this up
+            _isPersistingSettings = true;
+        }
+
+        Task.Run(() =>
+        {
+            while (true)
+            {
+                AppSettings toWrite;
+                lock (_settingsWriteLock)
+                {
+                    if (_pendingSettingsSnapshot is null)
+                    {
+                        _isPersistingSettings = false;
+                        return;
+                    }
+                    toWrite = _pendingSettingsSnapshot;
+                    _pendingSettingsSnapshot = null;
+                }
+
+                WriteToDisk(toWrite);
+            }
+        });
     }
 
     private IBrush GetCachedBrush(string colorValue)
@@ -6221,6 +6312,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try { AccentBrush = GetCachedBrush(resolvedAccent); }
         catch { AccentBrush = GetCachedBrush("#8C00FF"); }
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
+        SyncSystemAccentResources(AccentBrush);
 
         // Initialises the System Default preview from the registry now, not on the first poll tick.
         RefreshSystemThemePreview();
@@ -6344,6 +6436,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             try { AccentBrush = GetCachedBrush("#8C00FF"); }
             catch { AccentBrush = GetCachedBrush("#8C00FF"); }
             AccentForegroundBrush = GetAccentForeground(AccentBrush);
+            SyncSystemAccentResources(AccentBrush);
             OnPropertyChanged(nameof(AccentBrush));
             OnPropertyChanged(nameof(AccentForegroundBrush));
             ApplyThemeToEditor();
@@ -6360,6 +6453,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try { AccentBrush = GetCachedBrush(hex); }
         catch { AccentBrush = GetCachedBrush("#8C00FF"); }
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
+        SyncSystemAccentResources(AccentBrush);
         OnPropertyChanged(nameof(AccentBrush));
         OnPropertyChanged(nameof(AccentForegroundBrush));
         ApplyThemeToEditor();
@@ -6761,6 +6855,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        CloseCompletionWindow();
         if (preserveCurrentState)
             SaveCurrentEditorStateIntoTab();
         ActiveEditorTab = tab;
@@ -6803,6 +6898,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (index < 0)
             return;
 
+        if (closingActiveTab)
+            CloseCompletionWindow();
+        _intelliSenseEngine.ForgetFile(tab.Path);
         OpenTabs.RemoveAt(index);
         _corruptedTabs.Remove(tab);
 
@@ -7505,6 +7603,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
+            // -NoExit -Command disables PSReadLine's predictive IntelliSense ("ghost text")
+            // on startup. It relies on precise cursor-position math that doesn't survive
+            // being hosted in a custom ConPTY terminal, so it renders as glitchy artifacts.
+            // Wrapped in try/catch since PredictionSource doesn't exist on older PSReadLine
+            // (e.g. the one bundled with Windows PowerShell 5.1) and would otherwise error.
+            const string disablePredictiveIntelliSenseCommand =
+                "try { Set-PSReadLineOption -PredictionSource None } catch {}";
+
             AddShell(
                 "powershell",
                 "PowerShell",
@@ -7512,14 +7618,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     ?? ResolveExecutable("powershell.exe", Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.System),
                         @"WindowsPowerShell\v1.0\powershell.exe")),
-                "-NoLogo");
+                $"-NoLogo -NoExit -Command \"{disablePredictiveIntelliSenseCommand}\"");
             AddShell(
                 "windows-powershell",
                 "Windows PowerShell",
                 ResolveExecutable("powershell.exe", Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.System),
                         @"WindowsPowerShell\v1.0\powershell.exe")),
-                "-NoLogo");
+                $"-NoLogo -NoExit -Command \"{disablePredictiveIntelliSenseCommand}\"");
             AddShell(
                 "cmd",
                 "Command Prompt",
@@ -7590,14 +7696,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (!string.IsNullOrWhiteSpace(ActiveTerminalSession?.WorkingDirectory) && Directory.Exists(ActiveTerminalSession.WorkingDirectory))
             return ActiveTerminalSession.WorkingDirectory;
-        if (!string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath))
-            return _currentFolderPath;
+
+        // The active file takes priority over _currentFolderPath. A folder stays
+        // "open" internally until the user explicitly closes it, so without this
+        // check a new terminal would keep routing to a stale workspace folder
+        // even after the user has moved on to an unrelated standalone file.
+        // Exception: if a folder IS open and the active file lives inside it,
+        // the folder root is still the more useful working directory.
         if (!string.IsNullOrWhiteSpace(_currentFilePath))
         {
             var fileDirectory = Path.GetDirectoryName(_currentFilePath);
             if (!string.IsNullOrWhiteSpace(fileDirectory) && Directory.Exists(fileDirectory))
-                return fileDirectory;
+            {
+                var folderIsOpen = !string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath);
+                if (!folderIsOpen || !IsPathInsideDirectory(_currentFilePath, _currentFolderPath!))
+                    return fileDirectory;
+
+                return _currentFolderPath!;
+            }
         }
+
+        if (!string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath))
+            return _currentFolderPath;
 
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
@@ -7886,6 +8006,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var newName = await ShowRenameDialogAsync(session.Title);
         if (newName is null || string.Equals(newName, session.Title, StringComparison.Ordinal)) return;
         session.Title = newName;
+    }
+
+    // Reflects the shell's OSC 0/2 window-title into the tab; ApplyAutoTitle ignores this once the user has renamed it.
+    private void TerminalHostControl_OnTitleChanged(object? sender, string title)
+    {
+        if (ActiveTerminalSession is not { } session) return;
+
+        var trimmed = title.Trim();
+        if (trimmed.Length == 0) return;
+        session.ApplyAutoTitle(trimmed);
     }
 
     private void DuplicateTerminalSessionMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -9520,15 +9650,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (!HasRecentFiles) return;
 
+        // Pinned entries are exempt from "Clear Recent Files" - only the plain,
+        // non-pinned entries get removed. Nothing to confirm/do if everything
+        // left in the list is pinned.
+        var clearable = RecentFiles.Where(f => !f.IsPinned).ToList();
+        if (clearable.Count == 0) return;
+
         var confirmed = await ShowConfirmationDialogAsync(
             "Clear Recent Files?",
-            "This removes every entry from your Recent Files list. The files themselves aren't touched - only the list of shortcuts to them. This can't be undone.",
+            "This removes every non-pinned entry from your Recent Files list. Pinned entries are kept. The files themselves aren't touched - only the list of shortcuts to them. This can't be undone.",
             confirmLabel: "Clear",
             isDestructive: true);
 
         if (!confirmed) return;
 
-        RecentFiles.Clear();
+        foreach (var item in clearable)
+            RecentFiles.Remove(item);
+
         SaveSettings();
         OnPropertyChanged(nameof(HasRecentFiles));
     }
@@ -9791,12 +9929,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         QueueRefreshState(fullRefresh: true);
         QueueWordCountRefresh();
         RestartAutoSaveTimerIfNeeded();
+        UpdateIntelliSense();
     }
 
 	// Fires before the character is written; skips an auto-inserted closing character.
     private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
     {
         if (!IsSmartSyntaxEnabled()) return;
+        if (IsMarkdownFile(_currentFilePath)) return;
         if (string.IsNullOrEmpty(e.Text)) return;
         var ch     = e.Text[0];
         var caret  = EditorTextBox.TextArea.Caret;
@@ -9842,6 +9982,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
     {
         if (!IsSmartSyntaxEnabled()) return;
+        if (IsMarkdownFile(_currentFilePath)) return;
         if (string.IsNullOrEmpty(e.Text)) return;
         var ch = e.Text[0];
 
@@ -9867,8 +10008,144 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         caret.Offset = offset;
     }
 
+    // ── IntelliSense (predictive completion popup) ─────────────────────────────
+
+    // Recomputes and shows/updates/hides the completion popup based on the word at
+    // the caret. Called after every real text edit (see EditorTextBox_OnTextChanged).
+    private void UpdateIntelliSense()
+    {
+        if (EditorTextBox?.Document is null || EditorTextBox.TextArea is null)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        var doc = EditorTextBox.Document;
+        var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, doc.TextLength);
+        var text = doc.Text;
+
+        var wordStart = IntelliSenseEngine.FindWordStart(text, offset);
+        var prefix = text[wordStart..offset];
+
+        // Require at least one word character already typed, so the popup doesn't pop
+        // up after whitespace, punctuation, or a fresh newline.
+        if (prefix.Length == 0)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        var fileKey = ActiveEditorTab?.Path ?? "untitled";
+        _intelliSenseEngine.ScanDocument(fileKey, text);
+
+        var suggestions = _intelliSenseEngine.GetSuggestions(prefix, fileKey, CurrentLanguageExtension);
+        if (suggestions.Count == 0)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        if (_completionWindow is null)
+        {
+            _completionWindow = CreateCompletionWindow();
+            _completionWindow.StartOffset = wordStart;
+            foreach (var suggestion in suggestions)
+                _completionWindow.CompletionList.CompletionData.Add(suggestion);
+            _completionWindow.Show();
+        }
+        else
+        {
+            _completionWindow.StartOffset = wordStart;
+            _completionWindow.CompletionList.CompletionData.Clear();
+            foreach (var suggestion in suggestions)
+                _completionWindow.CompletionList.CompletionData.Add(suggestion);
+        }
+    }
+
+    private void CloseCompletionWindow()
+    {
+        _completionWindow?.Close();
+        _completionWindow = null;
+    }
+
+    // Builds a CompletionWindow styled to resemble VS Code's dark suggestion widget:
+    // near-black panel, subtle border, and a blue "selected row" / gray "hovered row"
+    // highlight (the row content itself - icon chip, name, kind label - comes from
+    // each IntelliSenseSuggestion.Content in IntelliSense.cs).
+    private CompletionWindow CreateCompletionWindow()
+    {
+        var window = new CompletionWindow(EditorTextBox.TextArea)
+        {
+            MaxHeight = 210,
+            MaxWidth = 460,
+            Width = 460,
+        };
+
+        // CompletionWindow itself is just a Popup (positioning only, no chrome) - the
+        // actual dark panel/border/font live on CompletionList, which it hosts as Child.
+        window.CompletionList.Background = Brush.Parse("#252526");
+        window.CompletionList.BorderBrush = Brush.Parse("#454545");
+        window.CompletionList.BorderThickness = new Thickness(1);
+        window.CompletionList.FontFamily = EditorTextBox.FontFamily;
+        window.CompletionList.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        if (window.CompletionList.ListBox is { } listBox)
+        {
+            listBox.Background = Brushes.Transparent;
+            listBox.Padding = new Thickness(0, 4);
+            listBox.Margin = new Thickness(0);
+            listBox.HorizontalAlignment = HorizontalAlignment.Stretch;
+        }
+
+        // Every row gets its own explicit opaque background - not just the
+        // selected/hover ones below. Relying solely on CompletionList's container
+        // Background to show through wasn't reliably opaque for each row's own
+        // pixels in the popup, which is what let editor text underneath bleed
+        // through - "oddly transparent" rows even though nothing was selected/hovered.
+        var baseRowStyle = new Style(x => x.OfType<ListBoxItem>()
+            .Template().OfType<Avalonia.Controls.Presenters.ContentPresenter>().Name("PART_ContentPresenter"));
+        baseRowStyle.Setters.Add(new Setter(
+            Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, Brush.Parse("#252526")));
+        window.Styles.Add(baseRowStyle);
+
+        // "ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter" and the
+        // :pointerover equivalent - matches VS Code's blue selected row / gray hover row.
+        var selectedRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":selected")
+            .Template().OfType<Avalonia.Controls.Presenters.ContentPresenter>().Name("PART_ContentPresenter"));
+        selectedRowStyle.Setters.Add(new Setter(
+            Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, Brush.Parse("#04395E")));
+        window.Styles.Add(selectedRowStyle);
+
+        var hoverRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":pointerover")
+            .Template().OfType<Avalonia.Controls.Presenters.ContentPresenter>().Name("PART_ContentPresenter"));
+        hoverRowStyle.Setters.Add(new Setter(
+            Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, Brush.Parse("#2A2D2E")));
+        window.Styles.Add(hoverRowStyle);
+
+        var rowPaddingStyle = new Style(x => x.OfType<ListBoxItem>());
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(6, 3)));
+        // A fixed MinHeight (rather than 0) keeps every row the same height regardless
+        // of content, so the ListBox's virtualizing panel measures/positions rows
+        // consistently. With MinHeight 0, rows could vary slightly in height and the
+        // panel would mis-place them, which looked like duplicated/overlapping rows.
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, 26d));
+        window.Styles.Add(rowPaddingStyle);
+
+        window.Closed += (_, _) => _completionWindow = null;
+        return window;
+    }
+
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // While the IntelliSense popup is open, let it own navigation/accept/dismiss keys -
+        // otherwise smart-enter/smart-tab below would consume them first and the popup
+        // would never see Enter/Tab to accept, or Escape/arrows to navigate.
+        if (_completionWindow is not null && e.Key is Key.Enter or Key.Tab or Key.Escape
+            or Key.Up or Key.Down or Key.PageUp or Key.PageDown)
+        {
+            return;
+        }
+
         // Doesn't intercept keys destined for the terminal.
         // Uses the TopLevel FocusManager, not e.Source, for the true current focus owner.
         if (IsTerminalVisible && ActiveTerminalSession is not null)
@@ -11479,6 +11756,12 @@ public sealed class RecentFileItem : INotifyPropertyChanged
             return $"{ext.ToLowerInvariant()} file";
         }
     }
+
+    // The exact same extension -> badge text lookup (and ".." fallback) the file
+    // explorer tree uses for its own file icons (FileTreeItem.GetFileIcon), so a
+    // .py file shows "PY" here too instead of a generic file glyph. Folders don't
+    // use this - they keep their dedicated folder icon in the row's XAML.
+    public string LanguageIcon => IsFolder ? string.Empty : FileTreeItem.GetFileIcon(System.IO.Path.GetFileName(Path));
 
     public string LastOpenedText
     {

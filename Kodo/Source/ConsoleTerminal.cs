@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.Threading;
 
@@ -58,11 +59,33 @@ public sealed class ConsoleTerminal : Control
     private int _cursorRow, _cursorCol;
     private bool _cursorVisible = true;
 
+    // Scrollback: rows pushed off the top of the live grid, oldest first.
+    // _scrollOffset counts rows back from the live view; 0 means fully scrolled to bottom.
+    private const int MaxScrollbackLines = 5000;
+    private readonly List<TermCell[]> _scrollback = new();
+    private int _scrollOffset;
+
     private Color _fg = DefaultFg, _bg = DefaultBg;
     private bool _bold, _underline, _reverse;
 
+    // Selection, in absolute buffer coordinates (row 0 = oldest scrollback line).
+    private static readonly Color SelectionBg = Color.FromArgb(120, 51, 153, 255);
+    private bool _selecting;
+    private (int Row, int Col)? _selStart;
+    private (int Row, int Col)? _selEnd;
+
+    private bool _bracketedPasteMode;
+
+    // Scrollback search
+    private static readonly Color SearchMatchBg   = Color.FromArgb(140, 255, 213, 79);
+    private static readonly Color SearchCurrentBg = Color.FromArgb(200, 255, 140, 0);
+    private bool _searchActive;
+    private readonly StringBuilder _searchQuery = new();
+    private readonly List<(int AbsRow, int Col)> _searchMatches = new();
+    private int _searchIndex = -1;
+
     // VT parser state
-    public enum ParseState { Ground, Escape, CsiEntry, CsiParam, CsiIgnore, OscString }
+    public enum ParseState { Ground, Escape, CsiEntry, CsiParam, CsiIgnore, OscString, OscStringEsc }
     private ParseState _parseState = ParseState.Ground;
     private readonly StringBuilder _csiParam = new();
     private readonly StringBuilder _oscBuf   = new();
@@ -104,6 +127,9 @@ public sealed class ConsoleTerminal : Control
     /// </summary>
     public event EventHandler<IntPtr>? SessionExited;
 
+    /// <summary>Fired when the shell reports a new window title via OSC 0/2.</summary>
+    public event EventHandler<string>? TitleChanged;
+
     /// <summary>Start a shell. Stops any previously running session first.</summary>
     /// <param name="suppressOutputUntilRestored">
     /// Pass true when restoring a snapshot right after, so output is discarded until then.
@@ -121,7 +147,11 @@ public sealed class ConsoleTerminal : Control
             _cols = cols; _rows = rows;
             // Only allocates a fresh grid when no restore is pending.
             if (!suppressOutputUntilRestored)
+            {
                 ResizeCells(rows, cols);
+                _scrollback.Clear();
+                _scrollOffset = 0;
+            }
 
             // Create pipe pairs for ConPTY I/O
             NativeConPty.CreatePipe(out var hReadPtyOutput, out var hWritePtyOutput, IntPtr.Zero, 0);
@@ -203,6 +233,7 @@ public sealed class ConsoleTerminal : Control
 
         _cols = cols; _rows = rows;
         ResizeCells(rows, cols);
+        _scrollOffset = 0;
 
         if (_hPcon != IntPtr.Zero)
             NativeConPty.ResizePseudoConsole(_hPcon,
@@ -212,6 +243,7 @@ public sealed class ConsoleTerminal : Control
     public void SendInput(string text)
     {
         if (_writeStream is null || string.IsNullOrEmpty(text)) return;
+        _scrollOffset = 0;
         var bytes = Encoding.UTF8.GetBytes(text);
         try { _writeStream.Write(bytes, 0, bytes.Length); _writeStream.Flush(); }
         catch (Exception ex) { Console.WriteLine($"[ConPTY] SendInput failed: {ex.Message}"); }
@@ -271,6 +303,7 @@ public sealed class ConsoleTerminal : Control
             _parseState    = snap.ParseState;
             _csiParam.Clear();
             _csiParam.Append(snap.CsiParam);
+            _scrollOffset  = 0;
 
             // The suppression window already covers the startup screen-clear; expires on its own.
         }
@@ -282,6 +315,42 @@ public sealed class ConsoleTerminal : Control
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        if (_searchActive)
+        {
+            HandleSearchKeyDown(e);
+            e.Handled = true;
+            base.OnKeyDown(e);
+            return;
+        }
+
+        var ctrl  = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        var alt   = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+
+        if (ctrl && shift && !alt && e.Key == Key.C)
+        {
+            _ = CopySelectionToClipboardAsync();
+            e.Handled = true;
+            base.OnKeyDown(e);
+            return;
+        }
+
+        if (ctrl && !shift && !alt && e.Key == Key.V)
+        {
+            _ = PasteFromClipboardAsync();
+            e.Handled = true;
+            base.OnKeyDown(e);
+            return;
+        }
+
+        if (ctrl && !shift && !alt && e.Key == Key.F)
+        {
+            OpenSearch();
+            e.Handled = true;
+            base.OnKeyDown(e);
+            return;
+        }
+
         // Handle everything ourselves before calling base so that window-level
         // tunnel handlers (editor shortcuts, etc.) cannot swallow terminal keys.
 
@@ -331,6 +400,13 @@ public sealed class ConsoleTerminal : Control
 
     protected override void OnTextInput(TextInputEventArgs e)
     {
+        if (_searchActive)
+        {
+            if (!string.IsNullOrEmpty(e.Text)) { _searchQuery.Append(e.Text); RunSearch(); }
+            e.Handled = true;
+            return;
+        }
+
         base.OnTextInput(e);
         if (!string.IsNullOrEmpty(e.Text)) { SendInput(e.Text); e.Handled = true; }
     }
@@ -352,6 +428,51 @@ public sealed class ConsoleTerminal : Control
     {
         base.OnPointerPressed(e);
         Focus();
+
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            var pos = PointToCell(e.GetPosition(this));
+            _selStart = _selEnd = pos;
+            _selecting = true;
+            InvalidateVisual();
+        }
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (!_selecting) return;
+        _selEnd = PointToCell(e.GetPosition(this));
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        _selecting = false;
+    }
+
+    private (int Row, int Col) PointToCell(Point p)
+    {
+        var screenRow = Math.Clamp((int)(p.Y / CellH), 0, _rows - 1);
+        var col       = Math.Clamp((int)(p.X / CellW), 0, _cols - 1);
+        return (ScreenRowToAbsRow(screenRow), col);
+    }
+
+    private const int WheelLinesPerNotch = 3;
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        var delta = (int)Math.Round(e.Delta.Y * WheelLinesPerNotch);
+        if (delta == 0) return;
+
+        lock (_lock)
+        {
+            _scrollOffset = Math.Clamp(_scrollOffset + delta, 0, _scrollback.Count);
+        }
+        InvalidateVisual();
+        e.Handled = true;
     }
 
     // Cached typefaces - reusing the same object avoids per-call font lookup overhead
@@ -367,12 +488,38 @@ public sealed class ConsoleTerminal : Control
             // any cells we don't explicitly paint are correctly erased.
             ctx.FillRectangle(new SolidColorBrush(DefaultBg), new Rect(Bounds.Size));
 
-            var isCursorVisible = _cursorVisible && _cursorBlinkOn;
+            var isCursorVisible = _scrollOffset == 0 && _cursorVisible && _cursorBlinkOn;
+            var scrollbackStart = _scrollback.Count - _scrollOffset;
+
+            (int r0, int c0, int r1, int c1)? selRange = null;
+            if (_selStart is not null && _selEnd is not null)
+            {
+                var (sr0, sc0) = _selStart.Value;
+                var (sr1, sc1) = _selEnd.Value;
+                if (sr0 > sr1 || (sr0 == sr1 && sc0 > sc1)) (sr0, sc0, sr1, sc1) = (sr1, sc1, sr0, sc0);
+                if (sr0 != sr1 || sc0 != sc1) selRange = (sr0, sc0, sr1, sc1);
+            }
+
+            Dictionary<int, List<(int Col, int Len)>>? searchHighlights = null;
+            if (_searchActive && _searchMatches.Count > 0)
+            {
+                searchHighlights = new();
+                var qLen = Math.Max(1, _searchQuery.Length);
+                foreach (var (absRowM, colM) in _searchMatches)
+                {
+                    var screenRowM = absRowM - scrollbackStart;
+                    if (screenRowM < 0 || screenRowM >= _rows) continue;
+                    if (!searchHighlights.TryGetValue(absRowM, out var list))
+                        searchHighlights[absRowM] = list = new();
+                    list.Add((colM, qLen));
+                }
+            }
 
             for (var r = 0; r < _rows; r++)
             for (var c = 0; c < _cols; c++)
             {
-                var cell = _cells[r, c];
+                var cell = GetDisplayCell(r, c, scrollbackStart);
+                var absRow = ScreenRowToAbsRow(r);
 
                 // Use integer pixel positions so sub-pixel accumulation from
                 // fractional CellW (8.4 px) never causes glyph drift or overlap.
@@ -383,10 +530,30 @@ public sealed class ConsoleTerminal : Control
                 var rect = new Rect(x, y, w, CellH);
 
                 var atCursor = isCursorVisible && r == _cursorRow && c == _cursorCol;
+                var selected = selRange is not null && IsCellSelected(absRow, c, selRange.Value);
+
+                var isMatch = false;
+                var isCurrentMatch = false;
+                if (searchHighlights is not null && searchHighlights.TryGetValue(absRow, out var ranges))
+                {
+                    foreach (var (mc, len) in ranges)
+                    {
+                        if (c < mc || c >= mc + len) continue;
+                        isMatch = true;
+                        if (_searchIndex >= 0 && _searchMatches[_searchIndex].AbsRow == absRow &&
+                            c >= _searchMatches[_searchIndex].Col && c < _searchMatches[_searchIndex].Col + len)
+                            isCurrentMatch = true;
+                        break;
+                    }
+                }
 
                 // Always paint the cell background so that when the cursor moves
                 // away, the previous cursor cell is fully restored to its real bg.
-                var bg = atCursor ? DefaultFg : (cell.Bg ?? DefaultBg);
+                var bg = atCursor ? DefaultFg
+                       : isCurrentMatch ? SearchCurrentBg
+                       : isMatch ? SearchMatchBg
+                       : selected ? SelectionBg
+                       : (cell.Bg ?? DefaultBg);
                 if (bg != DefaultBg)
                     ctx.FillRectangle(new SolidColorBrush(bg), rect);
 
@@ -415,7 +582,229 @@ public sealed class ConsoleTerminal : Control
                         new Point(x, y + CellH - 2), new Point(x + w, y + CellH - 2));
                 }
             }
+
+            if (_scrollOffset > 0)
+                DrawScrollIndicator(ctx);
+
+            if (_searchActive)
+                DrawSearchBar(ctx);
         }
+    }
+
+    private void DrawSearchBar(DrawingContext ctx)
+    {
+        var label = $"Find: {_searchQuery}" +
+                    (_searchMatches.Count > 0 ? $"   {_searchIndex + 1}/{_searchMatches.Count}" : "   no matches");
+        var ft = new FormattedText(label, System.Globalization.CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight, TypefaceNormal, FontSize, new SolidColorBrush(DefaultFg));
+
+        const int pad = 6;
+        var w = ft.Width + pad * 2;
+        var h = ft.Height + pad * 2;
+        var rect = new Rect(Bounds.Width - w - 10, 6, w, h);
+
+        ctx.FillRectangle(new SolidColorBrush(Color.FromArgb(230, 30, 30, 30)), rect);
+        ctx.DrawRectangle(new Pen(new SolidColorBrush(Color.FromRgb(90, 90, 90))), rect);
+        ctx.DrawText(ft, new Point(rect.X + pad, rect.Y + pad));
+    }
+
+    // Resolves the cell at a given screen row/col, blending scrollback history
+    // above the live grid once the view has been scrolled up.
+    private TermCell GetDisplayCell(int screenRow, int col, int scrollbackStart)
+    {
+        if (_scrollOffset == 0)
+            return _cells[screenRow, col];
+
+        if (screenRow < _scrollOffset)
+        {
+            var row = _scrollback[scrollbackStart + screenRow];
+            return col < row.Length ? row[col] : default;
+        }
+
+        var liveRow = screenRow - _scrollOffset;
+        return _cells[liveRow, col];
+    }
+
+    // Thin bar on the right edge showing roughly where in the scrollback the view sits.
+    private void DrawScrollIndicator(DrawingContext ctx)
+    {
+        var totalLines = _scrollback.Count + _rows;
+        var trackH = Bounds.Height;
+        var thumbH = Math.Max(20, trackH * _rows / (double)totalLines);
+        var thumbY = (trackH - thumbH) * (1 - _scrollOffset / (double)_scrollback.Count);
+
+        var brush = new SolidColorBrush(Color.FromArgb(160, 204, 204, 204));
+        ctx.FillRectangle(brush, new Rect(Bounds.Width - 4, thumbY, 4, thumbH));
+    }
+
+    // ── Absolute buffer coordinates (row 0 = oldest scrollback line) ─────────
+
+    private int TotalAbsRows => _scrollback.Count + _rows;
+
+    private int ScreenRowToAbsRow(int screenRow) => _scrollback.Count - _scrollOffset + screenRow;
+
+    private int ColsForAbsRow(int absRow) => absRow < _scrollback.Count ? _scrollback[absRow].Length : _cols;
+
+    private TermCell GetAbsCell(int absRow, int col)
+    {
+        if (absRow < _scrollback.Count)
+        {
+            var row = _scrollback[absRow];
+            return col < row.Length ? row[col] : default;
+        }
+        var liveRow = absRow - _scrollback.Count;
+        if (liveRow < 0 || liveRow >= _rows || col < 0 || col >= _cols) return default;
+        return _cells[liveRow, col];
+    }
+
+    private static bool IsCellSelected(int absRow, int col, (int r0, int c0, int r1, int c1) sel)
+    {
+        if (absRow < sel.r0 || absRow > sel.r1) return false;
+        if (sel.r0 == sel.r1) return col >= sel.c0 && col < sel.c1;
+        if (absRow == sel.r0) return col >= sel.c0;
+        if (absRow == sel.r1) return col < sel.c1;
+        return true;
+    }
+
+    // ── Selection / clipboard ─────────────────────────────────────────────────
+
+    private string? GetSelectedText()
+    {
+        if (_selStart is null || _selEnd is null) return null;
+        var (r0, c0) = _selStart.Value;
+        var (r1, c1) = _selEnd.Value;
+        if (r0 > r1 || (r0 == r1 && c0 > c1)) (r0, c0, r1, c1) = (r1, c1, r0, c0);
+        if (r0 == r1 && c0 == c1) return null;
+
+        var sb = new StringBuilder();
+        for (var row = r0; row <= r1; row++)
+        {
+            var startCol = row == r0 ? c0 : 0;
+            var endCol   = row == r1 ? c1 : ColsForAbsRow(row);
+            var lineSb = new StringBuilder();
+            for (var col = startCol; col < endCol; col++)
+            {
+                var ch = GetAbsCell(row, col).Char;
+                lineSb.Append(ch == '\0' ? ' ' : ch);
+            }
+            sb.Append(lineSb.ToString().TrimEnd());
+            if (row < r1) sb.Append('\n');
+        }
+        return sb.ToString();
+    }
+
+    private async Task CopySelectionToClipboardAsync()
+    {
+        var text = GetSelectedText();
+        if (string.IsNullOrEmpty(text)) return;
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+        try { await clipboard.SetTextAsync(text); }
+        catch (Exception ex) { Console.WriteLine($"[Terminal] Copy failed: {ex.Message}"); }
+    }
+
+    private async Task PasteFromClipboardAsync()
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+
+        string? text;
+        try { text = await clipboard.TryGetTextAsync(); }
+        catch (Exception ex) { Console.WriteLine($"[Terminal] Paste failed: {ex.Message}"); return; }
+        if (string.IsNullOrEmpty(text)) return;
+
+        text = text.Replace("\r\n", "\r").Replace("\n", "\r");
+        SendInput(_bracketedPasteMode ? $"\x1b[200~{text}\x1b[201~" : text);
+    }
+
+    // ── Scrollback search ──────────────────────────────────────────────────────
+
+    private void OpenSearch()
+    {
+        _searchActive = true;
+        _searchQuery.Clear();
+        _searchMatches.Clear();
+        _searchIndex = -1;
+        InvalidateVisual();
+    }
+
+    private void CloseSearch()
+    {
+        _searchActive = false;
+        _searchQuery.Clear();
+        _searchMatches.Clear();
+        _searchIndex = -1;
+        InvalidateVisual();
+    }
+
+    private void HandleSearchKeyDown(KeyEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Key.Escape:
+                CloseSearch();
+                break;
+            case Key.Enter:
+            case Key.F3:
+                JumpToMatch(e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1);
+                break;
+            case Key.Back:
+                if (_searchQuery.Length > 0) _searchQuery.Length--;
+                RunSearch();
+                break;
+        }
+    }
+
+    private void RunSearch()
+    {
+        _searchMatches.Clear();
+        _searchIndex = -1;
+
+        var query = _searchQuery.ToString();
+        if (query.Length == 0) { InvalidateVisual(); return; }
+
+        for (var absRow = 0; absRow < TotalAbsRows; absRow++)
+        {
+            var lineLen = ColsForAbsRow(absRow);
+            var lineSb = new StringBuilder(lineLen);
+            for (var col = 0; col < lineLen; col++)
+            {
+                var ch = GetAbsCell(absRow, col).Char;
+                lineSb.Append(ch == '\0' ? ' ' : ch);
+            }
+
+            var line = lineSb.ToString();
+            var idx = 0;
+            while ((idx = line.IndexOf(query, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
+            {
+                _searchMatches.Add((absRow, idx));
+                idx += Math.Max(1, query.Length);
+            }
+        }
+
+        if (_searchMatches.Count > 0)
+        {
+            _searchIndex = _searchMatches.Count - 1;
+            ScrollToMatch();
+        }
+        InvalidateVisual();
+    }
+
+    private void JumpToMatch(int direction)
+    {
+        if (_searchMatches.Count == 0) return;
+        _searchIndex = ((_searchIndex + direction) % _searchMatches.Count + _searchMatches.Count) % _searchMatches.Count;
+        ScrollToMatch();
+        InvalidateVisual();
+    }
+
+    private void ScrollToMatch()
+    {
+        if (_searchIndex < 0 || _searchIndex >= _searchMatches.Count) return;
+        var (absRow, _) = _searchMatches[_searchIndex];
+        var targetScreenRow = _rows / 2;
+        _scrollOffset = Math.Clamp(_scrollback.Count + targetScreenRow - absRow, 0, _scrollback.Count);
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -536,10 +925,30 @@ public sealed class ConsoleTerminal : Control
                 break;
 
             case ParseState.OscString:
-                if (ch == '\x07' || ch == '\x9C') _parseState = ParseState.Ground;
-                else if (ch == '\x1B') _parseState = ParseState.Escape; // ESC \ = ST
+                if (ch == '\x07' || ch == '\x9C') { HandleOscComplete(); _parseState = ParseState.Ground; }
+                else if (ch == '\x1B') _parseState = ParseState.OscStringEsc; // expect ST's trailing '\'
+                else _oscBuf.Append(ch);
+                break;
+
+            case ParseState.OscStringEsc:
+                if (ch == '\\') HandleOscComplete();
+                _parseState = ParseState.Ground;
                 break;
         }
+    }
+
+    // OSC payload is "<code>;<text>". Codes 0 and 2 set the window title.
+    private void HandleOscComplete()
+    {
+        var s = _oscBuf.ToString();
+        var sep = s.IndexOf(';');
+        if (sep < 0 || !int.TryParse(s.AsSpan(0, sep), out var code)) return;
+        if (code != 0 && code != 2) return;
+
+        var title = s[(sep + 1)..];
+        var handler = TitleChanged;
+        if (handler is not null)
+            Dispatcher.UIThread.Post(() => handler(this, title));
     }
 
     private void DispatchCsi(char cmd, string param)
@@ -573,9 +982,15 @@ public sealed class ConsoleTerminal : Control
             // SGR - colours and attributes
             case 'm': ApplySgr(nums); break;
 
-            // Cursor visibility
-            case 'h': if (priv && P0(0) == 25) _cursorVisible = true;  break;
-            case 'l': if (priv && P0(0) == 25) _cursorVisible = false; break;
+            // Cursor visibility / bracketed paste mode
+            case 'h':
+                if (priv && P0(0) == 25) _cursorVisible = true;
+                else if (priv && P0(0) == 2004) _bracketedPasteMode = true;
+                break;
+            case 'l':
+                if (priv && P0(0) == 25) _cursorVisible = false;
+                else if (priv && P0(0) == 2004) _bracketedPasteMode = false;
+                break;
 
             // Insert / delete lines
             case 'L': InsertLines(P(0)); break;
@@ -651,6 +1066,15 @@ public sealed class ConsoleTerminal : Control
     private void ScrollUp(int n)
     {
         n = Math.Clamp(n, 0, _rows);
+        for (var r = 0; r < n; r++)
+        {
+            var row = new TermCell[_cols];
+            for (var c = 0; c < _cols; c++) row[c] = _cells[r, c];
+            _scrollback.Add(row);
+        }
+        if (_scrollback.Count > MaxScrollbackLines)
+            _scrollback.RemoveRange(0, _scrollback.Count - MaxScrollbackLines);
+
         for (var r = 0; r < _rows - n; r++)
         for (var c = 0; c < _cols; c++)
             _cells[r, c] = _cells[r + n, c];
@@ -682,7 +1106,8 @@ public sealed class ConsoleTerminal : Control
                 for (var r = 0; r < _cursorRow; r++) ClearRow(r);
                 EraseLine(1);
                 break;
-            case 2: case 3: ClearAllCells(); break;
+            case 2: ClearAllCells(); break;
+            case 3: ClearAllCells(); _scrollback.Clear(); _scrollOffset = 0; break;
         }
     }
 

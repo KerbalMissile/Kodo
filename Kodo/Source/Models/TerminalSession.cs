@@ -48,8 +48,28 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
                 return;
 
             _title = value;
+            HasCustomTitle = true;
             OnPropertyChanged();
         }
+    }
+
+    /// <summary>
+    /// True once <see cref="Title"/> has been set explicitly (e.g. via the rename dialog).
+    /// Used to stop shell-reported titles (OSC 0/2) from overwriting a user's own name.
+    /// </summary>
+    public bool HasCustomTitle { get; private set; }
+
+    /// <summary>
+    /// Applies a shell-reported title. No-ops once <see cref="HasCustomTitle"/> is set,
+    /// so it never overwrites a manual rename.
+    /// </summary>
+    public void ApplyAutoTitle(string title)
+    {
+        if (HasCustomTitle || _title == title)
+            return;
+
+        _title = title;
+        OnPropertyChanged(nameof(Title));
     }
 
     public string WorkingDirectory
