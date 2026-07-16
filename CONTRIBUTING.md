@@ -11,7 +11,8 @@ To run Kodo locally, you'll need:
 1. [.NET](https://dotnet.microsoft.com/en-us/download) minimum version 10
 2. Run `dotnet new install Avalonia.Templates`
 3. Change your directory to Kodo's source folder: `cd path\to\Kodo\Source`
-4. Run `dotnet run` - it'll take a few seconds then open up
+4. For best results, run `dotnet build Kodo.csproj` to catch any errors. This is optional.
+5. Run `dotnet run` - it'll take a few seconds then open up
 
 That's it. No complicated build pipeline, no extra tools.
 
