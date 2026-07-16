@@ -28,6 +28,8 @@ If something's broken, open an [Issue](https://github.com/KerbalMissile/Kodo/iss
 - What actually happened
 - Your OS and .NET version if relevant
 
+If you have Aptabase data tracking enabled, slimmer crash logs are sent automatically, with them being sent to us without revealing any personal information. If you'd like to describe the error better, please open an Issue!
+
 ### Submitting Changes
 
 1. Fork the repo
