@@ -159,7 +159,7 @@ If you want your extension in the official marketplace, open a PR adding your `.
 
 ## License
 
-By contributing, you agree that your contributions are licensed under [(GPL v3.0)](https://github.com/KerbalMissile/Kodo/blob/main/LICENSE).
+By contributing, you agree that your contributions are licensed under [GPL v3.0](https://github.com/KerbalMissile/Kodo/blob/main/LICENSE).
 
 ---
 
