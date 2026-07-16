@@ -58,6 +58,10 @@ internal sealed class AppSettings
     // has explicitly responded to the consent prompt at least once.
     public bool AllowDataTracking { get; set; }
     public bool HasRespondedToDataTrackingPrompt { get; set; }
+    // Acknowledgment of the embedded Privacy Policy text - separate from the data-tracking
+    // opt-in above. There's no decline path; this only tracks whether the user has scrolled
+    // through and accepted the terms at least once.
+    public bool HasAcceptedPrivacyPolicy { get; set; }
 }
 
 /// <summary>One entry in AppSettings.RecentFiles - a recently opened file or folder.</summary>
@@ -68,4 +72,3 @@ public sealed class RecentFileEntry
     public DateTime LastOpened { get; set; } = DateTime.Now;
     public bool IsPinned { get; set; }
 }
-

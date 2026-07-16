@@ -3133,6 +3133,51 @@
 
                                     </Grid>
 
+                                    <!-- Privacy Policy card - shown once, until scrolled through and accepted. No decline path. -->
+                                    <Border IsVisible="{Binding IsPrivacyPolicyPromptVisible}"
+                                            Background="{Binding ButtonBrush}"
+                                            BorderBrush="{Binding SurfaceBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="16"
+                                            Padding="20">
+                                        <StackPanel Spacing="12">
+                                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                <Border Width="3" Height="18" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                                <TextBlock FontSize="15"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Text="Privacy Policy" />
+                                            </StackPanel>
+                                            <TextBlock FontSize="12"
+                                                       Foreground="{Binding MutedTextBrush}"
+                                                       TextWrapping="Wrap"
+                                                       Text="Please scroll to the end to enable Accept." />
+                                            <Border Background="{Binding WindowBackgroundBrush}"
+                                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="12"
+                                                    Padding="16"
+                                                    MaxHeight="220">
+                                                <ScrollViewer x:Name="PrivacyPolicyScrollViewerTutorial"
+                                                              ScrollChanged="PrivacyPolicyScrollViewer_OnScrollChanged">
+                                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                               TextWrapping="Wrap"
+                                                               LineHeight="18"
+                                                               FontSize="12"
+                                                               FontFamily="Consolas,monospace"
+                                                               Text="{Binding PrivacyPolicyText}" />
+                                                </ScrollViewer>
+                                            </Border>
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <Button Classes="marketaction"
+                                                        IsEnabled="{Binding IsPrivacyPolicyScrolledToBottom}"
+                                                        Click="AcceptPrivacyPolicyButton_OnClick"
+                                                        Content="Accept" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
                                     <!-- Consent card - shown once, until the user accepts or declines -->
                                     <Border IsVisible="{Binding IsDataTrackingPromptVisible}"
                                             Background="{Binding ButtonBrush}"
@@ -4204,6 +4249,10 @@
                                            FontSize="11"
                                            TextWrapping="Wrap"
                                            Text="Kodo can send anonymous usage events - like which features are used and crash reports - to help prioritize fixes and improvements. No file contents, file paths, or personal information are ever included. You can change this at any time." />
+                                <Button Classes="chrome"
+                                        Click="OpenPrivacyPolicyButton_OnClick"
+                                        HorizontalAlignment="Left"
+                                        Content="Open Privacy Policy" />
                             </StackPanel>
                         </Border>
 
@@ -4729,6 +4778,47 @@
                             </ScrollViewer>
                         </Border>
 
+                        <!-- Privacy Policy card - only shown until scrolled through and accepted. No decline path. -->
+                        <Border IsVisible="{Binding IsPrivacyPolicyPromptVisible}"
+                                Background="{Binding ButtonBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="14"
+                                Padding="18">
+                            <StackPanel Spacing="10">
+                                <TextBlock FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Privacy Policy" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Please scroll to the end to enable Accept." />
+                                <Border Background="{Binding WindowBackgroundBrush}"
+                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Padding="14"
+                                        MaxHeight="180">
+                                    <ScrollViewer x:Name="PrivacyPolicyScrollViewerSplash"
+                                                  ScrollChanged="PrivacyPolicyScrollViewer_OnScrollChanged">
+                                        <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   LineHeight="18"
+                                                   FontSize="12"
+                                                   FontFamily="Consolas,monospace"
+                                                   Text="{Binding PrivacyPolicyText}" />
+                                    </ScrollViewer>
+                                </Border>
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button Classes="marketaction"
+                                            IsEnabled="{Binding IsPrivacyPolicyScrolledToBottom}"
+                                            Click="AcceptPrivacyPolicyButton_OnClick"
+                                            Content="Accept" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Consent card - only shown until the user has responded once -->
                         <Border IsVisible="{Binding IsDataTrackingPromptVisible}"
                                 Background="{Binding ButtonBrush}"
@@ -4757,8 +4847,9 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Plain dismiss button - only shown once the consent question is already settled -->
-                        <Button IsVisible="{Binding !IsDataTrackingPromptVisible}"
+                        <!-- Plain dismiss button - only shown once both the consent question and
+                             the Privacy Policy prompt are already settled -->
+                        <Button IsVisible="{Binding AreAllConsentPromptsResolved}"
                                 Classes="marketaction"
                                 Click="DismissUpdateSplashButton_OnClick"
                                 HorizontalAlignment="Right"
@@ -4770,4 +4861,11 @@
         </Grid>
     </Grid>
 </Window>
+
+
+
+
+
+
+
 

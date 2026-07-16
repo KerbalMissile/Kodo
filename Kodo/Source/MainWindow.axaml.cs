@@ -593,6 +593,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases/latest";
     private const string ReleasesApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases";
     private const string ReleasesPageUrl = "https://github.com/KerbalMissile/Kodo/releases";
+    private const string PrivacyPolicyUrl = "https://github.com/KerbalMissile/Kodo/blob/ec55927b6ef8afd0833e4caf74cab8d744205842/Policies/PRIVACY%20POLICY.txt";
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
     private const string WebsiteUrl = "https://kerbalmissile.github.io/Kodo-Website/";
     // GitHub Contents API endpoint for ANNOUNCEMENTS.md, same raw+json Accept header as the marketplace index.
@@ -714,6 +715,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Anonymous analytics opt-in; defaults to false until the user answers the consent prompt, changeable later in Settings.
     private bool _isDataTrackingEnabled;
     private bool _hasRespondedToDataTrackingPrompt;
+    // Privacy Policy acknowledgment - separate from the data-tracking opt-in above. No decline
+    // path, so this only ever flips true; gates the same tutorial/splash flow as the consent card.
+    private bool _hasAcceptedPrivacyPolicy;
+    private bool _isPrivacyPolicyScrolledToBottom;
+    private string? _privacyPolicyText;
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
     private string _latestReleaseStatusText = "Loading latest release...";
     private string _marketplaceConnectivityMessage = string.Empty;
@@ -1105,6 +1111,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _hasCompletedTutorial = settings.HasCompletedTutorial;
         _isDataTrackingEnabled = settings.AllowDataTracking;
         _hasRespondedToDataTrackingPrompt = settings.HasRespondedToDataTrackingPrompt;
+        _hasAcceptedPrivacyPolicy = settings.HasAcceptedPrivacyPolicy;
         // Syncs the Aptabase client with the loaded consent choice (it defaults to disabled until now).
         AptabaseClient.SetEnabled(_isDataTrackingEnabled);
         _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom" or "theme"
@@ -3820,6 +3827,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 _hasRespondedToDataTrackingPrompt = true;
                 OnPropertyChanged(nameof(IsDataTrackingPromptVisible));
+                OnPropertyChanged(nameof(AreAllConsentPromptsResolved));
             }
 
             SaveSettings();
@@ -3828,6 +3836,56 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // True until the user has answered the consent prompt at least once.
     public bool IsDataTrackingPromptVisible => !_hasRespondedToDataTrackingPrompt;
+
+    // True until the user has scrolled through and accepted the embedded Privacy Policy.
+    // Unlike the data-tracking card, there's no decline path - this only ever flips true.
+    public bool IsPrivacyPolicyPromptVisible => !_hasAcceptedPrivacyPolicy;
+
+    // Gates the update splash's plain "Got it" dismiss button - only shown once neither
+    // consent card has anything left pending.
+    public bool AreAllConsentPromptsResolved => !IsDataTrackingPromptVisible && !IsPrivacyPolicyPromptVisible;
+
+    // Flips true once the bound Privacy Policy ScrollViewer reaches the bottom of its
+    // extent (see PrivacyPolicyScrollViewer_OnScrollChanged); gates the Accept button.
+    public bool IsPrivacyPolicyScrolledToBottom
+    {
+        get => _isPrivacyPolicyScrolledToBottom;
+        set
+        {
+            if (_isPrivacyPolicyScrolledToBottom == value) return;
+            _isPrivacyPolicyScrolledToBottom = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // Resets the scroll gate so re-showing the card (fresh tutorial run, or a returning-user
+    // splash) always requires scrolling again before Accept is enabled.
+    private void ResetPrivacyPolicyScrollState() => IsPrivacyPolicyScrolledToBottom = false;
+
+    // Lazily loads PRIVACY_POLICY.txt, bundled as an AvaloniaResource under Assets/, so it can
+    // render in-app instead of only linking out to the canonical hosted copy on GitHub.
+    public string PrivacyPolicyText
+    {
+        get
+        {
+            if (_privacyPolicyText is not null)
+                return _privacyPolicyText;
+
+            try
+            {
+                using var stream = AssetLoader.Open(new Uri("avares://Kodo/Assets/PRIVACY_POLICY.txt"));
+                using var reader = new System.IO.StreamReader(stream);
+                _privacyPolicyText = reader.ReadToEnd();
+            }
+            catch
+            {
+                _privacyPolicyText = "The Privacy Policy could not be loaded. You can read it at " +
+                                      "https://github.com/KerbalMissile/Kodo/blob/main/PRIVACY_POLICY.txt";
+            }
+
+            return _privacyPolicyText;
+        }
+    }
 
     // Base width 240 + extra pixels per character beyond 2 in the longest icon label.
     // 2-char labels ("Py","JS") → 240px; 3-char ("C++","F#") → 252px; 4-char ("Java") → 264px.
@@ -6161,6 +6219,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             LastSeenVersion                         = CurrentAppVersion,
             AllowDataTracking                       = _isDataTrackingEnabled,
             HasRespondedToDataTrackingPrompt        = _hasRespondedToDataTrackingPrompt,
+            HasAcceptedPrivacyPolicy                = _hasAcceptedPrivacyPolicy,
             OpenTabPaths = OpenTabs
                 .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
                 .Select(tab => tab.Path)
@@ -7174,11 +7233,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         else if (isReturningUser)
         {
             var showReleaseNotes = !IsDevBuild && IsCurrentNewerThanLastSeen(_lastSeenVersion);
-            var showConsentAsk   = !_hasRespondedToDataTrackingPrompt;
+            var showConsentAsk   = !_hasRespondedToDataTrackingPrompt || !_hasAcceptedPrivacyPolicy;
 
             _openingSplashShowsReleaseNotes = showReleaseNotes;
             if (showReleaseNotes || showConsentAsk)
+            {
+                if (!_hasAcceptedPrivacyPolicy)
+                    ResetPrivacyPolicyScrollState();
                 IsUpdateSplashVisible = true;
+            }
         }
     }
 
@@ -8151,17 +8214,44 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void DismissUpdateSplashButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsUpdateSplashVisible = false;
 
-    // Shared consent card: declining counts as answering, same as accepting.
+    // Shared consent card: declining counts as answering, same as accepting. Only auto-dismisses
+    // the splash once the Privacy Policy prompt (if also pending) has been resolved too.
     private void AcceptDataTrackingButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsDataTrackingEnabled = true;
-        if (IsUpdateSplashVisible) IsUpdateSplashVisible = false;
+        if (IsUpdateSplashVisible && !IsPrivacyPolicyPromptVisible) IsUpdateSplashVisible = false;
     }
 
     private void DeclineDataTrackingButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsDataTrackingEnabled = false;
-        if (IsUpdateSplashVisible) IsUpdateSplashVisible = false;
+        if (IsUpdateSplashVisible && !IsPrivacyPolicyPromptVisible) IsUpdateSplashVisible = false;
+    }
+
+    // No decline path - this is acknowledgment of terms, not an opt-in. Only reachable once
+    // IsPrivacyPolicyScrolledToBottom is true (button is disabled until then).
+    private void AcceptPrivacyPolicyButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _hasAcceptedPrivacyPolicy = true;
+        OnPropertyChanged(nameof(IsPrivacyPolicyPromptVisible));
+        OnPropertyChanged(nameof(AreAllConsentPromptsResolved));
+        if (IsUpdateSplashVisible && !IsDataTrackingPromptVisible) IsUpdateSplashVisible = false;
+        SaveSettings();
+    }
+
+    // Tracks when the embedded Privacy Policy ScrollViewer has been scrolled to its bottom
+    // (with a small epsilon so rounding/DPI doesn't leave it permanently just-short). Content
+    // that already fits without scrolling counts as "at bottom" immediately.
+    private void PrivacyPolicyScrollViewer_OnScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (sender is not ScrollViewer scrollViewer) return;
+
+        const double epsilon = 4.0;
+        var scrollableHeight = scrollViewer.Extent.Height - scrollViewer.Viewport.Height;
+        var atBottom = scrollableHeight <= 0 ||
+                       scrollViewer.Offset.Y >= scrollableHeight - epsilon;
+
+        if (atBottom) IsPrivacyPolicyScrolledToBottom = true;
     }
 
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
@@ -8273,6 +8363,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenWebsiteButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(WebsiteUrl);
+
+    private void OpenPrivacyPolicyButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrl(PrivacyPolicyUrl);
 
     private void ViewShortcutsButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -10911,10 +11004,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NavigateTo(Page.Home);
     }
 
-    // Gates every path that can end the tutorial until consent is answered.
+    // Gates every path that can end the tutorial until consent is answered and the Privacy
+    // Policy has been accepted.
     private bool TryFinishTutorial()
     {
-        if (IsDataTrackingPromptVisible)
+        if (IsDataTrackingPromptVisible || IsPrivacyPolicyPromptVisible)
         {
             TutorialStepIndex = TutorialSteps.Length - 1;
             return false;
@@ -11243,6 +11337,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _tutorialOpenedFromSettings = false;
             TutorialStepIndex = 0;
+            if (!_hasAcceptedPrivacyPolicy)
+                ResetPrivacyPolicyScrollState();
             NavigateTo(Page.Tutorial);
         }
         catch
@@ -14398,5 +14494,3 @@ public sealed class NewsItem
     public bool HasBody      => !string.IsNullOrWhiteSpace(Body);
     public bool HasUpdatedAt => !string.IsNullOrWhiteSpace(UpdatedAt);
 }
-
-
