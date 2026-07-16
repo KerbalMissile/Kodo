@@ -104,15 +104,15 @@ public class EditorTab : INotifyPropertyChanged
 
     public string TabTitle => IsDirty ? $"{DisplayName} •" : DisplayName;
 
-    // Remembers the first visible line so switching tabs restores scroll position.
-    // Stored as a 1-based line number so it is layout-independent and can be applied
-    // immediately via ScrollToLine without waiting for a layout pass.
+    // 1-based line number remembered for scroll-position restore on tab switch.
     public int TopLineNumber { get; set; } = 1;
 
-    // Precise vertical scroll offset in device-independent pixels. Saved alongside
-    // TopLineNumber so restoration via IScrollable.SetScrollOffset() is pixel-exact
-    // instead of snapping to the nearest line boundary.
+    // Pixel-exact scroll offset, saved alongside TopLineNumber.
     public double ScrollOffsetY { get; set; } = 0.0;
+
+    // Caret position for this tab. The editor control is shared across tabs, so
+    // this is what keeps caret/selection from leaking between tabs on switch.
+    public int CaretOffset { get; set; } = 0;
 
     public void Rename(string path, string displayName)
     {

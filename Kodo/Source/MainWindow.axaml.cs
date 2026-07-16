@@ -34,6 +34,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Avalonia.Animation;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.Highlighting;
@@ -215,6 +216,7 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string[] Functions { get; set; } = [];
     public string[] Properties { get; set; } = [];
     public string[] Namespaces { get; set; } = [];
+    public string[] Blacklist { get; set; } = [];
     public string CommentLine { get; set; } = "//";
     public string CommentBlockStart { get; set; } = "/*";
     public string CommentBlockEnd { get; set; } = "*/";
@@ -301,6 +303,7 @@ public sealed class LanguageSyntaxProfile
     public string[] Functions { get; init; } = [];
     public string[] Properties { get; init; } = [];
     public string[] Namespaces { get; init; } = [];
+    public string[] Blacklist { get; init; } = [];
     public string? CommentLine { get; init; }
     public string? CommentBlockStart { get; init; }
     public string? CommentBlockEnd { get; init; }
@@ -576,7 +579,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // RowDefinition's MaxHeight in MainWindow.axaml - if one changes, change both.
     private const double MinTerminalPanelHeight = 120;
     private const double MaxTerminalPanelHeight = 420;
-    private const double DefaultTerminalPanelHeight = 300;
+    // Default lives on AppSettings (Models/AppSettings.cs) - it's a settings value, not
+    // just a UI bound, so the model is the single source of truth for it.
     private const string DiscordClientIdEnvironmentVariable = "KODO_DISCORD_CLIENT_ID";
     private const string AutoSaveSavedMessage = "Saved.";
     private const string AutoSaveSavingMessage = "Saving...";
@@ -630,9 +634,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly HtmlEmbeddedColorizer _htmlEmbeddedColorizer = new();
     private readonly MarkdownColorizer _markdownColorizer = new();
     private readonly EmojiTypefaceColorizer _emojiTypefaceColorizer = new();
-    // Predictive IntelliSense: engine tracks per-file variables + language candidates,
+    // Predictive CodePredict: engine tracks per-file variables + language candidates,
     // _completionWindow is the currently-open popup (null when nothing is showing).
-    private readonly IntelliSenseEngine _intelliSenseEngine = new();
+    private readonly CodePredictEngine _CodePredictEngine = new();
     private CompletionWindow? _completionWindow;
     private EditorTab? _activeEditorTab;
     private int _nextUntitledTabNumber = 1;
@@ -677,6 +681,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isFileTreeExpanded;
     private bool _isStatusBarFilePathVisible = true;
     private bool _isWordWrapEnabled;
+    // Defaults to true - predictive completion is on unless the user turns it off.
+    private bool _isCodePredictEnabled = true;
     private bool _suppressExplorerWidthRefresh;
     private bool _isConfirmBeforeClosingUnsavedTabsEnabled = true;
     private bool _isRestoreOpenTabsOnLaunchEnabled;
@@ -778,7 +784,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int _nextTerminalNumber = 1;
     private bool _isTerminalVisible;
     private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-    private double _terminalPanelHeight = DefaultTerminalPanelHeight;
+    private double _terminalPanelHeight = AppSettings.DefaultTerminalPanelHeight;
     private bool _isResizingTerminalPanel;
     private double _terminalPanelDragStartPointerY;
     private double _terminalPanelDragStartHeight;
@@ -1089,6 +1095,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         KodoDiagnostics.VerboseLoggingEnabled = _isVerboseLoggingEnabled;
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
         _isWordWrapEnabled = settings.WordWrapEnabled;
+        _isCodePredictEnabled = settings.CodePredictEnabled;
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
         _isAutoUpdateExtensionsEnabled = settings.AutoUpdateExtensionsEnabled;
@@ -3037,6 +3044,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private static IEnumerable<string> EnumerateLanguageProfileNames()
+    {
+        yield return "language.json";
+        yield return "language1.json";
+        yield return "language2.json";
+        yield return "language3.json";
+        yield return "language4.json";
+        yield return "language5.json";
+    }
     private static LoadedExtension ParseManifest(JsonElement manifest) => new()
     {
         Id          = manifest.TryGetProperty("id",          out var id)   ? id.GetString()   ?? "" : "",
@@ -3072,6 +3088,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Functions = ReadStringArray(lang, "functions"),
             Properties = ReadStringArray(lang, "properties"),
             Namespaces = ReadStringArray(lang, "namespaces"),
+            Blacklist = ReadStringArray(lang, "blacklist"),
             CommentLine = lang.TryGetProperty("commentLine", out var cl) ? NormalizeSyntaxToken(cl.GetString()) : null,
             CommentBlockStart = lang.TryGetProperty("commentBlockStart", out var cbs) ? NormalizeSyntaxToken(cbs.GetString()) : null,
             CommentBlockEnd = lang.TryGetProperty("commentBlockEnd", out var cbe) ? NormalizeSyntaxToken(cbe.GetString()) : null,
@@ -3093,6 +3110,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ext.Functions = ext.Functions.Union(profile.Functions).ToArray();
         ext.Properties = ext.Properties.Union(profile.Properties).ToArray();
         ext.Namespaces = ext.Namespaces.Union(profile.Namespaces).ToArray();
+        ext.Blacklist = ext.Blacklist.Union(profile.Blacklist).ToArray();
 
         if (profile.CommentLine is not null)
             ext.CommentLine = profile.CommentLine;
@@ -4582,6 +4600,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(EditorBehaviorStatusText));
             ApplyEditorSettings();
+            SaveSettings();
+        }
+    }
+
+    public bool IsCodePredictEnabled
+    {
+        get => _isCodePredictEnabled;
+        set
+        {
+            if (_isCodePredictEnabled == value) return;
+            _isCodePredictEnabled = value;
+            OnPropertyChanged();
+            if (!_isCodePredictEnabled)
+                CloseCompletionWindow();
             SaveSettings();
         }
     }
@@ -6107,6 +6139,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             VerboseLoggingEnabled                   = IsVerboseLoggingEnabled,
             StatusBarFilePathVisible               = IsStatusBarFilePathVisible,
             WordWrapEnabled                        = IsWordWrapEnabled,
+            CodePredictEnabled                        = IsCodePredictEnabled,
             TabSize                                = TabSize,
             EditorFontSize                         = EditorFontSize,
             ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
@@ -6832,6 +6865,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             scrollOffset.Y)?.LineNumber ?? 1;
         // Also save the exact pixel offset so restoration is sub-line-accurate.
         ActiveEditorTab.ScrollOffsetY = scrollOffset.Y;
+        ActiveEditorTab.CaretOffset = EditorTextBox.TextArea.Caret.Offset;
         if (!ActiveEditorTab.IsUntitled && !string.IsNullOrWhiteSpace(_currentFilePath))
             ActiveEditorTab.Path = _currentFilePath;
     }
@@ -6866,6 +6900,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
         SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
+        // SetEditorContent resets the caret to 0 - now put it back where this tab's
+        // own caret last was (clamped in case the file changed on disk and got
+        // shorter since we last saved it).
+        EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
         // Restores scroll position: ScrollToLine first, then a pixel offset at Background priority.
         EditorTextBox.ScrollToLine(tab.TopLineNumber);
         var savedOffsetY = tab.ScrollOffsetY;
@@ -6900,7 +6938,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (closingActiveTab)
             CloseCompletionWindow();
-        _intelliSenseEngine.ForgetFile(tab.Path);
+        _CodePredictEngine.ForgetFile(tab.Path);
         OpenTabs.RemoveAt(index);
         _corruptedTabs.Remove(tab);
 
@@ -7559,6 +7597,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _suppressDirtyTracking = true;
         EditorTextBox.Document.Text = content;
+        // The TextArea (and its Selection/Caret) is one shared instance reused by
+        // every tab - only the Document's Text is swapped in-place. Without an
+        // explicit reset here, a selection or caret offset from whichever tab was
+        // open previously carries straight over onto the new content by raw offset,
+        // which is what made switching tabs look like it selected everything.
+        EditorTextBox.TextArea.ClearSelection();
+        EditorTextBox.TextArea.Caret.Offset = 0;
         // Clear the flag via a posted action so it stays true until after
         // AvaloniaEdit's async TextChanged event has fired and been handled.
         Dispatcher.UIThread.Post(
@@ -8534,6 +8579,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         sb.AppendLine($"Tab size: {TabSize}");
         sb.AppendLine($"Font size: {EditorFontSize}px");
         sb.AppendLine($"Word wrap: {IsWordWrapEnabled}");
+        sb.AppendLine($"CodePredict: {IsCodePredictEnabled}");
         sb.AppendLine($"Auto-save: {IsAutoSaveEnabled}");
 
         // ── Appearance ────────────────────────────────────────────────────
@@ -9929,7 +9975,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         QueueRefreshState(fullRefresh: true);
         QueueWordCountRefresh();
         RestartAutoSaveTimerIfNeeded();
-        UpdateIntelliSense();
+        UpdateCodePredict();
     }
 
 	// Fires before the character is written; skips an auto-inserted closing character.
@@ -10008,13 +10054,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         caret.Offset = offset;
     }
 
-    // ── IntelliSense (predictive completion popup) ─────────────────────────────
+    // ── CodePredict (predictive completion popup) ─────────────────────────────────
 
     // Recomputes and shows/updates/hides the completion popup based on the word at
     // the caret. Called after every real text edit (see EditorTextBox_OnTextChanged).
-    private void UpdateIntelliSense()
+    private void UpdateCodePredict()
     {
+        if (!IsCodePredictEnabled)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
         if (EditorTextBox?.Document is null || EditorTextBox.TextArea is null)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        // CodePredict is for code: skip plain-text files (.txt/.text/.log) and
+        // documents that have never been saved to disk (untitled tabs), where
+        // there's no meaningful "language" to predict against.
+        if (ActiveEditorTab is null || ActiveEditorTab.IsUntitled || IsPlainTextFile(_currentFilePath))
         {
             CloseCompletionWindow();
             return;
@@ -10024,7 +10085,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, doc.TextLength);
         var text = doc.Text;
 
-        var wordStart = IntelliSenseEngine.FindWordStart(text, offset);
+        var wordStart = CodePredictEngine.FindWordStart(text, offset);
         var prefix = text[wordStart..offset];
 
         // Require at least one word character already typed, so the popup doesn't pop
@@ -10036,9 +10097,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         var fileKey = ActiveEditorTab?.Path ?? "untitled";
-        _intelliSenseEngine.ScanDocument(fileKey, text);
+        _CodePredictEngine.ScanDocument(fileKey, text);
 
-        var suggestions = _intelliSenseEngine.GetSuggestions(prefix, fileKey, CurrentLanguageExtension);
+        // Keeps popup rows in sync with the active theme even if it changed
+        // while a suggestion list was already open.
+        CodePredictSuggestion.PanelForeground = PrimaryTextBrush;
+        CodePredictSuggestion.MutedForeground = MutedTextBrush;
+
+        var suggestions = _CodePredictEngine.GetSuggestions(prefix, fileKey, CurrentLanguageExtension, text, offset);
         if (suggestions.Count == 0)
         {
             CloseCompletionWindow();
@@ -10068,58 +10134,85 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _completionWindow = null;
     }
 
-    // Builds a CompletionWindow styled to resemble VS Code's dark suggestion widget:
-    // near-black panel, subtle border, and a blue "selected row" / gray "hovered row"
-    // highlight (the row content itself - icon chip, name, kind label - comes from
-    // each IntelliSenseSuggestion.Content in IntelliSense.cs).
+    // Row geometry - kept as named constants so the popup's MaxHeight can be an
+    // exact multiple of a row, rather than cutting off partway through one.
+    private const double CodePredictRowHeight = 26d;
+    private const double CodePredictListVerticalPadding = 8d;  // ListBox Padding(0,4) top+bottom
+    private const double CodePredictBorderThickness = 2d;      // 1px top + 1px bottom
+    private const int CodePredictVisibleRows = 8;
+
+    // Builds a CompletionWindow styled to match Kodo's own panels: CardBrush
+    // background, SurfaceBorderBrush border, rounded corners, and an accent-tinted
+    // selected row / theme-hover row rather than VS Code's fixed blue/gray (the row
+    // content itself - icon chip, name, kind label - comes from each
+    // CodePredictSuggestion.Content in CodePredict.cs).
     private CompletionWindow CreateCompletionWindow()
     {
         var window = new CompletionWindow(EditorTextBox.TextArea)
         {
-            MaxHeight = 210,
+            MaxHeight = CodePredictRowHeight * CodePredictVisibleRows
+                + CodePredictListVerticalPadding + CodePredictBorderThickness,
             MaxWidth = 460,
             Width = 460,
         };
 
         // CompletionWindow itself is just a Popup (positioning only, no chrome) - the
-        // actual dark panel/border/font live on CompletionList, which it hosts as Child.
-        window.CompletionList.Background = Brush.Parse("#252526");
-        window.CompletionList.BorderBrush = Brush.Parse("#454545");
+        // actual panel/border/font live on CompletionList, which it hosts as Child.
+        var panelBrush = CardBrush;
+        window.CompletionList.Background = panelBrush;
+        window.CompletionList.BorderBrush = SurfaceBorderBrush;
         window.CompletionList.BorderThickness = new Thickness(1);
         window.CompletionList.FontFamily = EditorTextBox.FontFamily;
         window.CompletionList.HorizontalAlignment = HorizontalAlignment.Stretch;
 
+        // Rounds the popup panel to match every other card/flyout in the app.
+        var panelCornerStyle = new Style(x => x.OfType<CompletionList>().Template().OfType<Border>());
+        panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(8)));
+        window.Styles.Add(panelCornerStyle);
+
         if (window.CompletionList.ListBox is { } listBox)
         {
-            listBox.Background = Brushes.Transparent;
+            // Opaque, matching the panel - not Transparent. The previous version
+            // relied on this panel's own Background showing through the gaps
+            // between rows, which wasn't reliably opaque and let editor text
+            // bleed through underneath every row.
+            listBox.Background = panelBrush;
             listBox.Padding = new Thickness(0, 4);
             listBox.Margin = new Thickness(0);
             listBox.HorizontalAlignment = HorizontalAlignment.Stretch;
         }
 
-        // Every row gets its own explicit opaque background - not just the
-        // selected/hover ones below. Relying solely on CompletionList's container
-        // Background to show through wasn't reliably opaque for each row's own
-        // pixels in the popup, which is what let editor text underneath bleed
-        // through - "oddly transparent" rows even though nothing was selected/hovered.
-        var baseRowStyle = new Style(x => x.OfType<ListBoxItem>()
-            .Template().OfType<Avalonia.Controls.Presenters.ContentPresenter>().Name("PART_ContentPresenter"));
-        baseRowStyle.Setters.Add(new Setter(
-            Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, Brush.Parse("#252526")));
+        // FluentTheme's default ListBoxItem crossfades Background changes over
+        // ~150ms. UpdateCodePredict clears and rebuilds the whole suggestion list on
+        // every keystroke, so each row is a brand-new container that starts that
+        // fade from Transparent - a typist faster than 150ms/keystroke never lets
+        // it finish, leaving rows permanently mid-fade with the editor visible
+        // through them. Zeroing Transitions makes Background apply instantly.
+        var noTransitionStyle = new Style(x => x.OfType<ListBoxItem>());
+        noTransitionStyle.Setters.Add(new Setter(Animatable.TransitionsProperty, new Transitions()));
+        window.Styles.Add(noTransitionStyle);
+
+        // Paints ListBoxItem's own Background directly (its default template binds
+        // a root Border to it) rather than reaching into a named template part -
+        // more reliable, and fixes rows whose highlight rectangle didn't stretch to
+        // the popup's full width, leaving editor text visible at the edges.
+        var baseRowStyle = new Style(x => x.OfType<ListBoxItem>());
+        baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, panelBrush));
+        baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
         window.Styles.Add(baseRowStyle);
 
-        // "ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter" and the
-        // :pointerover equivalent - matches VS Code's blue selected row / gray hover row.
-        var selectedRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":selected")
-            .Template().OfType<Avalonia.Controls.Presenters.ContentPresenter>().Name("PART_ContentPresenter"));
-        selectedRowStyle.Setters.Add(new Setter(
-            Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, Brush.Parse("#04395E")));
+        // Selected row: Kodo's accent color at low opacity over the panel, same
+        // tinting pattern used for editor text selection - not a fixed VS Code blue.
+        var accentTint = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
+            ? new SolidColorBrush(accentSolid.Color, 0.35)
+            : new SolidColorBrush(Color.Parse("#8C00FF"), 0.35);
+        var selectedRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":selected"));
+        selectedRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, accentTint));
         window.Styles.Add(selectedRowStyle);
 
-        var hoverRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":pointerover")
-            .Template().OfType<Avalonia.Controls.Presenters.ContentPresenter>().Name("PART_ContentPresenter"));
-        hoverRowStyle.Setters.Add(new Setter(
-            Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, Brush.Parse("#2A2D2E")));
+        // Hover row: reuses the app's own button-hover color instead of a hardcoded gray.
+        var hoverRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":pointerover"));
+        hoverRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, ButtonHoverBrush));
         window.Styles.Add(hoverRowStyle);
 
         var rowPaddingStyle = new Style(x => x.OfType<ListBoxItem>());
@@ -10128,7 +10221,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // of content, so the ListBox's virtualizing panel measures/positions rows
         // consistently. With MinHeight 0, rows could vary slightly in height and the
         // panel would mis-place them, which looked like duplicated/overlapping rows.
-        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, 26d));
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, CodePredictRowHeight));
         window.Styles.Add(rowPaddingStyle);
 
         window.Closed += (_, _) => _completionWindow = null;
@@ -10137,7 +10230,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // While the IntelliSense popup is open, let it own navigation/accept/dismiss keys -
+        // While the CodePredict popup is open, let it own navigation/accept/dismiss keys -
         // otherwise smart-enter/smart-tab below would consume them first and the popup
         // would never see Enter/Tab to accept, or Escape/arrows to navigate.
         if (_completionWindow is not null && e.Key is Key.Enter or Key.Tab or Key.Escape
@@ -11039,7 +11132,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static double NormalizeTerminalPanelHeight(double value) =>
         double.IsFinite(value)
             ? Math.Clamp(value, MinTerminalPanelHeight, MaxTerminalPanelHeight)
-            : DefaultTerminalPanelHeight;
+            : AppSettings.DefaultTerminalPanelHeight;
 
     private async Task<UnsavedTabAction> ShowUnsavedTabDialogAsync(EditorTab tab)
     {
@@ -11612,62 +11705,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return false;
     }
 
-    private sealed class AppSettings
-    {
-        public string ThemeName { get; set; } = "Dark";
-        public bool AutoSaveEnabled { get; set; }
-        public bool DiscordRichPresenceEnabled { get; set; }
-        public bool DiscordImprovedRpcEnabled  { get; set; }
-        public bool DeveloperOptionsVisible { get; set; }
-        public bool VerboseLoggingEnabled { get; set; }
-        public bool StatusBarFilePathVisible { get; set; } = true;
-        public bool WordWrapEnabled { get; set; }
-        public int TabSize { get; set; } = 4;
-        public int EditorFontSize { get; set; } = 14;
-        public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
-        public bool RestoreOpenTabsOnLaunchEnabled { get; set; }
-        public bool AutoUpdateExtensionsEnabled { get; set; }
-        // Sub-setting under AutoUpdateExtensionsEnabled - see
-        // IsAutoUpdateExtensionsInBackgroundEnabled for what it controls.
-        public bool AutoUpdateExtensionsInBackgroundEnabled { get; set; }
-        // Defaults to true - most users want Kodo to stay current without thinking about it.
-        public bool AutoUpdateAppEnabled { get; set; } = true;
-        // Sub-setting: defaults to false so Update Now/Later still shows.
-        public bool AutoUpdateAppInBackgroundEnabled { get; set; }
-        public string? PreferredTerminalShellId { get; set; }
-        public bool TerminalVisible { get; set; }
-        public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
-        public List<string> OpenTabPaths { get; set; } = [];
-        public string? ActiveTabPath { get; set; }
-        public List<RecentFileEntry> RecentFiles { get; set; } = [];
-        // False on first launch (settings file didn't exist yet); set to true after the
-        // tutorial is dismissed so it never shows again on subsequent launches.
-        public bool HasCompletedTutorial { get; set; }
-        public string AccentColorMode { get; set; } = "kodo";
-        public string CustomAccentHex { get; set; } = "#8C00FF";
-        // Personalization - optional; empty/0 means "use OS defaults".
-        public string? UserCountry        { get; set; }
-        public int     UserHemisphere     { get; set; }
-        public string? UserTimezoneOffset { get; set; }
-        public string? UserName         { get; set; }
-        public string? LastSeenVersion  { get; set; }
-        // Anonymous usage-analytics opt-in. False (no tracking) until the user
-        // has explicitly responded to the consent prompt at least once.
-        public bool AllowDataTracking { get; set; }
-        public bool HasRespondedToDataTrackingPrompt { get; set; }
-    }
+    // AppSettings and RecentFileEntry moved to Models/AppSettings.cs - both are pure
+    // data (the persisted-settings schema), with no dependency on MainWindow itself.
 
     private sealed record ExtensionScanResult(
         List<LoadedExtension> Extensions,
         List<string> LoadErrors);
-
-    public sealed class RecentFileEntry
-    {
-        public string   Path       { get; set; } = string.Empty;
-        public bool     IsFolder   { get; set; }
-        public DateTime LastOpened { get; set; } = DateTime.Now;
-        public bool     IsPinned   { get; set; }
-    }
 
     private enum UnsavedTabAction
     {
@@ -11756,12 +11799,6 @@ public sealed class RecentFileItem : INotifyPropertyChanged
             return $"{ext.ToLowerInvariant()} file";
         }
     }
-
-    // The exact same extension -> badge text lookup (and ".." fallback) the file
-    // explorer tree uses for its own file icons (FileTreeItem.GetFileIcon), so a
-    // .py file shows "PY" here too instead of a generic file glyph. Folders don't
-    // use this - they keep their dedicated folder icon in the row's XAML.
-    public string LanguageIcon => IsFolder ? string.Empty : FileTreeItem.GetFileIcon(System.IO.Path.GetFileName(Path));
 
     public string LastOpenedText
     {
@@ -14361,3 +14398,5 @@ public sealed class NewsItem
     public bool HasBody      => !string.IsNullOrWhiteSpace(Body);
     public bool HasUpdatedAt => !string.IsNullOrWhiteSpace(UpdatedAt);
 }
+
+

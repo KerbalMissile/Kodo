@@ -18,8 +18,7 @@ using System.Threading.Tasks;
 
 namespace Kodo;
 
-// Result of an update check: either nothing newer was found, or a downloadable
-// release was found with everything needed to fetch + launch the installer.
+// Result of an update check: nothing newer, or a downloadable release found.
 internal sealed record UpdateInfo(
     string Version,        // e.g. "v1.2.0" (raw tag_name from GitHub)
     string ReleaseNotesUrl,
@@ -48,8 +47,7 @@ internal static class UpdateService
         {
             Timeout = TimeSpan.FromSeconds(15),
         };
-        // GitHub's API requires a User-Agent header on every request, and rejecting
-        // requests without one is its way of throttling anonymous/unidentified callers.
+        // GitHub's API requires a User-Agent header on every request.
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Kodo-Updater");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
@@ -79,8 +77,7 @@ internal static class UpdateService
             if (!IsNewerVersion(release.TagName, KodoDiagnostics.AppVersion))
                 return null;
 
-            // Look for the Windows installer asset. Inno Setup output is a plain
-            // .exe, so we just grab the first .exe asset attached to the release.
+            // Inno Setup output is a plain .exe - grab the first .exe asset.
             var asset = release.Assets?.FirstOrDefault(a =>
                 a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
 
@@ -96,8 +93,7 @@ internal static class UpdateService
         }
         catch
         {
-            // Network failures, rate limiting, malformed JSON, etc. - update
-            // checking is non-critical, so swallow and report "no update".
+            // Non-critical - swallow failures and report "no update".
             return null;
         }
     }
@@ -123,8 +119,7 @@ internal static class UpdateService
 
     private static int[]? ParseVersionParts(string tag)
     {
-        // Strip a leading "v"/"V" and any trailing "-DEV"/"-beta"/build metadata
-        // after the numeric core, e.g. "v1.2.0-DEV" -> "1.2.0".
+        // Strips leading "v" and trailing "-DEV"/"-beta"/build metadata.
         var core = tag.Trim();
         if (core.Length > 0 && (core[0] == 'v' || core[0] == 'V'))
             core = core[1..];
@@ -204,8 +199,7 @@ internal static class UpdateService
 
     // ── Download ──────────────────────────────────────────────────────────────
 
-    // Downloads the installer asset to a temp path, reporting progress along
-    // the way. Returns the full path to the downloaded file.
+    // Downloads the installer to a temp path with progress reporting.
     public static async Task<string> DownloadInstallerAsync(
         UpdateInfo update,
         IProgress<UpdateDownloadProgress>? progress,
@@ -257,15 +251,15 @@ internal static class UpdateService
 
     // ── Install / restart ────────────────────────────────────────────────────
 
-    // Launches the installer with Inno Setup's silent + auto-restart flags, then exits so it can overwrite the running Kodo.exe.
-    // /VERYSILENT no UI, /SUPPRESSMSGBOXES no message boxes, /NORESTART no reboot, /CLOSEAPPLICATIONS closes locking apps, /RESTARTAPPLICATIONS relaunches Kodo.
-    // If CloseApplicationsFilter isn't configured in the .iss, the explicit Process.Kill() fallback below still unlocks the exe.
+    // Launches the installer silently (/VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+    // /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS), then exits so it can overwrite Kodo.exe.
+    // Process.Kill() below is a fallback if CloseApplicationsFilter isn't in the .iss.
     public static void LaunchInstallerAndExit(string installerPath)
     {
         var startInfo = new ProcessStartInfo
         {
             FileName        = installerPath,
-            // No /SKIPIFSILENT: the .iss's "Launch Kodo" entry needs a silent run to fire, and /RESTARTAPPLICATIONS alone needs Restart Manager to have recorded this process.
+            // No /SKIPIFSILENT - the .iss's "Launch Kodo" entry needs a silent run to fire.
             Arguments       = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
             UseShellExecute = true,
         };
@@ -372,8 +366,7 @@ internal sealed class UpdateDialog : Window
     private static readonly Color TextMutedColor = DialogPalette.TextMuted;
     private static readonly Color TextDimColor   = DialogPalette.TextDim;
 
-    // Resolved once per dialog instance from the user's active accent setting
-    // (Kodo purple / Windows accent / custom / theme), same as MainWindow.
+    // Resolved from the user's active accent setting, same as MainWindow.
     private readonly Color _accentColor;
     private readonly Color _accentForeground;
 
@@ -538,8 +531,7 @@ internal sealed class UpdateDialog : Window
         _primaryButton.IsEnabled = false;
         _laterButton.IsEnabled   = false;
 
-        // Fast path: KodoUpdater already downloaded this installer (sentinel
-        // file case). Skip straight to the restart-and-install step.
+        // Fast path: sentinel file means it's already downloaded.
         if (_preDownloadedInstallerPath is not null && File.Exists(_preDownloadedInstallerPath))
         {
             _primaryButton.Content = "Restarting…";
@@ -566,8 +558,7 @@ internal sealed class UpdateDialog : Window
             _statusText.Text       = "Update downloaded. Restarting Kodo to finish installing…";
             _primaryButton.Content = "Restarting…";
 
-            // Brief pause so the "downloaded" message is actually visible before
-            // the app vanishes and the installer takes over.
+            // Brief pause so the "downloaded" message is actually visible.
             await Task.Delay(600);
 
             UpdateService.LaunchInstallerAndExit(installerPath);
@@ -618,8 +609,8 @@ internal static class DialogPalette
     public static readonly Color TokenOrange = Color.Parse("#CE9178");  // stack trace
 }
 
-// Resolves the accent colour outside MainWindow, for dialogs that may appear before or independently of it.
-// "Theme" mode falls back to Kodo purple, since standalone dialogs can't load the extension system.
+// Resolves accent colour for dialogs shown before/independently of MainWindow.
+// "Theme" mode falls back to Kodo purple - standalone dialogs can't load extensions.
 internal static class AccentResolver
 {
     private const string DefaultAccentHex = "#8C00FF";
@@ -669,8 +660,7 @@ internal static class AccentResolver
         }
         catch
         {
-            // Settings are a convenience read here; any failure just means the
-            // dialog falls back to the default Kodo purple.
+            // Failure just falls back to default Kodo purple.
             return new AccentSettings();
         }
     }
@@ -725,7 +715,7 @@ internal static class AccentResolver
     }
 }
 
-// Reads KodoUpdater's sentinel file; it polls GitHub every 6 hours independently and either installs silently or leaves the installer with this file for Kodo's launch check.
+// Reads KodoUpdater's sentinel file, left after its independent 6-hour GitHub poll.
 internal static class PendingUpdateService
 {
     private static string FilePath => Path.Combine(Path.GetTempPath(), "Kodo-Update", "pending.json");
@@ -749,8 +739,7 @@ internal static class PendingUpdateService
 
             if (!UpdateService.IsNewerVersion(record.Version, KodoDiagnostics.AppVersion))
             {
-                // Already on this version or newer (e.g. user updated
-                // manually) - the downloaded installer is now stale.
+                // Already on this version or newer - the download is stale.
                 Clear();
                 return null;
             }

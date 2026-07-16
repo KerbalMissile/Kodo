@@ -78,29 +78,18 @@ public sealed class CompiledSyntaxProfile
         }
         else
         {
-            // Rule order below is deliberate and load-bearing, not cosmetic.
-            //
-            // Both consumers of this list resolve overlapping matches by treating
-            // earlier rules as higher priority: AvaloniaEdit's HighlightingRuleSet
-            // breaks same-position ties by rule order, and EmbeddedSyntaxProfile.
-            // Process() now reserves each match's range so later rules can no
-            // longer repaint text an earlier rule already claimed. That means the
-            // most structurally distinctive rules must come first so the generic,
-            // catch-all "variable" rule at the very end can never partially
-            // overwrite them - e.g. `#define FOO` must keep its preprocessor
-            // colour instead of "FOO" getting repainted as a variable, and
-            // `obj.Method()` should read as a function call rather than a
-            // property access.
+            // Rule order matters: both consumers (AvaloniaEdit's tie-breaking,
+            // and EmbeddedSyntaxProfile.Process()'s range reservation) treat
+            // earlier rules as higher priority, so specific rules must precede
+            // the catch-all "variable" rule at the end.
             rules.Add(new(new Regex(
                 traits.IsCssLike
                     ? @"(?<![\p{L}\p{Nd}_-])@[\p{L}_-][\p{L}\p{Nd}_-]*(?![\p{L}\p{Nd}_-])"
                     : @"(?<![\p{L}\p{Nd}_])[@#][\p{L}_][\p{L}\p{Nd}_-]*",
                 RegexOptions.Compiled), "preprocessor", "#C586C0"));
             rules.Add(new(new Regex(@"(?<=\[)[\p{L}_][\p{L}\p{Nd}_:.]*(?=[,\]\(])|(?<=<)[\p{L}_][\p{L}\p{Nd}_:-]*(?=[^>]*>)", RegexOptions.Compiled), "attribute", "#C586C0"));
-            // Function calls (identifier immediately followed by '(') must be
-            // scored before namespace/property-by-dot below, so `a.b.Method()`
-            // colours "Method" as a function even though it's also preceded by
-            // a dot.
+            // Function calls must score before property-by-dot, so `a.b.Method()`
+            // colours "Method" as a function despite the preceding dot.
             rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\s*\()", RegexOptions.Compiled), "function", "#DCDCAA"));
             rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\.)", RegexOptions.Compiled), "namespace", "#4FC1FF"));
             rules.Add(new(new Regex(@"(?<=\.|->|::)[\p{L}_][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled), "property", "#9CDCFE"));
@@ -221,18 +210,8 @@ public sealed class CompiledSyntaxProfile
 public readonly record struct CompiledSyntaxRule(Regex Regex, string ColorTokenName, string FallbackHex);
 
 // ── Shared embedded-tag content extraction ───────────────────────────────────
-//
-// Two different colorizers need to decide exactly which part of a
-// <script>/<style> (or <x:code>) tag's body is "real" embedded code versus a
-// CDATA wrapper:
-//   - HtmlEmbeddedColorizer, for standalone .html/.xml/.svg/.xaml/.axaml files
-//   - MarkdownColorizer, for inline/block HTML nested inside .md files
-// Per the project's syntax-highlighting contract, a <script><![CDATA[ ... ]]>
-// </script> (or <style>) block must look the same whether it lives in a real
-// HTML/XML file or inside a Markdown document. This logic used to be
-// implemented twice (once per colorizer) and had drifted - Markdown's nested
-// HTML never stripped CDATA wrappers at all. It now lives in exactly one
-// place so the two contexts can no longer disagree.
+// Shared by HtmlEmbeddedColorizer and MarkdownColorizer so <script>/<style>
+// CDATA stripping behaves identically in both HTML/XML files and Markdown.
 public enum EmbeddedBlockContentMode
 {
     AwaitingContent,
@@ -511,13 +490,8 @@ public sealed class EmbeddedSyntaxProfile
 
         foreach (var (regex, brush, colorTokenName) in TokenRules)
         {
-            // Punctuation intentionally does not reserve its range: rainbow
-            // bracket coloring (below) needs to be able to repaint the same
-            // bracket characters afterward. Every other rule reserves its
-            // range so an earlier, more specific match (e.g. a preprocessor
-            // directive or an attribute) can no longer be partially
-            // overwritten by a later, more generic rule (e.g. the catch-all
-            // "variable" rule) claiming an overlapping slice of the same text.
+            // Punctuation doesn't reserve its range, so rainbow bracket coloring
+            // (below) can still repaint it. Every other rule reserves its range.
             var isPunctuation = string.Equals(colorTokenName, "punctuation", StringComparison.Ordinal);
 
             foreach (Match match in regex.Matches(text))
@@ -766,34 +740,15 @@ public sealed class EmbeddedSyntaxProfile
 }
 
 // ── Inline-code language detection ───────────────────────────────────────────
-//
-// Used by Markdown rendering to decide whether a single-line `inline code`
-// span should be colourised as a specific installed language (e.g. `var x = 5;`
-// gets C#-style highlighting) or left as plain string-coloured text.
-//
-// This used to live in MainWindow's code-behind as a quick word-boundary
-// keyword/type/function scan against every installed extension. That scan had
-// no concept of "this doesn't even look like code" - so a snippet like
-// `cd path\to\Kodo-main\Kodo\Source` would pick up a stray single-token match
-// (e.g. a keyword/type that happens to equal a path segment or shell verb in
-// some installed language) and get partially highlighted as if it were that
-// language. The detector below adds two layers of intelligence on top of the
-// original scoring approach to prevent that:
-//
-//   1. A "looks like non-code prose" guard runs first and bails out (returns
-//      no match) for: bare HTML/XML tag mentions like `<style>` or
-//      `</script>` (prose referencing a tag name is not a code sample); shell
-//      commands like `npm install x` or `git status`; and bare paths like
-//      `cd foo\bar` with no code punctuation at all.
-//   2. A higher, multi-signal score bar: a single stray keyword hit is no
-//      longer enough. We require either multiple distinct token-kind matches
-//      or one match reinforced by actual code punctuation (parens, braces,
-//      semicolons, assignment, arrows, scope operators, etc.).
+// Decides whether a Markdown `inline code` span gets language-specific
+// highlighting or plain string coloring. Two guards prevent false positives
+// on prose/paths/shell commands: (1) a "looks like non-code" bail-out for
+// bare tag mentions, shell commands, and plain paths; (2) a higher score bar
+// requiring multiple token-kind matches or real code punctuation.
 public static class InlineCodeLanguageDetector
 {
-    // Common CLI verbs. A snippet that opens with one of these and otherwise
-    // looks like a bare command line (no code punctuation) is treated as a
-    // shell/console snippet, never as a programming language match.
+    // Common CLI verbs - a bare command line opening with one of these is
+    // treated as shell/console, never a language match.
     private static readonly HashSet<string> ShellVerbs = new(StringComparer.OrdinalIgnoreCase)
     {
         "cd", "ls", "dir", "cp", "mv", "rm", "del", "mkdir", "md", "rmdir", "rd",
@@ -804,8 +759,7 @@ public static class InlineCodeLanguageDetector
         "where", "which", "set", "export", "cls", "clear"
     };
 
-    // Punctuation/operators that suggest the snippet is genuinely source code
-    // rather than a shell command, file path, or plain English phrase.
+    // Punctuation/operators that suggest genuine source code, not prose/paths.
     private static readonly Regex CodePunctuationRegex =
         new(@"[{}();]|=>|::|->|\b(?:&&|\|\|)\b|(?<![<>=!])=(?!=)", RegexOptions.Compiled);
 
@@ -813,11 +767,8 @@ public static class InlineCodeLanguageDetector
     private static readonly Regex PathSegmentRegex =
         new(@"^[\w.~-]+(?:[\\/][\w.~-]+){1,}$", RegexOptions.Compiled);
 
-    // A single HTML/XML tag mention with nothing else around it, e.g.
-    // `<style>`, `</script>`, `<style type="text/css">`, `<br/>`. Docs and
-    // comments constantly reference tag names this way in prose ("the
-    // `<style>` tag") - that is not a code sample, it is markup vocabulary,
-    // and must never be partially highlighted as if it were a real snippet.
+    // A bare HTML/XML tag mention (e.g. `<style>`) is prose referencing markup
+    // vocabulary, not a code sample - must never be highlighted as one.
     private static readonly Regex BareMarkupTagRegex =
         new(@"^</?[A-Za-z][\w:-]*(?:\s+[^<>]*)?\s*/?>$", RegexOptions.Compiled);
 
@@ -848,14 +799,8 @@ public static class InlineCodeLanguageDetector
         return bestMatch.Extension;
     }
 
-    // A snippet "looks like non-code prose" - and therefore shouldn't be
-    // language-matched at all - when it's:
-    //   (a) a bare HTML/XML tag mention such as `<style>` or `</script>`, or
-    //   (b) a shell command (starts with a recognised CLI verb) with no code
-    //       punctuation, or
-    //   (c) just one or more path-like/identifier segments (with or without
-    //       a leading verb word), covering things like
-    //       `path\to\Kodo-main\Kodo\Source` with no command at all.
+    // "Looks like non-code prose" (skip language matching) covers: a bare tag
+    // mention, a shell command with no code punctuation, or a bare path.
     private static bool LooksLikeNonCodeProse(string snippet)
     {
         if (BareMarkupTagRegex.IsMatch(snippet))
@@ -897,10 +842,8 @@ public static class InlineCodeLanguageDetector
 
         var distinctKindsMatched = new[] { keywordHits, typeHits, functionHits, propertyHits, namespaceHits }.Count(hits => hits > 0);
 
-        // Require either real code punctuation backing up the signal, or
-        // multiple independent kinds of token matches. A single stray
-        // keyword/type hit against a plain-English or path-like phrase is no
-        // longer enough on its own to claim a language match.
+        // Requires real code punctuation or multiple independent token-kind
+        // matches - a single stray keyword hit is no longer enough.
         var isCredible = score > 0 && (hasCodePunctuation || distinctKindsMatched >= 2);
 
         return isCredible ? (extension, score) : (null, 0);

@@ -21,3 +21,4 @@ public class FileNode
 
     public ObservableCollection<FileNode> Children { get; } = [];
 }
+

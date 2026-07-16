@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Kodo;
@@ -40,10 +41,7 @@ internal static class AptabaseClient
     public static bool IsEnabled => _isEnabled;
     public static bool IsDevBuild => _isDevBuild;
 
-    /// <summary>
-    /// Enables or disables sending analytics events. When disabling, any events queued but not yet sent are discarded.
-    /// Applies to all builds, including -DEV.
-    /// </summary>
+    /// <summary>Enables/disables analytics. Disabling discards any queued-but-unsent events.</summary>
     public static void SetEnabled(bool enabled)
     {
         if (_isEnabled == enabled) return;
@@ -57,6 +55,45 @@ internal static class AptabaseClient
         }
 
         _ = TestConnectivityAsync();
+    }
+
+    // Strips user-identifying substrings (file paths, emails) out of exception messages
+    // before they're queued. Crash messages are the one place free-form text can leak
+    // environment specifics, so this runs regardless of what triggered the event.
+    private static string? SanitizeMessage(string? message)
+    {
+        if (string.IsNullOrEmpty(message)) return message;
+
+        var sanitized = message;
+
+        // Windows user-profile paths: C:\Users\<name>\... -> C:\Users\<redacted>\...
+        sanitized = Regex.Replace(
+            sanitized,
+            @"([A-Za-z]:\\Users\\)[^\\]+",
+            "$1<redacted>",
+            RegexOptions.IgnoreCase);
+
+        // UNC user-profile paths: \\host\Users\<name>\...
+        sanitized = Regex.Replace(
+            sanitized,
+            @"(\\\\[^\\]+\\Users\\)[^\\]+",
+            "$1<redacted>",
+            RegexOptions.IgnoreCase);
+
+        // WSL/Unix-style home paths: /home/<name>/... or /Users/<name>/...
+        sanitized = Regex.Replace(
+            sanitized,
+            @"(/(?:home|Users)/)[^/\s]+",
+            "$1<redacted>",
+            RegexOptions.IgnoreCase);
+
+        // Email addresses.
+        sanitized = Regex.Replace(
+            sanitized,
+            @"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+            "<redacted-email>");
+
+        return sanitized;
     }
 
     private static string GetWindowsVersion()
@@ -100,8 +137,7 @@ internal static class AptabaseClient
             Console.WriteLine($"[Aptabase] Dev build detected ({appVersion})");
         }
 
-        // No connectivity test here - tracking is off by default until the
-        // user opts in (see SetEnabled), which runs the test itself.
+        // No connectivity test here - runs from SetEnabled once the user opts in.
     }
 
     private static async Task TestConnectivityAsync()
@@ -135,7 +171,7 @@ internal static class AptabaseClient
                 return;
             }
 
-            _eventQueue.Enqueue((eventName, message));
+            _eventQueue.Enqueue((eventName, SanitizeMessage(message)));
             Console.WriteLine($"[Aptabase] Queued event: {eventName}");
 
             _ = FlushAsync();

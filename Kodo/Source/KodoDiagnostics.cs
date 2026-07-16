@@ -10,10 +10,7 @@ using Microsoft.Win32;
 
 namespace Kodo;
 
-// Severity tiers:
-// Critical: unhandled exceptions/crashes; logs to kodo.log, generates crash.log, shows a dialog.
-// Warning - recoverable failures (network, file I/O, extensions). Written to kodo.log, shows the warning dialog.
-// Debug: internal diagnostics, Debug output only unless an exception is attached.
+// Critical: crashes, shows dialog. Warning: recoverable failures. Debug: internal diagnostics.
 public enum KodoSeverity { Critical, Warning, Debug }
 
 internal static class KodoDiagnostics
@@ -26,8 +23,7 @@ internal static class KodoDiagnostics
     // Debug traces also append to kodo.log when Developer Options is enabled.
     public static bool VerboseLoggingEnabled { get; set; }
 
-    // Breadcrumb buffer: a rolling window of recent log lines held in memory.
-    // Flushed into crash.log ahead of the crash payload on a Critical event.
+    // Rolling window of recent log lines, flushed into crash.log on a Critical event.
 
     private const int BreadcrumbCapacity = 50;
     private static readonly Queue<string> _breadcrumbs = new();
@@ -48,8 +44,7 @@ internal static class KodoDiagnostics
         lock (_breadcrumbLock)
         {
             var snapshot = new List<string>(_breadcrumbs);
-            // Keep the buffer intact - a second crash dialog (e.g. UnobservedTask
-            // firing after AppDomain.UnhandledException) should still have context.
+            // Keeps the buffer intact for a possible second crash dialog.
             return snapshot;
         }
     }
@@ -90,8 +85,7 @@ internal static class KodoDiagnostics
 
             if (!int.TryParse(buildStr, out var build)) return null;
 
-            // Strip the stale "Windows 10" / "Windows 11" prefix and reattach
-            // the correct one based on build number, keeping the edition suffix.
+            // Reattach the correct "Windows 10/11" prefix based on build number.
             var edition = productName
                 .Replace("Windows 10", string.Empty, StringComparison.OrdinalIgnoreCase)
                 .Replace("Windows 11", string.Empty, StringComparison.OrdinalIgnoreCase)
@@ -116,8 +110,7 @@ internal static class KodoDiagnostics
     public static string LogDirectoryPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
 
-    // Main log - every event (Critical, Warning, Debug-with-exception, Verbose)
-    // appends here.  The single file to check when diagnosing any issue.
+    // Main log - every severity tier appends here.
     public static string MainLogFilePath => Path.Combine(LogDirectoryPath, "kodo.log");
 
     // Crash-only log: breadcrumb buffer plus crash payload, easier to share than kodo.log.
@@ -179,10 +172,7 @@ internal static class KodoDiagnostics
 
     // ── Typed logging API ─────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Logs a Critical-severity event to kodo.log and generates crash.log.
-    /// Use for unhandled exceptions and situations where data loss may have occurred.
-    /// </summary>
+    /// <summary>Logs a Critical event to kodo.log and generates crash.log.</summary>
     public static void LogCritical(
         string source,
         Exception exception,
@@ -193,19 +183,14 @@ internal static class KodoDiagnostics
         WriteCrashLog(source, exception, isTerminating, operation);
     }
 
-    /// <summary>
-    /// Logs a Warning-severity event to kodo.log.
-    /// Use for recoverable failures the user has been (or will be) informed about.
-    /// </summary>
+    /// <summary>Logs a Warning event to kodo.log.</summary>
     public static void LogWarning(
         string source,
         Exception exception,
         string? operation = null) =>
         WriteToLog(source, exception, isTerminating: false, KodoSeverity.Warning, operation);
 
-    /// <summary>
-    /// Emits a Debug trace. Only writes to the Debug output; if an exception is provided it's also appended silently to kodo.log.
-    /// </summary>
+    /// <summary>Emits a Debug trace; also appends to kodo.log if an exception is attached.</summary>
     public static void LogDebug(string message, Exception? exception = null)
     {
         try
@@ -222,8 +207,7 @@ internal static class KodoDiagnostics
         catch { /* never throw from a debug trace */ }
     }
 
-    // Appends a plain, exception-free trace line to kodo.log. Only called when
-    // VerboseLoggingEnabled is on; kept lightweight since it can fire frequently.
+    // Appends a plain trace line to kodo.log; only called when VerboseLoggingEnabled is on.
     private static void WriteVerboseTrace(string message)
     {
         var timestamp = UtcNow().ToString("yyyy-MM-dd HH:mm:ss") + " UTC";

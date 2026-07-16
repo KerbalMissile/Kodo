@@ -59,8 +59,7 @@ public sealed class ConsoleTerminal : Control
     private int _cursorRow, _cursorCol;
     private bool _cursorVisible = true;
 
-    // Scrollback: rows pushed off the top of the live grid, oldest first.
-    // _scrollOffset counts rows back from the live view; 0 means fully scrolled to bottom.
+    // Scrollback rows, oldest first. _scrollOffset counts back from live view (0 = bottom).
     private const int MaxScrollbackLines = 5000;
     private readonly List<TermCell[]> _scrollback = new();
     private int _scrollOffset;
@@ -351,11 +350,9 @@ public sealed class ConsoleTerminal : Control
             return;
         }
 
-        // Handle everything ourselves before calling base so that window-level
-        // tunnel handlers (editor shortcuts, etc.) cannot swallow terminal keys.
+        // Handle before base so window-level shortcuts can't swallow terminal keys.
 
-        // 1. Special keys (arrows, F-keys, Home/End, …) - these never produce a
-        //    TextInput event, so we must intercept them here.
+        // 1. Special keys (arrows, F-keys, Home/End) never produce TextInput - intercept here.
         var seq = KeyToVt(e.Key, e.KeyModifiers);
         if (seq is not null)
         {
@@ -365,8 +362,7 @@ public sealed class ConsoleTerminal : Control
             return;
         }
 
-        // 2. Ctrl+letter → control character (Ctrl+C = 3, Ctrl+D = 4, …).
-        //    Mark handled so the window shortcuts (Ctrl+V, Ctrl+C, …) don't fire.
+        // 2. Ctrl+letter -> control character. Mark handled so window shortcuts don't fire.
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
             !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
         {
@@ -393,8 +389,7 @@ public sealed class ConsoleTerminal : Control
             }
         }
 
-        // 4. Everything else (plain printable chars, Shift+letter, AltGr combos)
-        //    arrives via OnTextInput - nothing to do here except let base run.
+        // 4. Everything else arrives via OnTextInput - let base run.
         base.OnKeyDown(e);
     }
 
@@ -475,8 +470,7 @@ public sealed class ConsoleTerminal : Control
         e.Handled = true;
     }
 
-    // Cached typefaces - reusing the same object avoids per-call font lookup overhead
-    // and ensures consistent glyph metrics across all cells in a frame.
+    // Cached typefaces - avoids per-call font lookup and keeps glyph metrics consistent.
     private static readonly Typeface TypefaceNormal = new(FontFamily, FontStyle.Normal, FontWeight.Regular);
     private static readonly Typeface TypefaceBold   = new(FontFamily, FontStyle.Normal, FontWeight.Bold);
 
@@ -484,8 +478,7 @@ public sealed class ConsoleTerminal : Control
     {
         lock (_lock)
         {
-            // Fill the entire control with the default background first so that
-            // any cells we don't explicitly paint are correctly erased.
+            // Fill with default background first so unpainted cells are erased.
             ctx.FillRectangle(new SolidColorBrush(DefaultBg), new Rect(Bounds.Size));
 
             var isCursorVisible = _scrollOffset == 0 && _cursorVisible && _cursorBlinkOn;
@@ -521,8 +514,7 @@ public sealed class ConsoleTerminal : Control
                 var cell = GetDisplayCell(r, c, scrollbackStart);
                 var absRow = ScreenRowToAbsRow(r);
 
-                // Use integer pixel positions so sub-pixel accumulation from
-                // fractional CellW (8.4 px) never causes glyph drift or overlap.
+                // Integer pixel positions avoid glyph drift from fractional CellW.
                 var x = (int)Math.Round(c * CellW);
                 var x1 = (int)Math.Round((c + 1) * CellW);
                 var y = r * CellH;          // CellH is already integral (17.0)
@@ -547,8 +539,7 @@ public sealed class ConsoleTerminal : Control
                     }
                 }
 
-                // Always paint the cell background so that when the cursor moves
-                // away, the previous cursor cell is fully restored to its real bg.
+                // Always paint the cell background so the old cursor cell is restored.
                 var bg = atCursor ? DefaultFg
                        : isCurrentMatch ? SearchCurrentBg
                        : isMatch ? SearchMatchBg
@@ -608,8 +599,7 @@ public sealed class ConsoleTerminal : Control
         ctx.DrawText(ft, new Point(rect.X + pad, rect.Y + pad));
     }
 
-    // Resolves the cell at a given screen row/col, blending scrollback history
-    // above the live grid once the view has been scrolled up.
+    // Resolves the cell at a screen row/col, blending in scrollback once scrolled up.
     private TermCell GetDisplayCell(int screenRow, int col, int scrollbackStart)
     {
         if (_scrollOffset == 0)
@@ -812,8 +802,7 @@ public sealed class ConsoleTerminal : Control
     private (int cols, int rows) CalcSize(Size? size = null)
     {
         var s = size ?? Bounds.Size;
-        // Count how many whole columns fit using the same rounding used in Render
-        // (x = round(c * CellW)) so the column count matches the painted grid exactly.
+        // Uses the same rounding as Render so column count matches the painted grid.
         var cols = Math.Max(10, (int)(s.Width / CellW));
         var rows = Math.Max(3,  (int)(s.Height / CellH));
         return (cols, rows);
@@ -1121,8 +1110,7 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
-    // CSI <n> X - blank n cells starting at the cursor without moving the cursor.
-    // Cursor stays put; cells beyond the line end are not affected.
+    // CSI <n> X - blanks n cells from the cursor without moving it.
     private void EraseChars(int n)
     {
         var end = Math.Min(_cursorCol + n, _cols);
@@ -1188,8 +1176,7 @@ public sealed class ConsoleTerminal : Control
             Key.Right => mod > 0 ? $"\x1b[1{modSuffix}C" : "\x1b[C",
             Key.Left  => mod > 0 ? $"\x1b[1{modSuffix}D" : "\x1b[D",
 
-            // Home / End: unmodified → SS3 form (readline / bash expect \x1bOH/OF);
-            //             modified   → CSI 1;<mod+1> H/F
+            // Home/End: unmodified -> SS3 form; modified -> CSI 1;<mod+1> H/F
             Key.Home   => mod > 0 ? $"\x1b[1{modSuffix}H" : "\x1bOH",
             Key.End    => mod > 0 ? $"\x1b[1{modSuffix}F" : "\x1bOF",
 

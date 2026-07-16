@@ -710,26 +710,60 @@
                                                 <Setter Property="BorderBrush" Value="{Binding #RootWindow.AccentBrush}" />
                                             </Style>
                                         </Border.Styles>
+                                        <Border.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Save"
+                                                          Tag="{Binding}"
+                                                          Click="SaveEditorTabMenuItem_OnClick" />
+                                                <MenuItem Header="Save As..."
+                                                          Tag="{Binding}"
+                                                          Click="SaveEditorTabAsMenuItem_OnClick" />
+                                                <Separator />
+                                                <MenuItem Header="Copy Path"
+                                                          Tag="{Binding}"
+                                                          Click="CopyEditorTabPathMenuItem_OnClick" />
+                                                <MenuItem Header="Copy Relative Path"
+                                                          Tag="{Binding}"
+                                                          Click="CopyEditorTabRelativePathMenuItem_OnClick" />
+                                                <MenuItem Header="Reveal in File Explorer"
+                                                          Tag="{Binding}"
+                                                          Click="RevealEditorTabInExplorerMenuItem_OnClick" />
+                                                <Separator />
+                                                <MenuItem Header="Close"
+                                                          Tag="{Binding}"
+                                                          Click="CloseEditorTabButton_OnClick" />
+                                                <MenuItem Header="Close Others"
+                                                          Tag="{Binding}"
+                                                          Click="CloseOtherTabsButton_OnClick" />
+                                                <MenuItem Header="Close All"
+                                                          Click="CloseAllTabsButton_OnClick" />
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
                                         <Grid ColumnDefinitions="*,Auto">
                                             <Button Classes="openeditor"
                                                     Classes.active="{Binding IsSelected}"
                                                     Tag="{Binding}"
                                                     Click="OpenEditorTabButton_OnClick"
-                                                    ToolTip.Tip="{Binding FullPath}">
-                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <Viewbox Width="8" Height="8" VerticalAlignment="Center"
+                                                    ToolTip.Tip="{Binding FullPath}"
+                                                    HorizontalContentAlignment="Stretch">
+                                                <Grid ColumnDefinitions="Auto,*">
+                                                    <Viewbox Grid.Column="0"
+                                                             Width="8" Height="8"
+                                                             Margin="0,0,8,0"
+                                                             VerticalAlignment="Center"
                                                              IsVisible="{Binding IsDirty}">
                                                         <Canvas Width="24" Height="24">
                                                             <Path Fill="{Binding #RootWindow.AccentBrush}"
                                                                   Data="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z" />
                                                         </Canvas>
                                                     </Viewbox>
-                                                    <TextBlock FontSize="12"
+                                                    <TextBlock Grid.Column="1"
+                                                               FontSize="12"
                                                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                Text="{Binding DisplayName}"
                                                                TextTrimming="CharacterEllipsis"
-                                                               MaxWidth="150" />
-                                                </StackPanel>
+                                                               VerticalAlignment="Center" />
+                                                </Grid>
                                             </Button>
                                             <Button Grid.Column="1"
                                                     Classes="tabclose"
@@ -1700,17 +1734,19 @@
                                                                         </Canvas>
                                                                     </Viewbox>
                                                                     <Viewbox IsVisible="{Binding !IsFolder}"
-                                                                             Width="32" Height="15"
-                                                                             VerticalAlignment="Center"
-                                                                             Stretch="Uniform">
-                                                                        <TextBlock FontSize="13"
-                                                                                   FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
-                                                                                   Width="40"
-                                                                                   Height="16"
-                                                                                   TextAlignment="Center"
-                                                                                   VerticalAlignment="Center"
-                                                                                   Text="{Binding LanguageIcon}"
-                                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}" />
+                                                                             Width="15" Height="15"
+                                                                             VerticalAlignment="Center">
+                                                                        <Canvas Width="24" Height="24">
+                                                                            <!-- Generic file icon (Heroicons "document", solid) - keeps the
+                                                                                 same visual weight/style as the folder icon above rather
+                                                                                 than a per-language text badge. -->
+                                                                            <Path Fill="{Binding #RootWindow.MutedTextBrush}"
+                                                                                  Opacity="0.55"
+                                                                                  Data="F0 M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0 0 16.5 9h-1.875a1.875 1.875 0 0 1-1.875-1.875V5.25A3.75 3.75 0 0 0 9 1.5H5.625ZM7.5 15a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 7.5 15Zm.75 2.25a.75.75 0 0 0 0 1.5H12a.75.75 0 0 0 0-1.5H8.25Z" />
+                                                                            <Path Fill="{Binding #RootWindow.MutedTextBrush}"
+                                                                                  Opacity="0.55"
+                                                                                  Data="M12.971 1.816A5.23 5.23 0 0 1 14.25 5.25v1.875c0 .207.168.375.375.375h1.875a5.23 5.23 0 0 1 3.434 1.279 9.768 9.768 0 0 0-6.963-6.963Z" />
+                                                                        </Canvas>
                                                                     </Viewbox>
                                                                 </Grid>
 
@@ -3884,6 +3920,10 @@
                                 <CheckBox IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable word wrap" />
+                                <CheckBox IsChecked="{Binding IsCodePredictEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          ToolTip.Tip="Predictive code completion as you type"
+                                          Content="Enable CodePredict (code suggestions)" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
                                             VerticalAlignment="Center">
                                     <TextBlock VerticalAlignment="Center"
@@ -4730,3 +4770,4 @@
         </Grid>
     </Grid>
 </Window>
+

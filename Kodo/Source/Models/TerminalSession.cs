@@ -32,11 +32,7 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
 
     public string ShellDisplayName { get; }
 
-    /// <summary>
-    /// Last-saved screen buffer for this session. Written by the host window
-    /// when switching away from this session; read back when switching to it.
-    /// Null until the session has been displayed at least once.
-    /// </summary>
+    /// <summary>Last-saved screen buffer, written/read on session switch. Null until first shown.</summary>
     public TerminalSnapshot? Snapshot { get; set; }
 
     public string Title
@@ -53,16 +49,10 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>
-    /// True once <see cref="Title"/> has been set explicitly (e.g. via the rename dialog).
-    /// Used to stop shell-reported titles (OSC 0/2) from overwriting a user's own name.
-    /// </summary>
+    /// <summary>True once <see cref="Title"/> is set explicitly, so shell-reported titles stop overwriting it.</summary>
     public bool HasCustomTitle { get; private set; }
 
-    /// <summary>
-    /// Applies a shell-reported title. No-ops once <see cref="HasCustomTitle"/> is set,
-    /// so it never overwrites a manual rename.
-    /// </summary>
+    /// <summary>Applies a shell-reported title; no-ops once <see cref="HasCustomTitle"/> is set.</summary>
     public void ApplyAutoTitle(string title)
     {
         if (HasCustomTitle || _title == title)
@@ -126,11 +116,7 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>
-    /// A colour string suitable for binding to a dot/indicator in the tab strip.
-    /// Green = active and ready, blue = paused/restorable, amber = transitioning,
-    /// red = failed, gray = closed/exited (transient - sessions are removed on exit).
-    /// </summary>
+    /// <summary>Tab-strip status dot color: green=ready, blue=paused, amber=transitioning, red=failed, gray=closed.</summary>
     public string StatusDotColor => StatusText switch
     {
         "Ready"                           => "#22C55E", // green

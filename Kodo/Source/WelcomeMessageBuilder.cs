@@ -447,8 +447,7 @@ internal static class WelcomeMessageBuilder
     /// <summary>Diwali: the new moon (Amavasya) of Kartika, falling in October or early November.</summary>
     private static DateTime? DiwaliDate(int year)
     {
-        // Try October new moon first; accept it if day >= 14 (Kartika new moon
-        // is always in the second half of October or early November).
+        // Kartika new moon is always in the second half of October or early November.
         var oct = MoonInMonth(year, 10, fullMoon: false);
         if (oct != null && oct.Value.Day >= 14) return oct;
         var nov = MoonInMonth(year, 11, fullMoon: false);
@@ -485,9 +484,8 @@ internal static class WelcomeMessageBuilder
         return GetHolidayEntry(date.AddDays(-1), country) is not null;
     }
 
-    // Tournament-themed messages, layered: a hardcoded window table (works offline) plus a live TheSportsDB lookup.
-    // Network/parse failures are swallowed; the hardcoded messages still work either way.
-    // Dates reflect the best known schedule as of writing; this table needs a yearly top-up, though stale entries are harmless.
+    // Tournament messages: hardcoded window table (offline-safe) plus a live TheSportsDB
+    // lookup. Network/parse failures are swallowed. Table needs a yearly date top-up.
     private static readonly (string Name, DateTime Start, DateTime End, string LeagueQuery, string[] Messages)[] MajorTournaments =
     {
         ("FIFA World Cup", new DateTime(2026, 6, 11), new DateTime(2026, 7, 19), "FIFA_World_Cup", new[]
@@ -551,8 +549,7 @@ internal static class WelcomeMessageBuilder
     };
 
 
-    // Minimal shape of TheSportsDB's eventsday.php response - only the fields
-    // we actually use are mapped, everything else in the JSON is ignored.
+    // Minimal shape of TheSportsDB's eventsday.php response - only used fields mapped.
     private sealed class TsdbEventsResponse
     {
         public List<TsdbEvent>? events { get; set; }
@@ -603,8 +600,7 @@ internal static class WelcomeMessageBuilder
 
                     if (parsed?.events is { Count: > 0 } events)
                     {
-                        // Cap at 3 so one heavy match-day doesn't drown out
-                        // every other greeting in the pool.
+                        // Cap at 3 so one heavy match-day doesn't drown out the pool.
                         foreach (var ev in events.Take(3))
                         {
                             if (string.IsNullOrWhiteSpace(ev.strHomeTeam) || string.IsNullOrWhiteSpace(ev.strAwayTeam))
@@ -613,8 +609,7 @@ internal static class WelcomeMessageBuilder
                             var timeText = string.IsNullOrWhiteSpace(ev.strTime) ? "" : $" at {ev.strTime} UTC";
                             var line = $"{ev.strHomeTeam} vs {ev.strAwayTeam} today{timeText} - quick build before kickoff?";
 
-                            // Weighted x2 over the generic tournament lines:
-                            // a real match today is more specific and exciting.
+                            // Weighted x2 - a real match today beats a generic line.
                             messages.Add(line);
                             messages.Add(line);
                         }
@@ -622,8 +617,7 @@ internal static class WelcomeMessageBuilder
                 }
                 catch
                 {
-                    // Live fixture lookup is best-effort only - the generic
-                    // tournament messages added above already cover us.
+                    // Best-effort only - the generic tournament messages already cover us.
                 }
             }
 
@@ -631,8 +625,7 @@ internal static class WelcomeMessageBuilder
         }
         catch (Exception ex)
         {
-            // Should be unreachable (everything above is already guarded),
-            // but keep this feature from ever being able to crash startup.
+            // Should be unreachable, but never let this crash startup.
             KodoDiagnostics.LogDebug("Failed to build sporting event welcome messages", ex);
             return null;
         }
@@ -672,8 +665,7 @@ internal static class WelcomeMessageBuilder
 
         var messages = new List<string>();
 
-        // Personalised name prefix: when a name is set, prepend it to a subset
-        // of the greeting pool so they feel personal without being repetitive.
+        // Prepend the user's name to a subset of greetings so it's not repetitive.
         var name = userName;
         if (!string.IsNullOrWhiteSpace(name))
         {
@@ -753,7 +745,7 @@ internal static class WelcomeMessageBuilder
             messages.AddRange(sportingEventMessages);
 
         // ── 2. Long weekend hints ─────────────────────────────────────────────
-        // Also weighted up so long-weekend messages feel timely when applicable.
+        // Weighted up so these feel timely when applicable.
         if (IsLongWeekendEve(now, country))
         {
             messages.Add("Long weekend starts tomorrow - one more push!");
@@ -848,7 +840,7 @@ internal static class WelcomeMessageBuilder
         }
 
         // ── 5. Season-aware messages ──────────────────────────────────────────
-        // Hemisphere: 0 = auto-detect from country, 1 = northern, 2 = southern.
+        // Hemisphere: 0 auto-detect, 1 northern, 2 southern.
         var isSouthern = userHemisphereIndex == 2
             || (userHemisphereIndex == 0 && country is "AU" or "NZ" or "ZA" or "AR" or "BR" or "CL");
         var month = now.Month;
