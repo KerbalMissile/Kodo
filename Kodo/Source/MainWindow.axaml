@@ -1330,7 +1330,7 @@
                                                    FontWeight="SemiBold"
                                                    Foreground="{Binding AccentBrush}"
                                                    VerticalAlignment="Center"
-                                                   Text="KODO" />
+                                                   Text="{Binding KodoWordmarkText}" />
                                         <!-- Birthday flourish: only visible on April 18 -->
                                         <TextBlock FontSize="13"
                                                    VerticalAlignment="Center"

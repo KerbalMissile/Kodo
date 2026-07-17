@@ -5328,6 +5328,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly bool _isTaglineGreeting = Random.Shared.Next(10_000) == 0;
     public bool IsTaglineGreeting => _isTaglineGreeting;
 
+    // One-in-a-million chance per launch that the "KODO" wordmark reads "Kode-o" instead.
+    private readonly bool _isRareWordmarkVariant = Random.Shared.Next(1_000_000) == 0;
+    public string KodoWordmarkText => _isRareWordmarkVariant ? "KODE-O" : "KODO";
+
     // Birthday
 
     private static readonly DateTime _kodoBirthDate = new(2026, 4, 18);
@@ -5374,11 +5378,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     /// <summary>True only when StatusBarBirthdayText is non-empty (i.e. on the birthday).</summary>
     public bool IsStatusBarBirthdayVisible => IsKodoBirthday;
 
-    // One-in-ten-thousand chance per launch of an alternate Get Started subtitle, matching IsTaglineGreeting's odds.
-    private readonly bool _isRareGetStartedMessage = Random.Shared.Next(10_000) == 0;
-    public string GetStartedSubtitleText => _isRareGetStartedMessage
-        ? "Legend has it the code writes itself if you wait long enough. (It doesn't - open a file.)"
-        : "Open a file or folder to get started, or create something new.";
+    public string GetStartedSubtitleText => "Open a file or folder to get started, or create something new.";
 
     public string WelcomeMessage
     {
