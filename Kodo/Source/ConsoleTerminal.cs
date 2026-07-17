@@ -14,7 +14,7 @@ using Avalonia.Threading;
 
 namespace Kodo;
 
-// ── Public surface ────────────────────────────────────────────────────────────
+// Public surface
 
 /// <summary>
 /// A self-contained Avalonia control hosting a shell via ConPTY, rendering VT/ANSI output directly.
@@ -22,7 +22,7 @@ namespace Kodo;
 /// </summary>
 public sealed class ConsoleTerminal : Control
 {
-    // ── Standard 16-colour ANSI palette ──────────────────────────────────────
+    // Standard 16-colour ANSI palette
     private static readonly Color[] AnsiPalette =
     [
         Color.FromRgb(12,  12,  12),   // 0  Black
@@ -46,13 +46,13 @@ public sealed class ConsoleTerminal : Control
     private static readonly Color DefaultFg = Color.FromRgb(204, 204, 204);
     private static readonly Color DefaultBg = Color.FromRgb(12,  12,  12);
 
-    // ── Layout ────────────────────────────────────────────────────────────────
+    // Layout
     private const double CellW = 8.4;
     private const double CellH = 17.0;
     private const string FontFamily = "Cascadia Mono,Consolas,Courier New,monospace";
     private const double FontSize = 13.0;
 
-    // ── State ─────────────────────────────────────────────────────────────────
+    // State
     private readonly object _lock = new();
     private TermCell[,] _cells = new TermCell[24, 80];
     private int _rows = 24, _cols = 80;
@@ -104,7 +104,7 @@ public sealed class ConsoleTerminal : Control
     private readonly DispatcherTimer _blinkTimer;
     private bool _cursorBlinkOn = true;
 
-    // ── Constructor ───────────────────────────────────────────────────────────
+    // Constructor
     public ConsoleTerminal()
     {
         Focusable = true;
@@ -118,7 +118,7 @@ public sealed class ConsoleTerminal : Control
         // Doesn't call Stop() on detach - toggling IsVisible would kill the ConPTY process.
     }
 
-    // ── Public API ────────────────────────────────────────────────────────────
+    // Public API
 
     /// <summary>
     /// Fired when the shell exits, with the process handle from Start().
@@ -310,7 +310,7 @@ public sealed class ConsoleTerminal : Control
         InvalidateVisual();
     }
 
-    // ── Avalonia overrides ────────────────────────────────────────────────────
+    // Avalonia overrides
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
@@ -627,7 +627,7 @@ public sealed class ConsoleTerminal : Control
         ctx.FillRectangle(brush, new Rect(Bounds.Width - 4, thumbY, 4, thumbH));
     }
 
-    // ── Absolute buffer coordinates (row 0 = oldest scrollback line) ─────────
+    // Absolute buffer coordinates (row 0 = oldest scrollback line)
 
     private int TotalAbsRows => _scrollback.Count + _rows;
 
@@ -656,7 +656,7 @@ public sealed class ConsoleTerminal : Control
         return true;
     }
 
-    // ── Selection / clipboard ─────────────────────────────────────────────────
+    // Selection / clipboard
 
     private string? GetSelectedText()
     {
@@ -708,7 +708,7 @@ public sealed class ConsoleTerminal : Control
         SendInput(_bracketedPasteMode ? $"\x1b[200~{text}\x1b[201~" : text);
     }
 
-    // ── Scrollback search ──────────────────────────────────────────────────────
+    // Scrollback search
 
     private void OpenSearch()
     {
@@ -797,7 +797,7 @@ public sealed class ConsoleTerminal : Control
         _scrollOffset = Math.Clamp(_scrollback.Count + targetScreenRow - absRow, 0, _scrollback.Count);
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
+    // Private helpers
 
     private (int cols, int rows) CalcSize(Size? size = null)
     {
@@ -824,7 +824,7 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
-    // ── Output reader ─────────────────────────────────────────────────────────
+    // Output reader
     private async Task ReadOutputLoop(CancellationToken ct)
     {
         var buf = new byte[4096];
@@ -848,7 +848,7 @@ public sealed class ConsoleTerminal : Control
         catch (Exception ex) { Console.WriteLine($"[ConPTY] ReadOutputLoop: {ex.Message}"); }
     }
 
-    // ── VT / ANSI parser ──────────────────────────────────────────────────────
+    // VT / ANSI parser
     private void ProcessChar(char ch)
     {
         switch (_parseState)
@@ -1159,7 +1159,7 @@ public sealed class ConsoleTerminal : Control
             _cells[_cursorRow, c] = default;
     }
 
-    // ── Key mapping ───────────────────────────────────────────────────────────
+    // Key mapping
     private static string? KeyToVt(Key key, KeyModifiers mods)
     {
         var ctrl  = mods.HasFlag(KeyModifiers.Control);
@@ -1226,7 +1226,7 @@ public sealed class ConsoleTerminal : Control
         _ => null
     };
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // Helpers
     private static List<int> ParseNums(string s)
     {
         var result = new List<int>();
@@ -1252,7 +1252,7 @@ public sealed class ConsoleTerminal : Control
     }
 }
 
-// ── Cell struct ───────────────────────────────────────────────────────────────
+// Cell struct
 public readonly record struct TermCell(
     char  Char,
     Color? Fg,
@@ -1285,7 +1285,7 @@ public sealed class TerminalSnapshot(
     internal string      CsiParam      { get; } = csiParam;
 }
 
-// ── ConPTY P/Invoke ───────────────────────────────────────────────────────────
+// ConPTY P/Invoke
 internal static class NativeConPty
 {
     [StructLayout(LayoutKind.Sequential)]

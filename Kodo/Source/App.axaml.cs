@@ -21,9 +21,7 @@ namespace Kodo;
 // Handles global unhandled-exception wiring, crash logging, and the crash dialog UI.
 public partial class App : Application
 {
-    // Prevents crash-dialog storms: only one crash dialog may be in flight at a time.
-    // Set by the CompareExchange guard in ShowCrashDialog, held for its full lifetime.
-    // The terminating-exception spin-wait reads this flag too, to know when it's safe to proceed.
+    // Guards against multiple concurrent crash dialogs; set by the CompareExchange in ShowCrashDialog.
     private static int _isCrashDialogOpen;
     // Shared colours from DialogPalette, so every code-built dialog matches.
 
@@ -36,7 +34,7 @@ public partial class App : Application
     private static readonly Color KodoTokenBlue       = DialogPalette.TokenBlue;  // source badge
     private static readonly Color KodoTokenOrange     = DialogPalette.TokenOrange;  // stack trace
 
-    // ── Initialization ───────────────────────────────────────────────────────
+    // Initialization
 
     // Loads AXAML resources/styles and wires up global exception handlers before
     // the framework has finished starting up.
@@ -77,7 +75,7 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    // ── Auto-update ───────────────────────────────────────────────────────────
+    // Auto-update
 
     // Checks for a pending-update sentinel from KodoUpdater; shows UpdateDialog if newer.
     // Runs before the live GitHub check so a pending sentinel always wins over a redundant download.
@@ -137,7 +135,7 @@ public partial class App : Application
         });
     }
 
-    // ── Windows file-association registration ────────────────────────────────
+    // Windows file-association registration
 
     [SupportedOSPlatform("windows")]
     private static void RegisterFileAssociations()
@@ -185,7 +183,7 @@ public partial class App : Application
         }
     }
 
-    // ── Global exception handlers ────────────────────────────────────────────
+    // Global exception handlers
 
     private static void CurrentDomain_OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {

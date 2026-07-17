@@ -1311,7 +1311,7 @@
                         IsVisible="{Binding IsEmptyStateVisible}">
                     <Grid RowDefinitions="Auto,*">
 
-                        <!-- ── Header band ── -->
+                        <!-- Header band -->
                         <Border Grid.Row="0"
                                 Background="{Binding TopBarBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -1445,7 +1445,7 @@
                             </Grid>
                         </Border>
 
-                        <!-- ── Two-column body ── -->
+                        <!-- Two-column body -->
                         <Grid Grid.Row="1"
                               ColumnDefinitions="*,340"
                               Margin="32,28,32,36"
@@ -1454,7 +1454,7 @@
                                 <!-- LEFT COLUMN -->
                                 <StackPanel Grid.Column="0" Spacing="16" VerticalAlignment="Top">
 
-                                    <!-- ─ Get Started card ─ -->
+                                    <!-- Get Started card -->
                                     <Border Padding="24"
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -1523,7 +1523,7 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- ─ Marketplace card ─ -->
+                                    <!-- Marketplace card -->
                                     <Border Padding="24"
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -1561,7 +1561,7 @@
                                         </Grid>
                                     </Border>
 
-                                    <!-- ─ Links card ─ -->
+                                    <!-- Links card -->
                                     <Border Padding="24,18"
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -1631,7 +1631,7 @@
                                         </Grid>
                                     </Border>
 
-                                    <!-- ─ Recently Edited card ─ -->
+                                    <!-- Recently Edited card -->
                                     <!-- Height is fixed to fit exactly 6 recent-file rows:
                                          48px card padding + 28px header + 12px spacing + 6×38px rows = 308px -->
                                     <Border Padding="24"
@@ -1818,7 +1818,7 @@
                                             Spacing="16"
                                             VerticalAlignment="Top">
 
-                                    <!-- ─ News card (halved height) ─ -->
+                                    <!-- News card (halved height) -->
                                     <Border Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
@@ -1968,7 +1968,7 @@
                                         </Grid>
                                     </Border>
 
-                                    <!-- ─ What's New card (compact home-screen edition) ─ -->
+                                    <!-- What's New card (compact home-screen edition) -->
                                     <Border Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
@@ -4861,11 +4861,3 @@
         </Grid>
     </Grid>
 </Window>
-
-
-
-
-
-
-
-

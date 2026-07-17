@@ -53,7 +53,7 @@ internal static class UpdateService
         return client;
     }
 
-    // ── Update check ──────────────────────────────────────────────────────────
+    // Update check
 
     // Hits GitHub's "latest release" endpoint and compares tags; null if none, unreachable, or no installer asset.
     public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default)
@@ -140,7 +140,7 @@ internal static class UpdateService
         return parts.Length > 0 ? parts : null;
     }
 
-    // ── Settings ──────────────────────────────────────────────────────────────
+    // Settings
 
     // Reads the auto-update toggle directly from kodosettings.json, standalone, before a MainWindow exists. Defaults to true.
     public static bool IsAutoUpdateEnabledInSettings()
@@ -197,7 +197,7 @@ internal static class UpdateService
         public bool AutoUpdateAppInBackgroundEnabled { get; set; }
     }
 
-    // ── Download ──────────────────────────────────────────────────────────────
+    // Download
 
     // Downloads the installer to a temp path with progress reporting.
     public static async Task<string> DownloadInstallerAsync(
@@ -249,10 +249,9 @@ internal static class UpdateService
             : $"{bytes / 1024.0:0} KB";
     }
 
-    // ── Install / restart ────────────────────────────────────────────────────
+    // Install / restart
 
-    // Launches the installer silently (/VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-    // /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS), then exits so it can overwrite Kodo.exe.
+    // Launches the installer silently, then exits so it can overwrite Kodo.exe.
     // Process.Kill() below is a fallback if CloseApplicationsFilter isn't in the .iss.
     public static void LaunchInstallerAndExit(string installerPath)
     {
@@ -317,7 +316,7 @@ internal static class UpdateService
         return update;
     }
 
-    // ── GitHub API DTOs ──────────────────────────────────────────────────────
+    // GitHub API DTOs
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -610,7 +609,8 @@ internal static class DialogPalette
 }
 
 // Resolves accent colour for dialogs shown before/independently of MainWindow.
-// "Theme" mode falls back to Kodo purple - standalone dialogs can't load extensions.
+// "Theme" mode reads the last-cached theme accent hex from settings, since standalone
+// dialogs can't load the extension system to resolve it themselves.
 internal static class AccentResolver
 {
     private const string DefaultAccentHex = "#8C00FF";
@@ -633,8 +633,10 @@ internal static class AccentResolver
 
         return settings.AccentColorMode switch
         {
-            // "Theme" falls back to Kodo purple without the extension system loaded.
-            "theme"   => DefaultAccentHex,
+            // Uses the accent hex cached from the last time MainWindow resolved the
+            // active extension theme; falls back to Kodo purple if none was ever cached.
+            "theme"   => string.IsNullOrWhiteSpace(settings.CachedThemeAccentHex)
+                ? DefaultAccentHex : settings.CachedThemeAccentHex,
             "windows" => GetWindowsAccentColor() ?? "#0078D4",
             "custom"  => string.IsNullOrWhiteSpace(settings.CustomAccentHex)
                 ? DefaultAccentHex : settings.CustomAccentHex,
@@ -712,6 +714,7 @@ internal static class AccentResolver
     {
         public string AccentColorMode { get; set; } = "kodo";
         public string CustomAccentHex { get; set; } = DefaultAccentHex;
+        public string? CachedThemeAccentHex { get; set; }
     }
 }
 

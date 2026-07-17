@@ -139,9 +139,7 @@ public class FileTreeItem : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
-    // Returns a simple file-type icon based on extension. Internal (not private) so
-    // RecentFileItem can reuse this exact same lookup + fallback for its own icons,
-    // instead of maintaining a second, potentially-drifting copy of the mapping.
+    // Returns a simple file-type icon based on extension.
     internal static string GetFileIcon(string fileName)
     {
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
@@ -613,13 +611,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
     private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(175) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
-    // Every non-synchronous PersistSettingsSnapshot() call used to spawn its own
-    // Task.Run, so two saves fired close together (e.g. pinning a file, then
-    // immediately opening another) could race: both write the same ".tmp" path
-    // and File.Move concurrently, and whichever snapshot happens to finish LAST
-    // wins even if it was actually the OLDER one - silently reverting a pin or
-    // a just-added recent entry. These two fields turn concurrent saves into a
-    // single coalesced background writer that always ends on the latest snapshot.
+    // Coalesces concurrent background saves into a single writer that always ends on the latest snapshot.
     private readonly object _settingsWriteLock = new();
     private AppSettings? _pendingSettingsSnapshot;
     private bool _isPersistingSettings;
@@ -771,10 +763,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _extensionSearchText = string.Empty;
     private string _selectedInstalledExtensionSort = ExtensionSortModes.Alphabetical;
     private string _selectedMarketplaceExtensionSort = ExtensionSortModes.Alphabetical;
-    // Personalization, persisted in settings.json:
-    // _userCountry: ISO country code, empty = auto-detect.
-    // _userHemisphere: 0 auto, 1 north, 2 south.
-    // _userTimezoneOffset: UTC offset string, empty = auto-detect.
+    // Personalization, persisted in settings.json (empty/0 = auto-detect).
     private string _userCountry = string.Empty;
     private int    _userHemisphere = 0;
     private string _userTimezoneOffset = string.Empty;
@@ -876,7 +865,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         )
     ];
 
-    // ── Auto-completion ──────────────────────────────────────────────────────
+    // Auto-completion
 
     // Maps each opening character to its closing pair
     private static readonly Dictionary<char, char> BracketPairs = new()
@@ -1192,7 +1181,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshState(fullRefresh: true);
     }
 
-    // ── Extension loading ────────────────────────────────────────────────────
+    // Extension loading
 
     private void EnsureExtensionsFolder()
     {
@@ -1297,8 +1286,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ExtensionsStatusText = "Refreshing extensions...";
 
         // Refresh watchdog: warns if the full refresh doesn't finish within GitHubOperationTimeout.
-        // A parallel delay races the real work; the real work isn't hard-cancelled.
-        // suppressWatchdog=true when called from an install/uninstall step that already owns its own timeout handling.
+        // suppressWatchdog=true when called from a step that already owns its own timeout handling.
         using var watchdogCts = new CancellationTokenSource();
         var watchdogToken = watchdogCts.Token;
         if (!suppressWatchdog)
@@ -3384,7 +3372,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HasFileOpen &&
         ActiveEditorTab is { IsUntitled: false };
 
-    // ── Theme / editor appearance ────────────────────────────────────────────
+    // Theme / editor appearance
 
     private void ApplyThemeToEditor()
     {
@@ -3704,7 +3692,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
 
-    // ── Properties ───────────────────────────────────────────────────────────
+    // Properties
 
     public bool IsSettingsPageVisible
     {
@@ -4555,7 +4543,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ── Developer Options ────────────────────────────────────────────────────
+    // Developer Options
 
     public bool IsDeveloperOptionsVisible
     {
@@ -5200,7 +5188,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? $"Current theme: System Default ({CurrentThemeName})"
         : $"Current theme: {CurrentThemeName}";
 
-    // ── Personalization settings ─────────────────────────────────────────────
+    // Personalization settings
 
     /// <summary>
     /// ISO country code for the user, used to pick region-appropriate holiday messages.
@@ -5291,7 +5279,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ── Welcome message ──────────────────────────────────────────────────────
+    // Welcome message
 
     /// <summary>
     /// Infers the user's country from OS regional settings; returns an ISO code or empty string if unknown.
@@ -5340,7 +5328,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly bool _isTaglineGreeting = Random.Shared.Next(10_000) == 0;
     public bool IsTaglineGreeting => _isTaglineGreeting;
 
-    // ── Birthday ──────────────────────────────────────────────────────────────
+    // Birthday
 
     private static readonly DateTime _kodoBirthDate = new(2026, 4, 18);
 
@@ -5754,7 +5742,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(TerminalStatusBarText));
     }
 
-    // ── State management ─────────────────────────────────────────────────────
+    // State management
 
     private void RefreshState(bool fullRefresh = false)
     {
@@ -5889,7 +5877,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return _isDirty ? "Unsaved" : null;
     }
 
-    // ── Window icon ──────────────────────────────────────────────────────────
+    // Window icon
 
     private void LoadWindowIcon()
     {
@@ -5897,7 +5885,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Icon = new WindowIcon(iconStream);
     }
 
-    // ── Discord Rich Presence ────────────────────────────────────────────────
+    // Discord Rich Presence
 
     private string? GetDiscordApplicationId()
     {
@@ -5988,7 +5976,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? GetDiscordPresenceStateImproved()
             : GetDiscordPresenceStateClassic();
 
-    // ── Classic presence (original behaviour) ────────────────────────────────
+    // Classic presence (original behaviour)
 
     private string GetDiscordPresenceDetailsClassic()
     {
@@ -6004,7 +5992,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return "Waiting for a file";
     }
 
-    // ── Improved presence (experimental) ─────────────────────────────────────
+    // Improved presence (experimental)
 
     private string GetDiscordPresenceDetailsImproved()
     {
@@ -6115,7 +6103,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         UpdateDiscordRichPresenceLifecycle();
     }
 
-    // ── Settings persistence ─────────────────────────────────────────────────
+    // Settings persistence
 
     private string SettingsFilePath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", SettingsFileName);
@@ -6212,6 +6200,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             HasCompletedTutorial                    = _hasCompletedTutorial,
             AccentColorMode                         = _accentColorMode,
             CustomAccentHex                         = _customAccentHex,
+            CachedThemeAccentHex                    = _hasThemeAccent ? _themeAccentHex : null,
             UserCountry                             = _userCountry,
             UserHemisphere                          = _userHemisphere,
             UserTimezoneOffset                      = _userTimezoneOffset,
@@ -6251,10 +6240,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch (Exception ex) { KodoDiagnostics.LogWarning("MainWindow.PersistSettingsSnapshot", ex, operation: $"Failed to save settings to '{SettingsFilePath}'"); }
         }
 
-        // Shutdown save runs synchronously so the last write reaches disk before exit.
-        // Taking the same lock a background writer uses means this waits for any
-        // in-flight write to finish first, then writes this (freshest) snapshot -
-        // never races it.
+        // Shutdown save runs synchronously, under the same lock as the background writer,
+        // so the last write reaches disk before exit.
         if (synchronous)
         {
             lock (_settingsWriteLock)
@@ -6305,7 +6292,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return brush;
     }
 
-    // ── Theme application ────────────────────────────────────────────────────
+    // Theme application
 
     /// <summary>
     /// Sets theme brushes and <see cref="Application.RequestedThemeVariant"/> without notifications, saves, or refresh.
@@ -6612,7 +6599,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RgbToHsv(initialColor.R, initialColor.G, initialColor.B,
             out var hue, out var sat, out var val);
 
-        // ── Hue strip ──────────────────────────────────────────────────────────
+        // Hue strip
         var hueCanvas = new Canvas { Width = 300, Height = 20 };
         var hueGrad   = new LinearGradientBrush
         {
@@ -6638,7 +6625,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
         hueCanvas.Children.Add(hueCursor);
 
-        // ── SV square ──────────────────────────────────────────────────────────
+        // SV square
         const double svSize   = 300.0;
         const double svHeight = 180.0;
         var svCanvas = new Canvas { Width = svSize, Height = svHeight };
@@ -6691,7 +6678,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Canvas.SetTop (svCursor, (1 - val) * svHeight - 6);
         svCanvas.Children.Add(svCursor);
 
-        // ── Preview swatch + hex input ─────────────────────────────────────────
+        // Preview swatch + hex input
         var previewBorder = new Border
         {
             Width = 36, Height = 36, CornerRadius = new CornerRadius(8),
@@ -6713,7 +6700,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Width           = 110,
         };
 
-        // ── Sync helpers ───────────────────────────────────────────────────────
+        // Sync helpers
         void UpdateAll()
         {
             HsvToRgb(hue, sat, val, out var r2, out var g2, out var b2);
@@ -6727,7 +6714,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         UpdateAll();
 
-        // ── Hue drag ──────────────────────────────────────────────────────────
+        // Hue drag
         hueCanvas.PointerPressed  += (_, pe) =>
         {
             pe.Pointer.Capture(hueCanvas);
@@ -6742,7 +6729,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
         hueCanvas.PointerReleased += (_, pe) => pe.Pointer.Capture(null);
 
-        // ── SV drag ───────────────────────────────────────────────────────────
+        // SV drag
         svCanvas.PointerPressed  += (_, pe) =>
         {
             pe.Pointer.Capture(svCanvas);
@@ -6761,7 +6748,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
         svCanvas.PointerReleased += (_, pe) => pe.Pointer.Capture(null);
 
-        // ── Hex sync ──────────────────────────────────────────────────────────
+        // Hex sync
         hexInput.TextChanged += (_, _) =>
         {
             try
@@ -6902,7 +6889,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SaveSettings();
     }
 
-    // ── File operations ──────────────────────────────────────────────────────
+    // File operations
 
     private void SaveCurrentEditorStateIntoTab()
     {
@@ -6959,9 +6946,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
         SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
-        // SetEditorContent resets the caret to 0 - now put it back where this tab's
-        // own caret last was (clamped in case the file changed on disk and got
-        // shorter since we last saved it).
+        // Restores this tab's caret position (clamped to the current document length).
         EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
         // Restores scroll position: ScrollToLine first, then a pixel offset at Background priority.
         EditorTextBox.ScrollToLine(tab.TopLineNumber);
@@ -7220,10 +7205,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = FetchAnnouncementsAsync();
         _ = FetchSportingEventMessagesAsync();
 
-        // Opening splash sequencing: exactly one of tutorial or splash shows per launch, never both.
-        // Tutorial: true first-ever launch, covers orientation plus the consent ask inline.
-        // Splash can show release notes and/or an unanswered consent ask, independently.
-        // A user who just finished the tutorial never sees this splash right after, since both flags are already set true.
+        // Exactly one of tutorial (first launch) or What's New splash (subsequent launches) shows per run.
         var isReturningUser = _hasCompletedTutorial;
 
         if (_isFirstLaunch && !_hasCompletedTutorial)
@@ -7373,7 +7355,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task<bool> SaveAsAsync() =>
         await SaveAsync(allowPromptForPath: true, forcePromptForPath: true);
 
-    // ── File tree ────────────────────────────────────────────────────────────
+    // File tree
 
     private async Task PopulateFileTreeAsync(string folderPath)
     {
@@ -7469,7 +7451,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ── Recent files ─────────────────────────────────────────────────────────
+    // Recent files
 
     private void LoadRecentFiles(IEnumerable<RecentFileEntry>? recentFiles)
     {
@@ -7569,7 +7551,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ZoomOutButton_OnClick(object? sender, RoutedEventArgs e) => ZoomImageOut();
     private void ZoomResetButton_OnClick(object? sender, RoutedEventArgs e) => ZoomImageReset();
 
-    // ── Image zoom helpers ───────────────────────────────────────────────────
+    // Image zoom helpers
 
     private void ZoomImageIn()  => ImageZoomLevel = SnapToNiceZoom(_imageZoomLevel + ImageZoomStep);
     private void ZoomImageOut() => ImageZoomLevel = SnapToNiceZoom(_imageZoomLevel - ImageZoomStep);
@@ -7598,7 +7580,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         e.Handled = true;
     }
 
-    // ── Autosave helpers ─────────────────────────────────────────────────────
+    // Autosave helpers
 
     private void RestartAutoSaveTimerIfNeeded()
     {
@@ -7624,7 +7606,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return $"{AutoSaveFailedMessagePrefix} {message}";
     }
 
-    // ── Editor helpers ───────────────────────────────────────────────────────
+    // Editor helpers
 
     private string GetDocumentDisplayName() =>
         HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
@@ -7660,11 +7642,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _suppressDirtyTracking = true;
         EditorTextBox.Document.Text = content;
-        // The TextArea (and its Selection/Caret) is one shared instance reused by
-        // every tab - only the Document's Text is swapped in-place. Without an
-        // explicit reset here, a selection or caret offset from whichever tab was
-        // open previously carries straight over onto the new content by raw offset,
-        // which is what made switching tabs look like it selected everything.
+        // Clears the shared TextArea's selection/caret so they don't carry over from the previous tab.
         EditorTextBox.TextArea.ClearSelection();
         EditorTextBox.TextArea.Caret.Offset = 0;
         // Clear the flag via a posted action so it stays true until after
@@ -7674,7 +7652,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             DispatcherPriority.Background);
     }
 
-    // ── Terminal helpers ─────────────────────────────────────────────────────
+    // Terminal helpers
 
     private void RefreshAvailableTerminalShells(string? preferredShellId = null)
     {
@@ -7711,11 +7689,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // -NoExit -Command disables PSReadLine's predictive IntelliSense ("ghost text")
-            // on startup. It relies on precise cursor-position math that doesn't survive
-            // being hosted in a custom ConPTY terminal, so it renders as glitchy artifacts.
-            // Wrapped in try/catch since PredictionSource doesn't exist on older PSReadLine
-            // (e.g. the one bundled with Windows PowerShell 5.1) and would otherwise error.
+            // Disables PSReadLine's predictive IntelliSense, which renders as glitchy artifacts in the ConPTY terminal.
             const string disablePredictiveIntelliSenseCommand =
                 "try { Set-PSReadLineOption -PredictionSource None } catch {}";
 
@@ -7805,12 +7779,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!string.IsNullOrWhiteSpace(ActiveTerminalSession?.WorkingDirectory) && Directory.Exists(ActiveTerminalSession.WorkingDirectory))
             return ActiveTerminalSession.WorkingDirectory;
 
-        // The active file takes priority over _currentFolderPath. A folder stays
-        // "open" internally until the user explicitly closes it, so without this
-        // check a new terminal would keep routing to a stale workspace folder
-        // even after the user has moved on to an unrelated standalone file.
-        // Exception: if a folder IS open and the active file lives inside it,
-        // the folder root is still the more useful working directory.
+        // The active file's directory takes priority over _currentFolderPath, unless the
+        // active file lives inside the open folder.
         if (!string.IsNullOrWhiteSpace(_currentFilePath))
         {
             var fileDirectory = Path.GetDirectoryName(_currentFilePath);
@@ -7998,7 +7968,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }, DispatcherPriority.Background);
     }
 
-    // ── Event handlers ───────────────────────────────────────────────────────
+    // Event handlers
 
     // Switches the visible page in one pass - sets all backing fields before firing
     // any notifications, so the UI only re-renders once instead of once per property set.
@@ -8239,9 +8209,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SaveSettings();
     }
 
-    // Tracks when the embedded Privacy Policy ScrollViewer has been scrolled to its bottom
-    // (with a small epsilon so rounding/DPI doesn't leave it permanently just-short). Content
-    // that already fits without scrolling counts as "at bottom" immediately.
+    // Tracks whether the embedded Privacy Policy ScrollViewer has been scrolled to its bottom.
     private void PrivacyPolicyScrollViewer_OnScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (sender is not ScrollViewer scrollViewer) return;
@@ -8372,12 +8340,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Shortcut rows: (gesture, description)
         var shortcuts = new (string Gesture, string Description)[]
         {
-            // ── Navigation ────────────────────────────────────────────────────
+            // Navigation
             ("Ctrl+H",             "Go to Home"),
             ("Ctrl+Shift+E",       "Go to Editor"),
             ("Ctrl+,",             "Open Settings"),
             ("Ctrl+E  or  Ctrl+Shift+X", "Open Extensions / Marketplace"),
-            // ── Files & tabs ──────────────────────────────────────────────────
+            // Files & tabs
             ("Ctrl+N",             "New file"),
             ("Ctrl+O",             "Open file"),
             ("Ctrl+K",             "Open folder"),
@@ -8385,22 +8353,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ("Ctrl+S",             "Save"),
             ("Ctrl+Shift+S",       "Save as"),
             ("Ctrl+W",             "Close tab"),
-            // ── Editor ────────────────────────────────────────────────────────
+            // Editor
             ("Ctrl+F",             "Find in file"),
             ("Ctrl+B",             "Toggle file explorer"),
             ("Ctrl+X / C / V",     "Cut / Copy / Paste"),
-            // ── Terminal ──────────────────────────────────────────────────────
+            ("Ctrl+/",             "Toggle line comment"),
+            // Terminal
             ("Ctrl+`  or  Ctrl+J", "Toggle terminal panel"),
             ("Ctrl+Shift+`",       "New terminal session"),
-            // ── Image viewer ──────────────────────────────────────────────────
+            ("Ctrl+Shift+C",       "Copy selection (in terminal)"),
+            ("Ctrl+V",             "Paste (in terminal)"),
+            ("Ctrl+F",             "Search terminal output (in terminal)"),
+            ("Enter / F3",         "Next search match (in terminal)"),
+            ("Shift+Enter / Shift+F3", "Previous search match (in terminal)"),
+            // Image viewer
             ("Ctrl++",             "Zoom in"),
             ("Ctrl+-",             "Zoom out"),
             ("Ctrl+0",             "Reset zoom"),
-            // ── General ───────────────────────────────────────────────────────
+            // General
             ("Escape",             "Close Settings / Extensions / Tutorial / What's New"),
         };
 
-        // ── Header ──────────────────────────────────────────────────────────
+        // Header
         var titleText = new TextBlock
         {
             Text         = "Keyboard Shortcuts",
@@ -8410,7 +8384,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             TextWrapping = TextWrapping.Wrap,
         };
 
-        // ── Shortcut grid ────────────────────────────────────────────────────
+        // Shortcut grid
         var grid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,24,*"),
@@ -8464,7 +8438,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             MaxHeight                     = 460,
         };
 
-        // ── Dismiss button ───────────────────────────────────────────────────
+        // Dismiss button
         var dismissButton = new Button
         {
             Content             = "Close",
@@ -8647,7 +8621,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             sb.AppendLine($"── {title} ──");
         }
 
-        // ── Environment ───────────────────────────────────────────────────
+        // Environment
         sb.Append("Kodo ").AppendLine(KodoDiagnostics.AppVersion);
         sb.Append("OS: ").AppendLine(KodoDiagnostics.OSDescription);
         sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
@@ -8661,7 +8635,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? "(not yet fetched)"
                 : IsNewerVersionAvailable ? $"{latestTag}  ← update available" : latestTag);
 
-        // ── Editor State ──────────────────────────────────────────────────
+        // Editor State
         Section("Editor State");
         var unsavedCount = OpenTabs.Count(t => t.IsDirty);
         sb.AppendLine($"Open tabs: {OpenTabs.Count}{(unsavedCount > 0 ? $"  ({unsavedCount} unsaved)" : string.Empty)}");
@@ -8675,23 +8649,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         sb.AppendLine($"CodePredict: {IsCodePredictEnabled}");
         sb.AppendLine($"Auto-save: {IsAutoSaveEnabled}");
 
-        // ── Appearance ────────────────────────────────────────────────────
+        // Appearance
         Section("Appearance");
         sb.AppendLine($"Theme: {(IsSystemThemeActive ? $"System Default ({CurrentThemeName})" : CurrentThemeName)}");
         sb.AppendLine($"Accent mode: {_accentColorMode}");
         if (_accentColorMode == "custom")
             sb.AppendLine($"Custom accent: {_customAccentHex}");
 
-        // ── Terminal ──────────────────────────────────────────────────────
+        // Terminal
         Section("Terminal");
         sb.AppendLine($"Preferred shell: {SelectedTerminalShell?.DisplayName ?? "(none)"}");
 
-        // ── Discord Rich Presence ─────────────────────────────────────────
+        // Discord Rich Presence
         Section("Discord Rich Presence");
         sb.AppendLine($"Enabled: {IsDiscordRichPresenceEnabled}");
         sb.AppendLine($"Improved RPC: {IsDiscordImprovedRpcEnabled}");
 
-        // ── Extensions ───────────────────────────────────────────────────
+        // Extensions
         var extensions = VisibleLoadedExtensions.ToList();
         Section($"Installed Extensions ({extensions.Count})");
         if (extensions.Count == 0)
@@ -8700,7 +8674,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             foreach (var ext in extensions)
                 sb.AppendLine($"{ext.Name} v{ext.Version} ({ext.Type}) by {ext.Author}");
 
-        // ── File Locations ────────────────────────────────────────────────
+        // File Locations
         Section("File Locations");
         sb.AppendLine($"Settings: {SettingsFilePath}");
         sb.AppendLine($"Main log: {MainLogFilePath}");
@@ -9555,7 +9529,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsFindPanelVisible = !IsFindPanelVisible;
     }
 
-    // ── Encoding detection & change ──────────────────────────────────────────
+    // Encoding detection & change
 
     /// <summary>
     /// Detects a file's encoding from its BOM, falling back to UTF-8 (no BOM).
@@ -9717,7 +9691,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void CloseFindPanel_OnClick(object? sender, RoutedEventArgs e) =>
         IsFindPanelVisible = false;
 
-    // ── Editor context menu (right-click) ─────────────────────────────────────
+    // Editor context menu (right-click)
 
     private void EditorContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
@@ -9789,9 +9763,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (!HasRecentFiles) return;
 
-        // Pinned entries are exempt from "Clear Recent Files" - only the plain,
-        // non-pinned entries get removed. Nothing to confirm/do if everything
-        // left in the list is pinned.
+        // "Clear Recent Files" only removes non-pinned entries.
         var clearable = RecentFiles.Where(f => !f.IsPinned).ToList();
         if (clearable.Count == 0) return;
 
@@ -10147,7 +10119,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         caret.Offset = offset;
     }
 
-    // ── CodePredict (predictive completion popup) ─────────────────────────────────
+    // CodePredict (predictive completion popup)
 
     // Recomputes and shows/updates/hides the completion popup based on the word at
     // the caret. Called after every real text edit (see EditorTextBox_OnTextChanged).
@@ -10165,9 +10137,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        // CodePredict is for code: skip plain-text files (.txt/.text/.log) and
-        // documents that have never been saved to disk (untitled tabs), where
-        // there's no meaningful "language" to predict against.
+        // Skips plain-text files and untitled (unsaved) tabs, which have no language to predict against.
         if (ActiveEditorTab is null || ActiveEditorTab.IsUntitled || IsPlainTextFile(_currentFilePath))
         {
             CloseCompletionWindow();
@@ -10234,11 +10204,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const double CodePredictBorderThickness = 2d;      // 1px top + 1px bottom
     private const int CodePredictVisibleRows = 8;
 
-    // Builds a CompletionWindow styled to match Kodo's own panels: CardBrush
-    // background, SurfaceBorderBrush border, rounded corners, and an accent-tinted
-    // selected row / theme-hover row rather than VS Code's fixed blue/gray (the row
-    // content itself - icon chip, name, kind label - comes from each
-    // CodePredictSuggestion.Content in CodePredict.cs).
+    // Builds a CompletionWindow styled to match Kodo's own panels (CardBrush background,
+    // SurfaceBorderBrush border, accent-tinted selected row).
     private CompletionWindow CreateCompletionWindow()
     {
         var window = new CompletionWindow(EditorTextBox.TextArea)
@@ -10265,30 +10232,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (window.CompletionList.ListBox is { } listBox)
         {
-            // Opaque, matching the panel - not Transparent. The previous version
-            // relied on this panel's own Background showing through the gaps
-            // between rows, which wasn't reliably opaque and let editor text
-            // bleed through underneath every row.
+            // Opaque background so editor text can't bleed through the gaps between rows.
             listBox.Background = panelBrush;
             listBox.Padding = new Thickness(0, 4);
             listBox.Margin = new Thickness(0);
             listBox.HorizontalAlignment = HorizontalAlignment.Stretch;
         }
 
-        // FluentTheme's default ListBoxItem crossfades Background changes over
-        // ~150ms. UpdateCodePredict clears and rebuilds the whole suggestion list on
-        // every keystroke, so each row is a brand-new container that starts that
-        // fade from Transparent - a typist faster than 150ms/keystroke never lets
-        // it finish, leaving rows permanently mid-fade with the editor visible
-        // through them. Zeroing Transitions makes Background apply instantly.
+        // Zeroes ListBoxItem's background transition so rows render instantly instead of crossfading.
         var noTransitionStyle = new Style(x => x.OfType<ListBoxItem>());
         noTransitionStyle.Setters.Add(new Setter(Animatable.TransitionsProperty, new Transitions()));
         window.Styles.Add(noTransitionStyle);
 
-        // Paints ListBoxItem's own Background directly (its default template binds
-        // a root Border to it) rather than reaching into a named template part -
-        // more reliable, and fixes rows whose highlight rectangle didn't stretch to
-        // the popup's full width, leaving editor text visible at the edges.
+        // Paints ListBoxItem's Background directly so each row's highlight stretches to the popup's full width.
         var baseRowStyle = new Style(x => x.OfType<ListBoxItem>());
         baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, panelBrush));
         baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
@@ -10310,10 +10266,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var rowPaddingStyle = new Style(x => x.OfType<ListBoxItem>());
         rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(6, 3)));
-        // A fixed MinHeight (rather than 0) keeps every row the same height regardless
-        // of content, so the ListBox's virtualizing panel measures/positions rows
-        // consistently. With MinHeight 0, rows could vary slightly in height and the
-        // panel would mis-place them, which looked like duplicated/overlapping rows.
+        // A fixed MinHeight keeps every row the same height so the virtualizing panel positions them consistently.
         rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, CodePredictRowHeight));
         window.Styles.Add(rowPaddingStyle);
 
@@ -10323,9 +10276,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // While the CodePredict popup is open, let it own navigation/accept/dismiss keys -
-        // otherwise smart-enter/smart-tab below would consume them first and the popup
-        // would never see Enter/Tab to accept, or Escape/arrows to navigate.
+        // Lets the open CodePredict popup own navigation/accept/dismiss keys before smart-enter/smart-tab.
         if (_completionWindow is not null && e.Key is Key.Enter or Key.Tab or Key.Escape
             or Key.Up or Key.Down or Key.PageUp or Key.PageDown)
         {
@@ -11218,7 +11169,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ── Nested types ─────────────────────────────────────────────────────────
+    // Nested types
 
     private static int NormalizeTabSize(int value) => value is 2 or 4 or 8 ? value : 4;
 
@@ -14115,7 +14066,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         }
         else
         {
-            // ── Markdown-specific inline rules ─────────────────────────────────────────
+            // Markdown-specific inline rules
             // Bold/bold-italic markers: ** *** __ ___
             codeRuleSet.Rules.Add(new HighlightingRule
             {
@@ -14493,4 +14444,76 @@ public sealed class NewsItem
     public bool HasTitle     => !string.IsNullOrWhiteSpace(Title);
     public bool HasBody      => !string.IsNullOrWhiteSpace(Body);
     public bool HasUpdatedAt => !string.IsNullOrWhiteSpace(UpdatedAt);
+}
+/// <summary>
+/// The full schema Kodo persists to <c>kodosettings.json</c>. Pure data - no I/O, no
+/// defaults resolution logic beyond simple property initializers. MainWindow owns
+/// reading/writing this to disk (LoadSettings / BuildSettingsSnapshot / PersistSettingsSnapshot);
+/// this type only defines the shape.
+/// </summary>
+internal sealed class AppSettings
+{
+    // Single source of truth for the default terminal panel height.
+    public const double DefaultTerminalPanelHeight = 300;
+
+    public string ThemeName { get; set; } = "Dark";
+    public bool AutoSaveEnabled { get; set; }
+    public bool DiscordRichPresenceEnabled { get; set; }
+    public bool DiscordImprovedRpcEnabled { get; set; }
+    public bool DeveloperOptionsVisible { get; set; }
+    public bool VerboseLoggingEnabled { get; set; }
+    public bool StatusBarFilePathVisible { get; set; } = true;
+    public bool WordWrapEnabled { get; set; }
+    // Predictive completion (CodePredict). Defaults to true - on unless the user disables it.
+    public bool CodePredictEnabled { get; set; } = true;
+    public int TabSize { get; set; } = 4;
+    public int EditorFontSize { get; set; } = 14;
+    public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
+    public bool RestoreOpenTabsOnLaunchEnabled { get; set; }
+    public bool AutoUpdateExtensionsEnabled { get; set; }
+    // Sub-setting under AutoUpdateExtensionsEnabled - see
+    // IsAutoUpdateExtensionsInBackgroundEnabled for what it controls.
+    public bool AutoUpdateExtensionsInBackgroundEnabled { get; set; }
+    // Defaults to true - most users want Kodo to stay current without thinking about it.
+    public bool AutoUpdateAppEnabled { get; set; } = true;
+    // Sub-setting: defaults to false so Update Now/Later still shows.
+    public bool AutoUpdateAppInBackgroundEnabled { get; set; }
+    public string? PreferredTerminalShellId { get; set; }
+    public bool TerminalVisible { get; set; }
+    public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
+    public List<string> OpenTabPaths { get; set; } = [];
+    public string? ActiveTabPath { get; set; }
+    public List<RecentFileEntry> RecentFiles { get; set; } = [];
+    // False on first launch (settings file didn't exist yet); set to true after the
+    // tutorial is dismissed so it never shows again on subsequent launches.
+    public bool HasCompletedTutorial { get; set; }
+    public string AccentColorMode { get; set; } = "kodo";
+    public string CustomAccentHex { get; set; } = "#8C00FF";
+    // Last-resolved accent hex for the active extension theme (AccentColorMode == "theme").
+    // Lets standalone dialogs (crash dialog, updater) match the theme's accent without
+    // loading the extension system - see AccentResolver in Updater.cs.
+    public string? CachedThemeAccentHex { get; set; }
+    // Personalization - optional; empty/0 means "use OS defaults".
+    public string? UserCountry { get; set; }
+    public int UserHemisphere { get; set; }
+    public string? UserTimezoneOffset { get; set; }
+    public string? UserName { get; set; }
+    public string? LastSeenVersion { get; set; }
+    // Anonymous usage-analytics opt-in. False (no tracking) until the user
+    // has explicitly responded to the consent prompt at least once.
+    public bool AllowDataTracking { get; set; }
+    public bool HasRespondedToDataTrackingPrompt { get; set; }
+    // Acknowledgment of the embedded Privacy Policy text - separate from the data-tracking
+    // opt-in above. There's no decline path; this only tracks whether the user has scrolled
+    // through and accepted the terms at least once.
+    public bool HasAcceptedPrivacyPolicy { get; set; }
+}
+
+/// <summary>One entry in AppSettings.RecentFiles - a recently opened file or folder.</summary>
+public sealed class RecentFileEntry
+{
+    public string Path { get; set; } = string.Empty;
+    public bool IsFolder { get; set; }
+    public DateTime LastOpened { get; set; } = DateTime.Now;
+    public bool IsPinned { get; set; }
 }

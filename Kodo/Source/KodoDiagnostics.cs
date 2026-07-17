@@ -49,7 +49,7 @@ internal static class KodoDiagnostics
         }
     }
 
-    // ── Version / OS helpers ──────────────────────────────────────────────────
+    // Version / OS helpers
 
     private static string ResolveAppVersion()
     {
@@ -105,7 +105,7 @@ internal static class KodoDiagnostics
         }
     }
 
-    // ── Log paths ─────────────────────────────────────────────────────────────
+    // Log paths
 
     public static string LogDirectoryPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
@@ -121,7 +121,7 @@ internal static class KodoDiagnostics
 
     public static DateTime UtcNow() => DateTime.UtcNow;
 
-    // ── Payload builders ──────────────────────────────────────────────────────
+    // Payload builders
 
     public static string BuildDiagnosticPayload(
         string source,
@@ -170,7 +170,7 @@ internal static class KodoDiagnostics
         return summary.ToString();
     }
 
-    // ── Typed logging API ─────────────────────────────────────────────────────
+    // Typed logging API
 
     /// <summary>Logs a Critical event to kodo.log and generates crash.log.</summary>
     public static void LogCritical(
@@ -216,7 +216,7 @@ internal static class KodoDiagnostics
         WritePayloadToDisk(line, MainLogFilePath);
     }
 
-    // ── Legacy API (kept for backward-compat; delegates to typed methods) ─────
+    // Legacy API (kept for backward-compat; delegates to typed methods)
 
     /// <inheritdoc cref="LogCritical"/>
     /// <remarks>Legacy overload - prefer <see cref="LogCritical"/> or <see cref="LogWarning"/>.</remarks>
@@ -228,7 +228,7 @@ internal static class KodoDiagnostics
         string? operation = null) =>
         WriteToLog(source, exception, isTerminating, ParseSeverity(severity), operation);
 
-    // ── Internal write helpers ────────────────────────────────────────────────
+    // Internal write helpers
 
     private static void WriteToLog(
         string source,
@@ -268,7 +268,7 @@ internal static class KodoDiagnostics
             sb.AppendLine("════════════════════════════════════════════════════════════");
             sb.AppendLine();
 
-            // ── Recent activity leading up to the crash ───────────────────────
+            // Recent activity leading up to the crash
             var crumbs = DrainBreadcrumbs();
             if (crumbs.Count > 0)
             {
@@ -278,7 +278,7 @@ internal static class KodoDiagnostics
                 sb.AppendLine();
             }
 
-            // ── Crash payload ─────────────────────────────────────────────────
+            // Crash payload
             sb.AppendLine("── Crash ────────────────────────────────────────────────────");
             sb.AppendLine(BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, operation));
 
@@ -318,7 +318,7 @@ internal static class KodoDiagnostics
         catch { /* all attempts exhausted - swallow */ }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // Helpers
 
     private static string SeverityLabel(KodoSeverity severity) => severity switch
     {

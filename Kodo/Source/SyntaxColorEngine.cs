@@ -78,10 +78,7 @@ public sealed class CompiledSyntaxProfile
         }
         else
         {
-            // Rule order matters: both consumers (AvaloniaEdit's tie-breaking,
-            // and EmbeddedSyntaxProfile.Process()'s range reservation) treat
-            // earlier rules as higher priority, so specific rules must precede
-            // the catch-all "variable" rule at the end.
+            // Rule order matters: specific rules must precede the catch-all "variable" rule.
             rules.Add(new(new Regex(
                 traits.IsCssLike
                     ? @"(?<![\p{L}\p{Nd}_-])@[\p{L}_-][\p{L}\p{Nd}_-]*(?![\p{L}\p{Nd}_-])"
@@ -209,9 +206,7 @@ public sealed class CompiledSyntaxProfile
 
 public readonly record struct CompiledSyntaxRule(Regex Regex, string ColorTokenName, string FallbackHex);
 
-// ── Shared embedded-tag content extraction ───────────────────────────────────
-// Shared by HtmlEmbeddedColorizer and MarkdownColorizer so <script>/<style>
-// CDATA stripping behaves identically in both HTML/XML files and Markdown.
+// Shared embedded-tag content extraction, used by HtmlEmbeddedColorizer and MarkdownColorizer.
 public enum EmbeddedBlockContentMode
 {
     AwaitingContent,
@@ -739,12 +734,7 @@ public sealed class EmbeddedSyntaxProfile
     private readonly record struct EmbeddedStringStart(string Delimiter, int MatchedLength, bool IsVerbatim, bool CanSpanMultipleLines);
 }
 
-// ── Inline-code language detection ───────────────────────────────────────────
-// Decides whether a Markdown `inline code` span gets language-specific
-// highlighting or plain string coloring. Two guards prevent false positives
-// on prose/paths/shell commands: (1) a "looks like non-code" bail-out for
-// bare tag mentions, shell commands, and plain paths; (2) a higher score bar
-// requiring multiple token-kind matches or real code punctuation.
+// Decides whether a Markdown inline-code span gets language-specific highlighting or plain string coloring.
 public static class InlineCodeLanguageDetector
 {
     // Common CLI verbs - a bare command line opening with one of these is

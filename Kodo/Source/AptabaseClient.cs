@@ -57,9 +57,7 @@ internal static class AptabaseClient
         _ = TestConnectivityAsync();
     }
 
-    // Strips user-identifying substrings (file paths, emails) out of exception messages
-    // before they're queued. Crash messages are the one place free-form text can leak
-    // environment specifics, so this runs regardless of what triggered the event.
+    // Strips user-identifying substrings (file paths, emails) from exception messages before queueing.
     private static string? SanitizeMessage(string? message)
     {
         if (string.IsNullOrEmpty(message)) return message;

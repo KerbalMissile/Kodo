@@ -12,7 +12,7 @@ namespace Kodo;
 // Home screen welcome-pool logic: holiday detection, sporting-event theming, and the message-pool builder.
 internal static class WelcomeMessageBuilder
 {
-    // ── Holiday / calendar helpers ────────────────────────────────────────────
+    // Holiday / calendar helpers
 
     private record HolidayEntry(string Name, string? Greeting);
 
@@ -26,7 +26,7 @@ internal static class WelcomeMessageBuilder
         var dow = date.DayOfWeek;
         var y = date.Year;
 
-        // ── Universal / very widely observed ──────────────────────────────────
+        // Universal / very widely observed
         if (m == 1  && d == 1)  return new("New Year's Day", "Happy New Year!");
         if (m == 12 && d == 31) return new("New Year's Eve", "Happy New Year's Eve!");
         if (m == 12 && d == 25) return new("Christmas Day", "Merry Christmas!");
@@ -44,15 +44,15 @@ internal static class WelcomeMessageBuilder
         if (m == 9  && d == 21) return new("International Day of Peace", "Happy International Day of Peace.");
         if (m == 12 && d == 10) return new("International Human Rights Day", "Happy Human Rights Day.");
 
-        // ── Mother's Day: second Sunday of May ────────────────────────────────
+        // Mother's Day: second Sunday of May
         if (m == 5 && dow == DayOfWeek.Sunday && d >= 8 && d <= 14)
             return new("Mother's Day", "Happy Mother's Day!");
 
-        // ── Father's Day: third Sunday of June ────────────────────────────────
+        // Father's Day: third Sunday of June
         if (m == 6 && dow == DayOfWeek.Sunday && d >= 15 && d <= 21)
             return new("Father's Day", "Happy Father's Day!");
 
-        // ── Easter (Anonymous Gregorian algorithm) ────────────────────────────
+        // Easter (Anonymous Gregorian algorithm)
         var easter = ComputeEaster(y);
         if (m == easter.Month && d == easter.Day)
             return new("Easter Sunday", "Happy Easter!");
@@ -61,47 +61,47 @@ internal static class WelcomeMessageBuilder
         if (date == easter.AddDays(1) && country is "CA" or "GB" or "AU" or "NZ")
             return new("Easter Monday", "Happy Easter Monday!");
 
-        // ── Lunar New Year (Chinese/Vietnamese/Korean) ────────────────────────
+        // Lunar New Year (Chinese/Vietnamese/Korean)
         if (LunarNewYear(y) is { } lny && m == lny.Month && d == lny.Day)
             return new("Lunar New Year", "Happy Lunar New Year!");
 
-        // ── Holi (full moon of Phalguna) ──────────────────────────────────────
+        // Holi (full moon of Phalguna)
         if (HoliDate(y) is { } holi && m == holi.Month && d == holi.Day)
             return new("Holi", "Happy Holi!");
 
-        // ── Vesak / Buddha Day (full moon of Vaisakha) ───────────────────────
+        // Vesak / Buddha Day (full moon of Vaisakha)
         if (VesakDate(y) is { } vesak && m == vesak.Month && d == vesak.Day)
             return new("Vesak", "Happy Vesak!");
 
-        // ── Eid al-Fitr (1 Shawwal) ───────────────────────────────────────────
+        // Eid al-Fitr (1 Shawwal)
         if (EidAlFitr(y) is { } eidFitr && m == eidFitr.Month && d == eidFitr.Day)
             return new("Eid al-Fitr", "Eid Mubarak!");
 
-        // ── Eid al-Adha (10 Dhu al-Hijjah) ───────────────────────────────────
+        // Eid al-Adha (10 Dhu al-Hijjah)
         if (EidAlAdha(y) is { } eidAdha && m == eidAdha.Month && d == eidAdha.Day)
             return new("Eid al-Adha", "Eid Mubarak!");
 
-        // ── Rosh Hashanah (1 Tishrei) ─────────────────────────────────────────
+        // Rosh Hashanah (1 Tishrei)
         if (RoshHashanah(y) is { } rosh && m == rosh.Month && d == rosh.Day)
             return new("Rosh Hashanah", "Shana Tova! Happy New Year!");
 
-        // ── Yom Kippur (10 Tishrei) ───────────────────────────────────────────
+        // Yom Kippur (10 Tishrei)
         if (YomKippur(y) is { } yk && m == yk.Month && d == yk.Day)
             return new("Yom Kippur", "G'mar Chatima Tova. Easy fast.");
 
-        // ── Navratri / Sharad Navratri (day after new moon of Ashwin) ────────
+        // Navratri / Sharad Navratri (day after new moon of Ashwin)
         if (NavratriDate(y) is { } nav && m == nav.Month && d == nav.Day)
             return new("Navratri", "Happy Navratri!");
 
-        // ── Diwali (new moon of Kartika) ──────────────────────────────────────
+        // Diwali (new moon of Kartika)
         if (DiwaliDate(y) is { } diwali && m == diwali.Month && d == diwali.Day)
             return new("Diwali", "Happy Diwali!");
 
-        // ── Hanukkah (25 Kislev) ──────────────────────────────────────────────
+        // Hanukkah (25 Kislev)
         if (HanukkahDate(y) is { } hanukkah && m == hanukkah.Month && d == hanukkah.Day)
             return new("Hanukkah", "Happy Hanukkah!");
 
-        // ── Canada ────────────────────────────────────────────────────────────
+        // Canada
         if (country == "CA")
         {
             if (m == 7  && d == 1)  return new("Canada Day", "Happy Canada Day!");
@@ -120,7 +120,7 @@ internal static class WelcomeMessageBuilder
                 return new("Family Day", "Happy Family Day! Enjoy the long weekend.");
         }
 
-        // ── United States ─────────────────────────────────────────────────────
+        // United States
         if (country == "US")
         {
             if (m == 7  && d == 4)  return new("Independence Day", "Happy Fourth of July!");
@@ -142,7 +142,7 @@ internal static class WelcomeMessageBuilder
                 return new("Presidents' Day", "Happy Presidents' Day! Enjoy the long weekend!");
         }
 
-        // ── United Kingdom ────────────────────────────────────────────────────
+        // United Kingdom
         if (country == "GB")
         {
             if (m == 8 && dow == DayOfWeek.Monday && d >= 25)
@@ -155,7 +155,7 @@ internal static class WelcomeMessageBuilder
                 return new("Bonfire Night", "Remember, remember the 5th of November!");
         }
 
-        // ── Australia ─────────────────────────────────────────────────────────
+        // Australia
         if (country == "AU")
         {
             if (m == 1  && d == 26) return new("Australia Day", "Happy Australia Day!");
@@ -164,28 +164,28 @@ internal static class WelcomeMessageBuilder
                 return new("King's Birthday (AU)", "Happy King's Birthday long weekend!");
         }
 
-        // ── New Zealand ───────────────────────────────────────────────────────
+        // New Zealand
         if (country == "NZ")
         {
             if (m == 2  && d == 6)  return new("Waitangi Day", "Happy Waitangi Day!");
             if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget. Happy ANZAC Day.");
         }
 
-        // ── Germany ───────────────────────────────────────────────────────────
+        // Germany
         if (country == "DE")
         {
             if (m == 10 && d == 3) return new("German Unity Day", "Happy German Unity Day!");
             if (m == 5  && d == 1) return new("Labour Day", "Happy Labour Day!");
         }
 
-        // ── France ────────────────────────────────────────────────────────────
+        // France
         if (country == "FR")
         {
             if (m == 7  && d == 14) return new("Bastille Day", "Bonne fête nationale!");
             if (m == 5  && d == 1)  return new("Fête du Travail", "Bonne Fête du Travail!");
         }
 
-        // ── Japan ─────────────────────────────────────────────────────────────
+        // Japan
         if (country == "JP")
         {
             if (m == 1  && d == 1) return new("Shōgatsu", "あけましておめでとうございます！Happy New Year!");
@@ -631,7 +631,7 @@ internal static class WelcomeMessageBuilder
         }
     }
 
-    // ── Welcome message construction ──────────────────────────────────────────
+    // Welcome message construction
 
     /// <summary>
     /// Builds the candidate welcome-message pool from personalization settings and fetched sporting messages.
@@ -744,7 +744,7 @@ internal static class WelcomeMessageBuilder
         if (sportingEventMessages is { Count: > 0 })
             messages.AddRange(sportingEventMessages);
 
-        // ── 2. Long weekend hints ─────────────────────────────────────────────
+        // 2. Long weekend hints
         // Weighted up so these feel timely when applicable.
         if (IsLongWeekendEve(now, country))
         {
@@ -766,7 +766,7 @@ internal static class WelcomeMessageBuilder
             messages.Add("Hope the long weekend recharged you. Ready to build?");
         }
 
-        // ── 3. Day-of-week personality ────────────────────────────────────────
+        // 3. Day-of-week personality
         messages.Add(dow switch
         {
             DayOfWeek.Monday    => "Monday? Let's make it count.",
@@ -795,7 +795,7 @@ internal static class WelcomeMessageBuilder
             messages.Add("Monday's for the brave. Welcome back.");
         }
 
-        // ── 4. Time-of-day flavour ────────────────────────────────────────────
+        // 4. Time-of-day flavour
         if (tod != "night")
         {
             messages.Add($"Good {tod}!");
@@ -839,7 +839,7 @@ internal static class WelcomeMessageBuilder
             messages.Add("Another late one? Worth it.");
         }
 
-        // ── 5. Season-aware messages ──────────────────────────────────────────
+        // 5. Season-aware messages
         // Hemisphere: 0 auto-detect, 1 northern, 2 southern.
         var isSouthern = userHemisphereIndex == 2
             || (userHemisphereIndex == 0 && country is "AU" or "NZ" or "ZA" or "AR" or "BR" or "CL");
