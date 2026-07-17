@@ -1403,3 +1403,174 @@ internal static class NativeConPty
         }
     }
 }
+// -- Moved from MainWindow_axaml.cs: shell discovery, working-directory/title
+// heuristics, and other terminal-session logic that doesn't depend on MainWindow
+// view-model state. --
+
+/// <summary>One selectable shell (PowerShell, cmd, bash, ...) the terminal panel can launch.</summary>
+public sealed class TerminalShellOption
+{
+    public string Id { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string FileName { get; init; } = string.Empty;
+    public string Arguments { get; init; } = string.Empty;
+}
+
+/// <summary>Static helpers for shell discovery, panel-height clamping, and terminal-tab title formatting.</summary>
+public static class TerminalShellSupport
+{
+    private const double MinPanelHeight = 120;
+    private const double MaxPanelHeight = 420;
+
+    public static IEnumerable<TerminalShellOption> DetectTerminalShells()
+    {
+        var shells = new List<TerminalShellOption>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddShell(string id, string displayName, string? resolvedPath, string arguments)
+        {
+            if (string.IsNullOrWhiteSpace(resolvedPath) || !File.Exists(resolvedPath) || !seen.Add(resolvedPath))
+                return;
+
+            shells.Add(new TerminalShellOption
+            {
+                Id = id,
+                DisplayName = displayName,
+                FileName = resolvedPath,
+                Arguments = arguments
+            });
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            // Disables PSReadLine's predictive IntelliSense, which renders as glitchy artifacts in the ConPTY terminal.
+            const string disablePredictiveIntelliSenseCommand =
+                "try { Set-PSReadLineOption -PredictionSource None } catch {}";
+
+            AddShell(
+                "powershell",
+                "PowerShell",
+                ResolveExecutable("pwsh.exe")
+                    ?? ResolveExecutable("powershell.exe", Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.System),
+                        @"WindowsPowerShell\v1.0\powershell.exe")),
+                $"-NoLogo -NoExit -Command \"{disablePredictiveIntelliSenseCommand}\"");
+            AddShell(
+                "windows-powershell",
+                "Windows PowerShell",
+                ResolveExecutable("powershell.exe", Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.System),
+                        @"WindowsPowerShell\v1.0\powershell.exe")),
+                $"-NoLogo -NoExit -Command \"{disablePredictiveIntelliSenseCommand}\"");
+            AddShell(
+                "cmd",
+                "Command Prompt",
+                ResolveExecutable(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
+                    ?? ResolveExecutable("cmd.exe"),
+                "");
+            AddShell(
+                "bash",
+                "Git Bash",
+                ResolveExecutable("bash.exe",
+                    @"C:\Program Files\Git\bin\bash.exe",
+                    @"C:\Program Files\Git\usr\bin\bash.exe"),
+                "--login -i");
+        }
+        else
+        {
+            AddShell("bash", "Bash", ResolveExecutable("bash"), "-i");
+            AddShell("zsh", "Zsh", ResolveExecutable("zsh"), "-i");
+            AddShell("sh", "Shell", ResolveExecutable("sh"), "-i");
+        }
+
+        return shells;
+    }
+
+    private static string? ResolveExecutable(string fileName, params string[] fallbacks)
+    {
+        if (Path.IsPathFullyQualified(fileName) && File.Exists(fileName))
+            return fileName;
+
+        var pathValue = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        var extensions = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT;.COM")
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            : [string.Empty];
+
+        foreach (var path in pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                continue;
+
+            if (Path.HasExtension(fileName))
+            {
+                var candidate = Path.Combine(path, fileName);
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+            else
+            {
+                foreach (var ext in extensions)
+                {
+                    var candidate = Path.Combine(path, fileName + ext);
+                    if (File.Exists(candidate))
+                        return candidate;
+                }
+            }
+        }
+
+        foreach (var fallback in fallbacks)
+        {
+            if (!string.IsNullOrWhiteSpace(fallback) && File.Exists(fallback))
+                return fallback;
+        }
+
+        return null;
+    }
+
+    public static string GetClearCommandForShell(string shellId) =>
+        shellId switch
+        {
+            "bash" or "zsh" or "sh" => "clear\r",
+            _ => "cls\r"
+        };
+
+    public static double NormalizeTerminalPanelHeight(double value) =>
+        double.IsFinite(value)
+            ? Math.Clamp(value, MinPanelHeight, MaxPanelHeight)
+            : AppSettings.DefaultTerminalPanelHeight;
+
+    public static string ExtractDisplayTitleFromShellTitle(string rawTitle)
+    {
+        if (!LooksLikeFilePath(rawTitle))
+            return rawTitle;
+
+        var trimmedPath = rawTitle.TrimEnd('\\', '/');
+
+        // If the reported path points at a file (or just looks like one), use the
+        // name of the folder that contains it rather than the file name itself.
+        if (File.Exists(trimmedPath) || (!Directory.Exists(trimmedPath) && Path.HasExtension(trimmedPath)))
+        {
+            var parentDir = Path.GetDirectoryName(trimmedPath);
+            var parentName = string.IsNullOrEmpty(parentDir) ? null : Path.GetFileName(parentDir);
+            if (!string.IsNullOrWhiteSpace(parentName))
+                return parentName;
+        }
+
+        var lastSegment = Path.GetFileName(trimmedPath);
+        return string.IsNullOrWhiteSpace(lastSegment) ? rawTitle : lastSegment;
+    }
+
+    // Windows drive-letter path (C:\...), UNC path (\\server\share\...), or a
+    // Unix-style absolute path (e.g. under WSL bash) - anything else is left alone.
+    private static bool LooksLikeFilePath(string text)
+    {
+        if (text.Length >= 3 && char.IsLetter(text[0]) && text[1] == ':' && (text[2] == '\\' || text[2] == '/'))
+            return true;
+        if (text.StartsWith(@"\\", StringComparison.Ordinal))
+            return true;
+        if (text.StartsWith("/", StringComparison.Ordinal) && text.Contains('/'))
+            return true;
+        return false;
+    }
+}
