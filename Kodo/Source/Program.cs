@@ -18,21 +18,8 @@ class Program
 
         AptabaseClient.Initialize();
 
-        AppDomain.CurrentDomain.UnhandledException += static (_, e) =>
-        {
-            if (e.ExceptionObject is not Exception ex) return;
-            try
-            {
-                AptabaseClient.TrackEvent("app_crash", ex.Message);
-                KodoDiagnostics.LogCritical(
-                    "Program.Main.UnhandledException",
-                    ex,
-                    isTerminating: e.IsTerminating,
-                    operation: "Startup");
-            }
-            catch { }
-        };
-
+        // AppDomain.UnhandledException is handled by App.Initialize() (CurrentDomain_OnUnhandledException),
+        // which logs, tracks, and shows the crash dialog - registering it here too duplicated crash.log entries.
         var app = BuildAvaloniaApp();
         
         // Flush telemetry on exit

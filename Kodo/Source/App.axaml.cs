@@ -89,7 +89,7 @@ public partial class App : Application
             var (version, installerPath) = pending.Value;
             var update = new UpdateInfo(
                 Version: version,
-                ReleaseNotesUrl: $"https://github.com/SS-YYC/Kodo/releases",
+                ReleaseNotesUrl: $"https://github.com/KerbalMissile/Kodo/releases",
                 AssetDownloadUrl: string.Empty, // unused: installer is already on disk
                 AssetName: Path.GetFileName(installerPath),
                 AssetSizeBytes: 0);
@@ -117,16 +117,8 @@ public partial class App : Application
 
                 await Task.Delay(TimeSpan.FromSeconds(4));
 
-                var update = await UpdateService.CheckForUpdateAsync();
-                if (update is null)
-                    return;
-
-                // "Update automatically without asking": skip the dialog
-                // entirely and install silently in the background.
-                if (UpdateService.IsAutoUpdateInBackgroundEnabledInSettings())
-                    await UpdateService.SilentlyInstallAsync(update);
-                else
-                    UpdateDialog.ShowFor(update);
+                // Consolidated check-then-act flow - mirrors the manual/Settings-page call sites in MainWindow.
+                await UpdateService.CheckAndHandleUpdateAsync(UpdateService.IsAutoUpdateInBackgroundEnabledInSettings());
             }
             catch
             {
@@ -188,6 +180,8 @@ public partial class App : Application
     private static void CurrentDomain_OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         if (e.ExceptionObject is not Exception exception) return;
+
+        AptabaseClient.TrackEvent("app_crash", exception.Message);
 
         // Critical: unhandled AppDomain exception - may terminate the process.
         KodoDiagnostics.LogCritical("AppDomain.UnhandledException", exception, e.IsTerminating);
