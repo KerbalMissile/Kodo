@@ -223,6 +223,125 @@
             <Setter Property="FontSize" Value="10" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
+
+        <!-- Extension type tag (Language/Theme/...) - quiet eyebrow pill, same
+             recipe as the tutorial's section-title pill: ButtonBrush fill, accent text.
+             Colors are NOT set here - this style is reused inside item templates whose
+             DataContext is the extension, not the window, so Background/Foreground are
+             always set explicitly per usage with a #RootWindow reference instead. -->
+        <Style Selector="Border.extensiontag">
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.extensiontag TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <!-- "Installed" status pill for the Marketplace tab - quiet/neutral so it
+             doesn't compete with the accent-filled primary action button. Same rule as
+             above: no colors here, set explicitly per usage. -->
+        <Style Selector="Border.installedtag">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.installedtag TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <!-- "Install" action button - styled to match the Installed pill above instead of
+             an accent-filled button, so the two read as matched states. Colors are NOT
+             set here for the same reason as Border.installedtag: this button lives inside
+             the marketplace item template, whose DataContext is the extension, not the
+             window, so a plain {Binding AccentBrush} (as Button.marketaction used) resolves
+             against the item and silently fails, leaving the button unstyled (black).
+             Background/BorderBrush/Foreground are set explicitly per usage with
+             #RootWindow references instead - those use ElementName, not DataContext, so
+             they resolve correctly regardless of what the button sits inside. -->
+        <Style Selector="Button.marketinstall">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.marketinstall:pointerover">
+            <Setter Property="Background" Value="{Binding #RootWindow.ButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding #RootWindow.AccentBrush}" />
+        </Style>
+        <Style Selector="Button.marketinstall:disabled">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
+
+        <!-- Extensions page hero stat chip - small metric card used in the page header
+             (Installed / Updates / Marketplace counts). Quiet surface by default; the
+             "accented" variant (updates available) borrows the marketplace tile's
+             accent-on-hover treatment so it reads as "needs attention". -->
+        <Style Selector="Border.extstatchip">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="14,10" />
+            <Setter Property="MinWidth" Value="96" />
+        </Style>
+        <Style Selector="Border.extstatchip.accented">
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+        </Style>
+        <Style Selector="TextBlock.extstatvalue">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+        </Style>
+        <Style Selector="TextBlock.extstatlabel">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+        </Style>
+
+        <!-- Card that wraps the Installed tab's rows, giving the management list the
+             same elevated-surface language as the Marketplace tiles (and Home/Settings)
+             instead of floating loose against the page background. -->
+        <Style Selector="Border.extensionlistcard">
+            <Setter Property="Background" Value="{Binding CardBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="6" />
+        </Style>
+
+        <!-- Installed-extension list row: flat, hover-highlighted - a management list,
+             deliberately distinct from the Marketplace card grid below. Hover now matches
+             every other hover surface in the app (ButtonHoverBrush, not the resting
+             ButtonBrush it used before). -->
+        <Style Selector="Border.extensionrow">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="14,13" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+        </Style>
+        <Style Selector="Border.extensionrow:pointerover">
+            <Setter Property="Background" Value="{Binding #RootWindow.ButtonHoverBrush}" />
+        </Style>
+
+        <!-- Marketplace extension tile: a product card in a responsive grid - the
+             storefront counterpart to the Installed tab's management rows. -->
+        <Style Selector="Border.extensiontile">
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="Padding" Value="18,16" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Margin" Value="6" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Border.extensiontile:pointerover">
+            <Setter Property="BorderBrush" Value="{Binding #RootWindow.AccentBrush}" />
+        </Style>
+
         <Style Selector="Button.activity">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
@@ -2243,7 +2362,7 @@
                                                             Click="OpenTerminalSessionButton_OnClick"
                                                             Background="Transparent"
                                                             Padding="14,10,36,10">
-                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                                             <Border Width="7"
                                                                     Height="7"
                                                                     CornerRadius="4"
@@ -2251,12 +2370,15 @@
                                                                     Background="{Binding StatusDotColor}"
                                                                     ToolTip.Tip="{Binding StatusText}" />
                                                             <TextBlock FontSize="13"
+                                                                       VerticalAlignment="Center"
                                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                        Text="{Binding Title}" />
                                                             <TextBlock FontSize="11"
+                                                                       VerticalAlignment="Center"
                                                                        Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                        Text="{Binding ShellDisplayName}" />
                                                             <TextBlock FontSize="11"
+                                                                       VerticalAlignment="Center"
                                                                        Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                        Opacity="0.6"
                                                                        Text="{Binding StatusText}" />
@@ -3286,41 +3408,68 @@
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="24,18">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Spacing="4">
-                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                <Border Width="3" Height="32" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                <TextBlock FontSize="28"
-                                           FontWeight="SemiBold"
-                                           Foreground="{Binding PrimaryTextBrush}"
-                                           VerticalAlignment="Center"
-                                           Text="Extensions" />
+                    <StackPanel Spacing="16">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="4">
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Border Width="3" Height="32" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                    <TextBlock FontSize="28"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="Extensions" />
+                                </StackPanel>
+                                <TextBlock FontSize="13"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           Text="Enhance Kodo with language support and themes" />
                             </StackPanel>
-                            <TextBlock FontSize="13"
-                                       Foreground="{Binding MutedTextBrush}"
-                                       Text="Enhance Kodo with language support and themes" />
-                        </StackPanel>
 
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                            <Button Classes="chrome"
-                                    Click="RefreshExtensionsButton_OnClick"
-                                    IsEnabled="{Binding !IsRefreshingExtensions}"
-                                    ToolTip.Tip="Reload extensions from disk and marketplace"
-                                    Content="{Binding RefreshExtensionsButtonText}" />
-                            <Button Classes="chrome"
-                                    Click="OpenExtensionsFolderButton_OnClick"
-                                    ToolTip.Tip="Open the local Extensions folder"
-                                    Content="Open Folder" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                                <Button Classes="chrome"
+                                        Click="RefreshExtensionsButton_OnClick"
+                                        IsEnabled="{Binding !IsRefreshingExtensions}"
+                                        ToolTip.Tip="Reload extensions from disk and marketplace"
+                                        Content="{Binding RefreshExtensionsButtonText}" />
+                                <Button Classes="chrome"
+                                        Click="OpenExtensionsFolderButton_OnClick"
+                                        ToolTip.Tip="Open the local Extensions folder"
+                                        Content="Open Folder" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Quick-glance stats - installed count, pending updates (accented
+                             when non-zero), and marketplace size. Same metric-chip language
+                             the home screen uses for its own summary numbers. -->
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Border Classes="extstatchip">
+                                <StackPanel Spacing="0">
+                                    <TextBlock Classes="extstatvalue" Text="{Binding InstalledExtensionsCount}" />
+                                    <TextBlock Classes="extstatlabel" Text="Installed" />
+                                </StackPanel>
+                            </Border>
+                            <Border Classes="extstatchip" Classes.accented="{Binding IsExtensionUpdateBannerVisible}">
+                                <StackPanel Spacing="0">
+                                    <TextBlock Classes="extstatvalue" Text="{Binding AvailableExtensionUpdatesCount}" />
+                                    <TextBlock Classes="extstatlabel" Text="Updates" />
+                                </StackPanel>
+                            </Border>
+                            <Border Classes="extstatchip">
+                                <StackPanel Spacing="0">
+                                    <TextBlock Classes="extstatvalue" Text="{Binding MarketplaceExtensions.Count}" />
+                                    <TextBlock Classes="extstatlabel" Text="In Marketplace" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
-                    </Grid>
+                    </StackPanel>
                 </Border>
 
                 <ScrollViewer Grid.Row="1"
+                              Name="ExtensionsScrollViewer"
                               Padding="24"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="12" Margin="0,0,0,96">
-                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+                    <StackPanel Spacing="14" Margin="0,0,0,96">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Classes="tab"
                                     Classes.tabactive="{Binding IsInstalledTabSelected}"
                                     Click="InstalledTabButton_OnClick"
@@ -3331,22 +3480,50 @@
                                     Content="Marketplace" />
                         </StackPanel>
 
-                        <TextBlock Foreground="{Binding MutedTextBrush}"
-                                   TextWrapping="Wrap"
-                                   Margin="0,0,0,8"
-                                   Text="{Binding ExtensionsStatusText}" />
-
-                        <Grid ColumnDefinitions="*,Auto,Auto"
-                              ColumnSpacing="10"
-                              Margin="0,0,0,4">
+                        <Grid ColumnDefinitions="*,Auto,Auto,Auto"
+                              ColumnSpacing="10">
                             <TextBox Grid.Column="0"
                                      Text="{Binding ExtensionSearchText, Mode=TwoWay}"
                                      PlaceholderText="Search extensions..."
                                      Background="{Binding ButtonBrush}"
                                      Foreground="{Binding PrimaryTextBrush}"
                                      BorderBrush="{Binding SurfaceBorderBrush}"
-                                     Padding="10,8" />
+                                     CornerRadius="10"
+                                     Height="36"
+                                     Padding="12,0"
+                                     VerticalContentAlignment="Center" />
+                            <!-- Type filter: All / Themes / Languages - Marketplace tab only, defaults to All. -->
                             <Border Grid.Column="1"
+                                    MinWidth="96"
+                                    MaxWidth="180"
+                                    IsVisible="{Binding IsMarketplaceTabSelected}"
+                                    Background="{Binding ButtonBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="10"
+                                    Height="36"
+                                    Padding="6,0"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Left">
+                                <ComboBox ItemsSource="{Binding ExtensionTypeFilterOptions}"
+                                          SelectedItem="{Binding SelectedExtensionTypeFilter, Mode=TwoWay}"
+                                          MinWidth="0"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Center"
+                                          HorizontalContentAlignment="Left"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          FontSize="13"
+                                          Foreground="{Binding PrimaryTextBrush}">
+                                    <ComboBox.Styles>
+                                        <Style Selector="ComboBoxItem">
+                                            <Setter Property="Background" Value="{Binding #RootWindow.ButtonBrush}" />
+                                            <Setter Property="Foreground" Value="{Binding #RootWindow.PrimaryTextBrush}" />
+                                        </Style>
+                                    </ComboBox.Styles>
+                                </ComboBox>
+                            </Border>
+                            <Border Grid.Column="2"
                                     MinWidth="96"
                                     MaxWidth="220"
                                     Background="{Binding ButtonBrush}"
@@ -3375,7 +3552,7 @@
                                     </ComboBox.Styles>
                                 </ComboBox>
                             </Border>
-                            <Button Grid.Column="2"
+                            <Button Grid.Column="3"
                                     Classes="chrome"
                                     Click="UpdateAllMarketplaceExtensionsButton_OnClick"
                                     IsEnabled="{Binding CanUpdateAllExtensions}"
@@ -3383,16 +3560,12 @@
                                     Content="{Binding UpdateAllExtensionsButtonText}" />
                         </Grid>
 
-                        <StackPanel IsVisible="{Binding IsInstalledTabSelected}">
+                        <StackPanel IsVisible="{Binding IsInstalledTabSelected}" Spacing="12">
+                            <Border Classes="extensionlistcard" IsVisible="{Binding HasVisibleInstalledExtensions}">
                             <ItemsControl ItemsSource="{Binding FilteredInstalledExtensions}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodo:LoadedExtension">
-                                        <Border Background="{Binding #RootWindow.CardBrush}"
-                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                BorderThickness="1"
-                                                CornerRadius="12"
-                                                Padding="16"
-                                                Margin="0,0,0,8">
+                                        <Border Classes="extensionrow">
                                             <ToolTip.Tip>
                                                 <StackPanel Spacing="2">
                                                     <TextBlock Text="{Binding Name}"
@@ -3403,46 +3576,83 @@
                                                                Opacity="0.7" />
                                                 </StackPanel>
                                             </ToolTip.Tip>
-                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
+                                                <!-- Signature accent bar - the same anchor motif used on every
+                                                     section header, repurposed here as the row's identity mark. -->
+                                                <Border Grid.Column="0"
+                                                        Width="3"
+                                                        VerticalAlignment="Stretch"
+                                                        CornerRadius="2"
+                                                        Background="{Binding #RootWindow.AccentBrush}" />
+
                                                 <!-- Icon: image if available, accent box with abbreviation otherwise -->
-                                                <Border Width="48" Height="48" CornerRadius="8" Background="{Binding #RootWindow.AccentBrush}" Margin="0,0,16,0"
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                        Background="{Binding #RootWindow.AccentBrush}"
                                                         IsVisible="{Binding !HasIcon}">
                                                     <TextBlock HorizontalAlignment="Center"
                                                                VerticalAlignment="Center"
-                                                               FontSize="14"
+                                                               FontSize="13"
                                                                FontWeight="SemiBold"
                                                                Foreground="{Binding #RootWindow.AccentForegroundBrush}"
                                                                Text="{Binding NameAbbreviation}" />
                                                 </Border>
-                                                <Border Width="48" Height="48" CornerRadius="8" Margin="0,0,16,0"
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
                                                         IsVisible="{Binding HasIcon}"
                                                         ClipToBounds="True">
                                                     <Panel>
                                                         <Image Source="{Binding IconImage}"
-                                                               Width="48"
-                                                               Height="48"
+                                                               Width="40"
+                                                               Height="40"
                                                                Stretch="Uniform"
                                                                IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
                                                         <svg:Svg Source="{Binding SvgData}"
-                                                                 Width="48"
-                                                                 Height="48"
+                                                                 Width="40"
+                                                                 Height="40"
                                                                  IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
                                                     </Panel>
                                                 </Border>
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                    <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" Text="{Binding Name}" />
-                                                    <TextBlock FontSize="12" Foreground="{Binding #RootWindow.MutedTextBrush}" Text="{Binding Description}" TextWrapping="Wrap" />
+
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <TextBlock FontSize="14"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="{Binding Name}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <Border Classes="extensiontag"
+                                                                Background="{Binding #RootWindow.ButtonBrush}"
+                                                                IsVisible="{Binding Type, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                                            <TextBlock Text="{Binding Type}"
+                                                                       Foreground="{Binding #RootWindow.AccentBrush}" />
+                                                        </Border>
+                                                    </StackPanel>
+                                                    <TextBlock FontSize="12"
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                               Text="{Binding Description}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               MaxLines="1" />
                                                 </StackPanel>
-                                                <StackPanel Grid.Column="2"
-                                                            Spacing="8"
+
+                                                <StackPanel Grid.Column="3"
+                                                            Orientation="Horizontal"
+                                                            Spacing="14"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center">
-                                                    <TextBlock HorizontalAlignment="Right"
-                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                               Text="{Binding Version}" />
                                                     <StackPanel Orientation="Horizontal"
+                                                                Spacing="6"
                                                                 HorizontalAlignment="Right"
-                                                                Spacing="8">
+                                                                VerticalAlignment="Center">
+                                                        <Border Width="6" Height="6" CornerRadius="3"
+                                                                Background="{Binding #RootWindow.AccentBrush}"
+                                                                VerticalAlignment="Center"
+                                                                IsVisible="{Binding IsUpdateAvailable}"
+                                                                ToolTip.Tip="Update available" />
+                                                        <TextBlock Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   FontSize="12"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Version}" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                                         <Button Classes="chrome"
                                                                 Tag="{Binding}"
                                                                 Click="UpdateInstalledExtensionButton_OnClick"
@@ -3459,31 +3669,73 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       FontStyle="Italic"
-                                       Margin="0,16,0,0"
-                                       Text="No extensions installed."
-                                       IsVisible="{Binding IsNoExtensionsVisible}" />
+                            </Border>
+                            <Border Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="20"
+                                    IsVisible="{Binding IsNoExtensionsVisible}">
+                                <StackPanel Spacing="4" HorizontalAlignment="Center">
+                                    <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Text="No extensions installed" />
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               Text="Browse the Marketplace to add language support and themes." />
+                                </StackPanel>
+                            </Border>
+                            <!-- Search active, but nothing installed matches it - previously
+                                 indistinguishable from "no extensions installed" above, which
+                                 also incorrectly stayed hidden/shown regardless of search text. -->
+                            <Border Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="20"
+                                    IsVisible="{Binding IsInstalledSearchEmptyVisible}">
+                                <StackPanel Spacing="4" HorizontalAlignment="Center">
+                                    <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Text="No matches" />
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               Text="No installed extensions match your search." />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <StackPanel IsVisible="{Binding IsMarketplaceTabSelected}">
                             <!-- Full failure: no entries loaded -->
-                            <StackPanel IsVisible="{Binding IsMarketplaceUnavailableVisible}"
-                                        HorizontalAlignment="Center"
-                                        Spacing="8"
-                                        Margin="0,32,0,16">
-                                <TextBlock Foreground="{Binding PrimaryTextBrush}"
-                                           FontSize="15"
-                                           FontWeight="SemiBold"
-                                           HorizontalAlignment="Center"
-                                           Text="Marketplace Unavailable" />
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           FontSize="13"
-                                           HorizontalAlignment="Center"
-                                           TextAlignment="Center"
-                                           TextWrapping="Wrap"
-                                           Text="The Marketplace is currently unavailable. Please wait a few minutes." />
-                            </StackPanel>
+                            <Border Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="20"
+                                    Margin="0,0,0,12"
+                                    IsVisible="{Binding IsMarketplaceUnavailableVisible}">
+                                <StackPanel Spacing="4" HorizontalAlignment="Center">
+                                    <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Text="Marketplace unavailable" />
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               Text="The Marketplace is currently unavailable. Please wait a few minutes." />
+                                </StackPanel>
+                            </Border>
                             <!-- Partial failure: some entries loaded but some failed -->
                             <Border Background="{Binding ButtonBrush}"
                                     BorderBrush="{Binding AccentBrush}"
@@ -3493,103 +3745,191 @@
                                     Margin="0,0,0,12"
                                     IsVisible="{Binding IsMarketplacePartialErrorVisible}">
                                 <StackPanel Spacing="4">
-                                    <TextBlock FontSize="13"
-                                               FontWeight="SemiBold"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               Text="Marketplace Error" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <Border Width="3" Height="16" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                        <TextBlock FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Marketplace error" />
+                                    </StackPanel>
                                     <TextBlock Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
                                                Text="{Binding MarketplaceConnectivityMessage}" />
                                 </StackPanel>
                             </Border>
                             <ItemsControl ItemsSource="{Binding FilteredMarketplaceExtensions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="5" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodo:MarketplaceExtension">
-                                        <Border Background="{Binding #RootWindow.CardBrush}"
-                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                BorderThickness="1"
-                                                CornerRadius="12"
-                                                Padding="16"
-                                                Margin="0,0,0,8">
-                                            <Grid ColumnDefinitions="Auto,*,Auto">
-                                                <!-- Icon: image if available, accent box with abbreviation otherwise -->
-                                                <Border Width="48" Height="48" CornerRadius="8"
-                                                        Background="{Binding #RootWindow.AccentBrush}"
-                                                        Margin="0,0,16,0"
-                                                        IsVisible="{Binding !HasIcon}">
-                                                    <TextBlock HorizontalAlignment="Center"
-                                                               VerticalAlignment="Center"
-                                                               FontSize="14"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{Binding #RootWindow.AccentForegroundBrush}"
-                                                               Text="{Binding NameAbbreviation}" />
-                                                </Border>
-                                                <Border Width="48" Height="48" CornerRadius="8"
-                                                        Margin="0,0,16,0"
-                                                        IsVisible="{Binding HasIcon}"
-                                                        ClipToBounds="True">
-                                                    <Panel>
-                                                        <Image Source="{Binding IconImage}"
-                                                               Width="48"
-                                                               Height="48"
-                                                               Stretch="Uniform"
-                                                               IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                                        <svg:Svg Source="{Binding SvgData}"
-                                                                 Width="48"
-                                                                 Height="48"
-                                                                 IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                                    </Panel>
-                                                </Border>
-
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                                                    <TextBlock FontSize="16"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                               Text="{Binding Name}" />
-                                                    <TextBlock FontSize="12"
-                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                               Text="{Binding Description}"
-                                                               TextWrapping="Wrap" />
-                                                    <TextBlock FontSize="12"
-                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                               Text="{Binding Author}" />
-                                                </StackPanel>
-
-                                                <StackPanel Grid.Column="2"
-                                                            Spacing="8"
-                                                            HorizontalAlignment="Right"
-                                                            VerticalAlignment="Center">
-                                                    <TextBlock HorizontalAlignment="Right"
-                                                               VerticalAlignment="Center"
-                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                               Text="{Binding Version}" />
-                                                    <StackPanel Orientation="Horizontal"
-                                                                HorizontalAlignment="Right"
-                                                                Spacing="8"
-                                                                IsVisible="{Binding !IsInstalled}">
-                                                        <!-- Update button: mirrors chrome "Update" in Installed tab -->
-                                                        <Button Classes="chrome"
-                                                                Tag="{Binding}"
-                                                                Click="InstallMarketplaceExtensionButton_OnClick"
-                                                                Content="Update"
-                                                                IsVisible="{Binding IsUpdateAvailable}" />
-                                                        <!-- Install button (not yet installed) -->
-                                                        <Button Classes="uninstall"
-                                                                Tag="{Binding}"
-                                                                Click="InstallMarketplaceExtensionButton_OnClick"
-                                                                Content="{Binding InstallButtonText}" />
+                                        <Border Classes="extensiontile"
+                                                Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodo:MarketplaceTileWidthConverter.Instance}}"
+                                                Background="{Binding #RootWindow.CardBrush}"
+                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}">
+                                            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
+                                                <!-- Header row: icon left, name/type stacked beside it -->
+                                                <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="12"
+                                                            Background="{Binding #RootWindow.AccentBrush}"
+                                                            IsVisible="{Binding !HasIcon}">
+                                                        <TextBlock HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   FontSize="15"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                                                   Text="{Binding NameAbbreviation}" />
+                                                    </Border>
+                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="12"
+                                                            IsVisible="{Binding HasIcon}"
+                                                            ClipToBounds="True">
+                                                        <Panel>
+                                                            <Image Source="{Binding IconImage}"
+                                                                   Width="52"
+                                                                   Height="52"
+                                                                   Stretch="Uniform"
+                                                                   IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                            <svg:Svg Source="{Binding SvgData}"
+                                                                     Width="52"
+                                                                     Height="52"
+                                                                     IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                        </Panel>
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                                        <TextBlock FontSize="15"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="{Binding Name}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <Border Classes="extensiontag"
+                                                                HorizontalAlignment="Left"
+                                                                Background="{Binding #RootWindow.ButtonBrush}"
+                                                                IsVisible="{Binding Type, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                                            <TextBlock Text="{Binding Type}"
+                                                                       Foreground="{Binding #RootWindow.AccentBrush}" />
+                                                        </Border>
                                                     </StackPanel>
-                                                </StackPanel>
+                                                </Grid>
+
+                                                <!-- Author / version -->
+                                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+                                                    <TextBlock Grid.Column="0"
+                                                               FontSize="11"
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                               Text="{Binding Author}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                        <Border Width="6" Height="6" CornerRadius="3"
+                                                                Background="{Binding #RootWindow.AccentBrush}"
+                                                                VerticalAlignment="Center"
+                                                                IsVisible="{Binding IsUpdateAvailable}"
+                                                                ToolTip.Tip="Update available" />
+                                                        <TextBlock FontSize="11"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   Text="{Binding Version}" />
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <!-- Description fills remaining tile height, clamped to 3 lines -->
+                                                <TextBlock Grid.Row="2"
+                                                           FontSize="12"
+                                                           Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                           Text="{Binding Description}"
+                                                           TextWrapping="Wrap"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           MaxLines="3" />
+
+                                                <!-- Primary action, pinned to the tile's bottom edge -->
+                                                <Grid Grid.Row="3">
+                                                    <!-- Quiet status pill: already installed, nothing to update -->
+                                                    <Border Classes="installedtag"
+                                                            HorizontalAlignment="Stretch"
+                                                            Opacity="0.7"
+                                                            Background="{Binding #RootWindow.ButtonBrush}"
+                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                            IsVisible="{Binding ShowInstalledBadge}">
+                                                        <TextBlock HorizontalAlignment="Center"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="Installed" />
+                                                    </Border>
+                                                    <!-- Update button: installed, newer version available -->
+                                                    <Button Classes="chrome"
+                                                            HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Center"
+                                                            Background="{Binding #RootWindow.ButtonBrush}"
+                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                            Tag="{Binding}"
+                                                            Click="InstallMarketplaceExtensionButton_OnClick"
+                                                            IsEnabled="{Binding IsInstallEnabled}"
+                                                            Content="{Binding InstallButtonText}"
+                                                            IsVisible="{Binding IsUpdateAvailable}" />
+                                                    <!-- Install button: primary action, not yet installed -->
+                                                    <Button Classes="marketinstall"
+                                                            HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Center"
+                                                            Background="{Binding #RootWindow.ButtonBrush}"
+                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                            Tag="{Binding}"
+                                                            Click="InstallMarketplaceExtensionButton_OnClick"
+                                                            IsEnabled="{Binding IsInstallEnabled}"
+                                                            Content="{Binding InstallButtonText}"
+                                                            IsVisible="{Binding !IsInstalled}" />
+                                                </Grid>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       FontStyle="Italic"
-                                       Margin="0,16,0,0"
-                                       Text="No marketplace extensions found."
-                                       IsVisible="{Binding IsMarketplaceEmptyVisible}" />
+                            <!-- True empty state: the index loaded successfully but has nothing
+                                 in it (distinct from IsMarketplaceUnavailableVisible above, which
+                                 covers fetch/connectivity failure instead). -->
+                            <Border Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="20"
+                                    Margin="0,4,0,0"
+                                    IsVisible="{Binding IsMarketplaceEmptyVisible}">
+                                <StackPanel Spacing="4" HorizontalAlignment="Center">
+                                    <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Text="Nothing here yet" />
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               Text="The Marketplace has no extensions listed right now." />
+                                </StackPanel>
+                            </Border>
+                            <!-- Search active, but nothing in the marketplace matches it - this used
+                                 to be wired to IsMarketplaceEmptyVisible above, so it only ever fired
+                                 when the marketplace was completely empty, never on a search miss. -->
+                            <Border Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="20"
+                                    Margin="0,4,0,0"
+                                    IsVisible="{Binding IsMarketplaceSearchEmptyVisible}">
+                                <StackPanel Spacing="4" HorizontalAlignment="Center">
+                                    <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Text="No matches" />
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               Text="No marketplace extensions found. Try a different search." />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
@@ -4055,6 +4395,12 @@
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="New terminal sessions use the selected shell. PowerShell is preferred when it is available." />
+                                <CheckBox IsChecked="{Binding IsPSReadLinePredictionEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Enable PSReadLine predictive IntelliSense in PowerShell" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Off by default - it can render as glitchy artifacts in the terminal. Applies to new terminal sessions." />
                             </StackPanel>
                         </Border>
 
@@ -4341,47 +4687,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Help -->
-                        <Border Background="{Binding CardBrush}"
-                                BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="16"
-                                Padding="24">
-                            <StackPanel Spacing="14">
-                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                        <TextBlock FontSize="18"
-                                            FontWeight="SemiBold"
-                                            Foreground="{Binding PrimaryTextBrush}"
-                                            VerticalAlignment="Center"
-                                            Text="Help" />
-                                </StackPanel>
-
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Classes="chrome"
-                                            Click="OpenTutorialButton_OnClick"
-                                            ToolTip.Tip="Launch the built-in Kodo tutorial"
-                                            Content="Open Tutorial" />
-                                    <Button Classes="chrome"
-                                            Click="OpenDiscordButton_OnClick"
-                                            ToolTip.Tip="Join the Kodo community on Discord">
-                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                            <TextBlock Text="Join the Discord Server"
-                                                       VerticalAlignment="Center" />
-                                        </StackPanel>
-                                    </Button>
-                                    <Button Classes="chrome"
-                                            Click="OpenWebsiteButton_OnClick"
-                                            ToolTip.Tip="Open the Kodo website in your browser"
-                                            Content="Visit Website" />
-                                    <Button Classes="chrome"
-                                            Click="ViewShortcutsButton_OnClick"
-                                            ToolTip.Tip="View all available keyboard shortcuts"
-                                            Content="View Shortcuts" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
                         <!-- Developer Options -->
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -4453,6 +4758,47 @@
                                                TextWrapping="Wrap"
                                                IsVisible="{Binding HasDeveloperOptionsStatus}"
                                                Text="{Binding DeveloperOptionsStatusText}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Help -->
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="24">
+                            <StackPanel Spacing="14">
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                        <TextBlock FontSize="18"
+                                            FontWeight="SemiBold"
+                                            Foreground="{Binding PrimaryTextBrush}"
+                                            VerticalAlignment="Center"
+                                            Text="Help" />
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="chrome"
+                                            Click="OpenTutorialButton_OnClick"
+                                            ToolTip.Tip="Launch the built-in Kodo tutorial"
+                                            Content="Open Tutorial" />
+                                    <Button Classes="chrome"
+                                            Click="OpenDiscordButton_OnClick"
+                                            ToolTip.Tip="Join the Kodo community on Discord">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <TextBlock Text="Join the Discord Server"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Classes="chrome"
+                                            Click="OpenWebsiteButton_OnClick"
+                                            ToolTip.Tip="Open the Kodo website in your browser"
+                                            Content="Visit Website" />
+                                    <Button Classes="chrome"
+                                            Click="ViewShortcutsButton_OnClick"
+                                            ToolTip.Tip="View all available keyboard shortcuts"
+                                            Content="View Shortcuts" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>

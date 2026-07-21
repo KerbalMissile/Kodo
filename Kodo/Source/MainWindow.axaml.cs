@@ -163,7 +163,9 @@ public class FileTreeItem : INotifyPropertyChanged
 			    ".ts" or ".tsx" => "TS",
 			    ".vue" or ".svelte" => "UI",
 			    ".css" or ".scss" or ".less" => "CSS",
-			    ".sh" or ".bat" or ".ps1" => ">_",
+			    ".sh" => "SH",
+			    ".bat" => "BAT",
+			    ".ps1" => "PS1",
 			    ".zip" or ".tar" or ".gz" or ".rar" => "ZIP",
 			    ".cpp" or ".cc" or ".cxx" => "C++",
 			    ".c" => "C",
@@ -416,6 +418,13 @@ public static class ExtensionSortModes
     public const string UpdatesAvailable = "Updates Available";
 }
 
+public static class ExtensionTypeFilters
+{
+    public const string All = "All";
+    public const string Themes = "Themes";
+    public const string Languages = "Languages";
+}
+
 public enum ExplorerClipboardMode
 {
     Copy,
@@ -491,6 +500,7 @@ public class MarketplaceExtension : INotifyPropertyChanged
             if (_isUpdateAvailable == value) return;
             _isUpdateAvailable = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowInstalledBadge));
         }
     }
 
@@ -518,6 +528,9 @@ public class MarketplaceExtension : INotifyPropertyChanged
 
     public bool IsInstallEnabled => !IsInstalling && (!IsInstalled || IsUpdateAvailable) && !string.IsNullOrWhiteSpace(DownloadUrl);
 
+    // Installed with nothing to update - shown as a quiet status pill instead of an action button.
+    public bool ShowInstalledBadge => IsInstalled && !IsUpdateAvailable;
+
     public string InstallButtonText
     {
         get => _installButtonText;
@@ -540,6 +553,7 @@ public class MarketplaceExtension : INotifyPropertyChanged
         {
             IsInstalled = isInstalled;
             OnPropertyChanged(nameof(IsInstalled));
+            OnPropertyChanged(nameof(ShowInstalledBadge));
         }
 
         if (!IsInstalling)
@@ -753,6 +767,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _extensionSearchText = string.Empty;
     private string _selectedInstalledExtensionSort = ExtensionSortModes.Alphabetical;
     private string _selectedMarketplaceExtensionSort = ExtensionSortModes.Alphabetical;
+    private string _selectedExtensionTypeFilter = ExtensionTypeFilters.All;
     // Personalization, persisted in settings.json (empty/0 = auto-detect).
     private string _userCountry = string.Empty;
     private int    _userHemisphere = 0;
@@ -766,9 +781,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Tracks the subscribed SessionExited handler so it can be unsubscribed before a new one attaches on Start().
     private EventHandler<IntPtr>? _activeSessionExitedHandler;
     private TerminalShellOption? _selectedTerminalShell;
-    private int _nextTerminalNumber = 1;
     private bool _isTerminalVisible;
     private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+    // Off by default - see AppSettings.PSReadLinePredictionEnabled.
+    private bool _isPSReadLinePredictionEnabled;
     private double _terminalPanelHeight = AppSettings.DefaultTerminalPanelHeight;
     private bool _isResizingTerminalPanel;
     private double _terminalPanelDragStartPointerY;
@@ -1055,7 +1071,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
         // TerminalHostControl is shared across sessions (snapshot/restore), so one subscription for the window's lifetime is enough.
-        TerminalHostControl.TitleChanged += TerminalHostControl_OnTitleChanged;
+        // Not subscribing to TerminalHostControl.TitleChanged: tab titles are derived from the
+        // workspace/working directory (see CreateTerminalSession), not the shell's self-reported
+        // OSC 0/2 title (which for PowerShell is just its own exe path, e.g. "...\v1.0\powershell.exe").
+        TerminalHostControl.WorkingDirectoryChanged += TerminalHostControl_OnWorkingDirectoryChanged;
         FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
@@ -1114,6 +1133,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .Distinct(StringComparer.OrdinalIgnoreCase));
         _startupActiveTabPath = settings.ActiveTabPath;
         LoadRecentFiles(settings.RecentFiles);
+        _isPSReadLinePredictionEnabled = settings.PSReadLinePredictionEnabled;
         RefreshAvailableTerminalShells(settings.PreferredTerminalShellId);
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
@@ -2117,6 +2137,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         OnPropertyChanged(nameof(FilteredInstalledExtensions));
         OnPropertyChanged(nameof(FilteredMarketplaceExtensions));
+        OnPropertyChanged(nameof(IsNoExtensionsVisible));
+        OnPropertyChanged(nameof(IsInstalledSearchEmptyVisible));
+        OnPropertyChanged(nameof(IsMarketplaceSearchEmptyVisible));
+        OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
+        OnPropertyChanged(nameof(InstalledExtensionsCount));
+        OnPropertyChanged(nameof(InstalledTabLabel));
+        OnPropertyChanged(nameof(MarketplaceTabLabel));
+        OnPropertyChanged(nameof(HasVisibleInstalledExtensions));
+        OnPropertyChanged(nameof(HasVisibleMarketplaceExtensions));
     }
 
     private void NotifyExtensionActionStateChanged()
@@ -3935,7 +3964,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IEnumerable<LoadedExtension> VisibleLoadedExtensions =>
         LoadedExtensions.Where(e => !e.IsThemeSubEntry);
 
-    public bool IsNoExtensionsVisible => !VisibleLoadedExtensions.Any();
+    // Only the true "nothing installed" empty state - hidden while a search is
+    // active so it can't stomp on the "no matches" state below.
+    public bool IsNoExtensionsVisible =>
+        !VisibleLoadedExtensions.Any() && string.IsNullOrWhiteSpace(_extensionSearchText);
+
+    public int InstalledExtensionsCount => VisibleLoadedExtensions.Count();
+    // Drives whether the Installed/Marketplace list cards render at all, so an
+    // empty result (no installed extensions yet, or a search with zero matches)
+    // doesn't leave a hollow, padded card floating above the empty-state message.
+    public bool HasVisibleInstalledExtensions => FilteredInstalledExtensions.Any();
+    public bool HasVisibleMarketplaceExtensions => FilteredMarketplaceExtensions.Any();
+    public string InstalledTabLabel => $"Installed ({InstalledExtensionsCount})";
+    public string MarketplaceTabLabel => $"Marketplace ({MarketplaceExtensions.Count})";
 
     public IEnumerable<LoadedExtension> ThemeExtensions =>
         LoadedExtensions.Where(e => e.Type.Equals("theme", StringComparison.OrdinalIgnoreCase) && e.ThemeDefinition is not null);
@@ -4025,6 +4066,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _selectedInstalledExtensionSort = normalized;
             }
 
+            OnPropertyChanged();
+            NotifyExtensionFiltersChanged();
+        }
+    }
+
+    public IReadOnlyList<string> ExtensionTypeFilterOptions { get; } =
+    [
+        ExtensionTypeFilters.All,
+        ExtensionTypeFilters.Themes,
+        ExtensionTypeFilters.Languages
+    ];
+
+    public string SelectedExtensionTypeFilter
+    {
+        get => _selectedExtensionTypeFilter;
+        set
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? ExtensionTypeFilters.All : value;
+            if (string.Equals(_selectedExtensionTypeFilter, normalized, StringComparison.Ordinal))
+                return;
+
+            _selectedExtensionTypeFilter = normalized;
             OnPropertyChanged();
             NotifyExtensionFiltersChanged();
         }
@@ -4418,6 +4481,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsMarketplacePartialErrorVisible => MarketplaceExtensions.Count > 0 && IsMarketplaceConnectivityWarningVisible;
     public bool IsMarketplaceEmptyVisible => MarketplaceExtensions.Count == 0 && !IsRefreshingExtensions && !IsMarketplaceConnectivityWarningVisible;
 
+    // Search produced zero results but the underlying list isn't actually empty -
+    // distinct from IsNoExtensionsVisible/IsMarketplaceEmptyVisible above, which
+    // previously fired (or failed to fire) regardless of the active search text.
+    public bool IsInstalledSearchEmptyVisible =>
+        !string.IsNullOrWhiteSpace(_extensionSearchText) &&
+        VisibleLoadedExtensions.Any() &&
+        !FilteredInstalledExtensions.Any();
+
+    public bool IsMarketplaceSearchEmptyVisible =>
+        (!string.IsNullOrWhiteSpace(_extensionSearchText) || _selectedExtensionTypeFilter != ExtensionTypeFilters.All) &&
+        MarketplaceExtensions.Any() &&
+        !FilteredMarketplaceExtensions.Any();
+
     public bool IsMarketplaceConnectivityWarningVisible
     {
         get => _isMarketplaceConnectivityWarningVisible;
@@ -4659,6 +4735,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsPSReadLinePredictionEnabled
+    {
+        get => _isPSReadLinePredictionEnabled;
+        set
+        {
+            if (_isPSReadLinePredictionEnabled == value) return;
+            _isPSReadLinePredictionEnabled = value;
+            OnPropertyChanged();
+            // Rebuild the shell list so the launch arguments pick up the new setting;
+            // sessions already running are unaffected until restarted.
+            RefreshAvailableTerminalShells(SelectedTerminalShell?.Id);
+            SaveSettings();
+        }
+    }
+
     public int TabSize
     {
         get => _tabSize;
@@ -4836,12 +4927,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         get
         {
-            var source = string.IsNullOrWhiteSpace(_extensionSearchText)
-                ? MarketplaceExtensions
-                : (IEnumerable<MarketplaceExtension>)MarketplaceExtensions.Where(e =>
+            IEnumerable<MarketplaceExtension> source = MarketplaceExtensions;
+
+            source = _selectedExtensionTypeFilter switch
+            {
+                ExtensionTypeFilters.Themes => source.Where(e =>
+                    string.Equals(e.Type, "theme", StringComparison.OrdinalIgnoreCase)),
+                ExtensionTypeFilters.Languages => source.Where(e =>
+                    string.Equals(e.Type, "language", StringComparison.OrdinalIgnoreCase)),
+                _ => source
+            };
+
+            if (!string.IsNullOrWhiteSpace(_extensionSearchText))
+            {
+                source = source.Where(e =>
                     e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
                     e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
                     e.Author.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
+            }
+
             return SortMarketplaceExtensions(source);
         }
     }
@@ -6190,6 +6294,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AutoUpdateAppEnabled                    = IsAutoUpdateAppEnabled,
             AutoUpdateAppInBackgroundEnabled         = IsAutoUpdateAppInBackgroundEnabled,
             PreferredTerminalShellId                = SelectedTerminalShell?.Id,
+            PSReadLinePredictionEnabled              = IsPSReadLinePredictionEnabled,
             TerminalVisible                         = IsTerminalVisible,
             TerminalPanelHeight                     = TerminalPanelHeight,
             HasCompletedTutorial                    = _hasCompletedTutorial,
@@ -7653,7 +7758,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         AvailableTerminalShells.Clear();
 
-        foreach (var shell in TerminalShellSupport.DetectTerminalShells())
+        foreach (var shell in TerminalShellSupport.DetectTerminalShells(_isPSReadLinePredictionEnabled))
             AvailableTerminalShells.Add(shell);
 
         SelectedTerminalShell = AvailableTerminalShells.FirstOrDefault(shell =>
@@ -7661,6 +7766,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ?? AvailableTerminalShells.FirstOrDefault(shell =>
                 string.Equals(shell.Id, "powershell", StringComparison.OrdinalIgnoreCase))
             ?? AvailableTerminalShells.FirstOrDefault();
+    }
+
+    /// <summary>Derives a tab-title-friendly name from the workspace/working-directory path (e.g. "Kodo" from ".../Kodo"), falling back to the shell name for root paths.</summary>
+    private static string GetWorkspaceDisplayName(string workingDirectory, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(workingDirectory))
+            return fallback;
+
+        var trimmed = workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var name = Path.GetFileName(trimmed);
+        return string.IsNullOrWhiteSpace(name) ? fallback : name;
     }
 
     private string ResolveTerminalWorkingDirectory()
@@ -7717,10 +7833,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
 
         var workingDirectory = ResolveTerminalWorkingDirectory();
-        var title = _nextTerminalNumber == 1 ? shell.DisplayName : $"{shell.DisplayName} {_nextTerminalNumber}";
-        _nextTerminalNumber++;
+        var workspaceName = GetWorkspaceDisplayName(workingDirectory, shell.DisplayName);
 
-        var session = new TerminalSession(shell.Id, shell.DisplayName, title, workingDirectory);
+        var session = new TerminalSession(shell.Id, shell.DisplayName, workspaceName, workingDirectory);
         StartTerminalProcess(session, shell);
 
         if (replaceExisting is not null)
@@ -7741,9 +7856,52 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             TerminalSessions.Add(session);
         }
 
+        RetitleTerminalSessions();
         ActiveTerminalSession = session;
         IsTerminalVisible = true;
         FocusActiveTerminal();
+    }
+
+    /// <summary>
+    /// Tracks the active session's live working directory (via the shell's OSC 1337 CWD reports,
+    /// see <see cref="TerminalShellSupport.DetectTerminalShells"/>) and keeps tab titles in sync
+    /// as the user cd's around.
+    /// </summary>
+    private void TerminalHostControl_OnWorkingDirectoryChanged(object? sender, string path)
+    {
+        if (ActiveTerminalSession is not { } session) return;
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
+        if (string.Equals(session.WorkingDirectory, path, StringComparison.OrdinalIgnoreCase)) return;
+
+        session.WorkingDirectory = path;
+        RetitleTerminalSessions();
+    }
+
+    /// <summary>
+    /// Recomputes auto-generated tab titles from each session's working-directory folder name.
+    /// The first session in a given directory keeps the bare name (e.g. "Kodo"); later sessions
+    /// sharing that same directory get " 2", " 3", etc., in tab order. Sessions the user has
+    /// renamed (<see cref="TerminalSession.HasCustomTitle"/>) are left untouched and don't
+    /// consume a slot in another session's numbering.
+    /// </summary>
+    private void RetitleTerminalSessions()
+    {
+        var seenCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var session in TerminalSessions)
+        {
+            if (session.HasCustomTitle)
+                continue;
+
+            var shell = AvailableTerminalShells.FirstOrDefault(s =>
+                string.Equals(s.Id, session.ShellId, StringComparison.OrdinalIgnoreCase));
+            var name = GetWorkspaceDisplayName(session.WorkingDirectory, shell?.DisplayName ?? session.ShellDisplayName);
+
+            seenCounts.TryGetValue(name, out var count);
+            count++;
+            seenCounts[name] = count;
+
+            session.ApplyAutoTitle(count == 1 ? name : $"{name} {count}");
+        }
     }
 
     private void StartTerminalProcess(TerminalSession session, TerminalShellOption shell)
@@ -7966,16 +8124,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var newName = await ShowRenameDialogAsync(session.Title);
         if (newName is null || string.Equals(newName, session.Title, StringComparison.Ordinal)) return;
         session.Title = newName;
-    }
-
-    // Reflects the shell's OSC 0/2 window-title into the tab; ApplyAutoTitle ignores this once the user has renamed it.
-    private void TerminalHostControl_OnTitleChanged(object? sender, string title)
-    {
-        if (ActiveTerminalSession is not { } session) return;
-
-        var trimmed = title.Trim();
-        if (trimmed.Length == 0) return;
-        session.ApplyAutoTitle(TerminalShellSupport.ExtractDisplayTitleFromShellTitle(trimmed));
     }
 
     private void DuplicateTerminalSessionMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -11946,6 +12094,39 @@ public sealed class BoolToFontWeightConverter : Avalonia.Data.Converters.IValueC
     public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+// Caps each marketplace tile's own Width at exactly 1/5th of the Extensions page's
+// available content width. The UniformGrid's fixed Columns="5" only sets how many
+// columns to lay out - it doesn't stop an individual tile's content from demanding
+// more width than its column actually has, which is what let the rightmost column
+// spill past the window edge. Setting this as the tile's explicit Width makes that
+// impossible: every tile is sized to fit, so 5 always fit the row exactly, at any
+// window size. Accounts for the ScrollViewer's own Padding="24" (48px total) and
+// the scrollbar gutter, then splits the remainder five ways, subtracting the tile's
+// own Margin="6" on each side (12px) so no column steals space from its neighbor.
+public sealed class MarketplaceTileWidthConverter : Avalonia.Data.Converters.IValueConverter
+{
+    public static readonly MarketplaceTileWidthConverter Instance = new();
+
+    private const int    Columns           = 5;
+    private const double HorizontalPadding = 48; // ScrollViewer Padding="24" on each side
+    private const double ScrollbarGutter   = 20; // room for the vertical scrollbar when visible
+    private const double TileMargin        = 12; // Border.extensiontile Margin="6" on each side
+    private const double MinTileWidth      = 120; // floor so tiles never collapse to nothing
+
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        if (value is not double width) return MinTileWidth;
+
+        var available = width - HorizontalPadding - ScrollbarGutter;
+        var perColumn = available / Columns - TileMargin;
+        return Math.Max(MinTileWidth, perColumn);
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 public sealed class NewsItem
 {
     public string Title     { get; init; } = string.Empty;
@@ -11989,6 +12170,9 @@ internal sealed class AppSettings
     // Sub-setting: defaults to false so Update Now/Later still shows.
     public bool AutoUpdateAppInBackgroundEnabled { get; set; }
     public string? PreferredTerminalShellId { get; set; }
+    // PSReadLine's predictive IntelliSense in the PowerShell terminal. Off by default - it
+    // used to cause rendering glitches in the ConPTY terminal; users can opt back in.
+    public bool PSReadLinePredictionEnabled { get; set; }
     public bool TerminalVisible { get; set; }
     public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
     public List<string> OpenTabPaths { get; set; } = [];

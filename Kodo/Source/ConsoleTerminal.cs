@@ -129,6 +129,9 @@ public sealed class ConsoleTerminal : Control
     /// <summary>Fired when the shell reports a new window title via OSC 0/2.</summary>
     public event EventHandler<string>? TitleChanged;
 
+    /// <summary>Fired when the shell reports its current working directory via OSC 1337;CurrentDir=&lt;path&gt; (emitted by the prompt hooks in <see cref="TerminalShellSupport.DetectTerminalShells"/>).</summary>
+    public event EventHandler<string>? WorkingDirectoryChanged;
+
     /// <summary>Start a shell. Stops any previously running session first.</summary>
     /// <param name="suppressOutputUntilRestored">
     /// Pass true when restoring a snapshot right after, so output is discarded until then.
@@ -927,17 +930,33 @@ public sealed class ConsoleTerminal : Control
     }
 
     // OSC payload is "<code>;<text>". Codes 0 and 2 set the window title.
+    // Code 1337 with a "CurrentDir=<path>" payload reports the shell's cwd (iTerm2-style
+    // convention; emitted by our own prompt hooks, not something every shell does by default).
     private void HandleOscComplete()
     {
         var s = _oscBuf.ToString();
         var sep = s.IndexOf(';');
         if (sep < 0 || !int.TryParse(s.AsSpan(0, sep), out var code)) return;
-        if (code != 0 && code != 2) return;
 
-        var title = s[(sep + 1)..];
-        var handler = TitleChanged;
-        if (handler is not null)
-            Dispatcher.UIThread.Post(() => handler(this, title));
+        var payload = s[(sep + 1)..];
+
+        if (code == 0 || code == 2)
+        {
+            var handler = TitleChanged;
+            if (handler is not null)
+                Dispatcher.UIThread.Post(() => handler(this, payload));
+            return;
+        }
+
+        if (code == 1337 && payload.StartsWith("CurrentDir=", StringComparison.Ordinal))
+        {
+            var path = payload["CurrentDir=".Length..].Trim();
+            if (path.Length == 0) return;
+
+            var handler = WorkingDirectoryChanged;
+            if (handler is not null)
+                Dispatcher.UIThread.Post(() => handler(this, path));
+        }
     }
 
     private void DispatchCsi(char cmd, string param)
@@ -1422,7 +1441,22 @@ public static class TerminalShellSupport
     private const double MinPanelHeight = 120;
     private const double MaxPanelHeight = 420;
 
-    public static IEnumerable<TerminalShellOption> DetectTerminalShells()
+    // Raw string literal so the embedded " and \ characters (needed for the printf OSC escape
+    // sequence and for quoting the path against spaces) don't have to be hand-escaped. The inner
+    // "s are already the \"-escaped form required once this whole thing sits inside bash's
+    // outer -c "..." argument on the process command line. Uses `pwd -W` (a Git-for-Windows/MSYS
+    // extension) rather than $PWD, since $PWD is MSYS-style ("/c/Users/...") and wouldn't resolve
+    // as a real Windows path on the .NET side.
+    private const string BashCwdHookCommand = """
+        export PROMPT_COMMAND='printf \"\033]1337;CurrentDir=%s\007\" \"$(pwd -W)\"'; exec bash --login -i
+        """;
+
+    /// <param name="enablePSReadLinePrediction">
+    /// Off by default. PSReadLine's predictive IntelliSense used to be disabled unconditionally
+    /// because it rendered as glitchy artifacts in the ConPTY terminal; this now lets users opt
+    /// back into it from Settings instead.
+    /// </param>
+    public static IEnumerable<TerminalShellOption> DetectTerminalShells(bool enablePSReadLinePrediction = false)
     {
         var shells = new List<TerminalShellOption>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1443,9 +1477,20 @@ public static class TerminalShellSupport
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // Disables PSReadLine's predictive IntelliSense, which renders as glitchy artifacts in the ConPTY terminal.
-            const string disablePredictiveIntelliSenseCommand =
-                "try { Set-PSReadLineOption -PredictionSource None } catch {}";
+            // Disables PSReadLine's predictive IntelliSense, which renders as glitchy artifacts in
+            // the ConPTY terminal. Left in place unless the user opts into it via Settings.
+            var disablePredictiveIntelliSenseCommand = enablePSReadLinePrediction
+                ? string.Empty
+                : "try { Set-PSReadLineOption -PredictionSource None } catch {}; ";
+
+            // Wraps whatever "prompt" function is already defined (default or from the user's
+            // profile) so every prompt redraw also reports the shell's cwd via OSC 1337, which
+            // ConsoleTerminal.WorkingDirectoryChanged picks up to keep the tab title in sync with cd.
+            const string reportCwdCommand =
+                "if (-not $global:__KodoOrigPrompt) { $global:__KodoOrigPrompt = $function:prompt }; " +
+                "function global:prompt { " +
+                "try { [Console]::Out.Write([char]27 + ']1337;CurrentDir=' + (Get-Location).Path + [char]7) } catch {}; " +
+                "& $global:__KodoOrigPrompt }";
 
             AddShell(
                 "powershell",
@@ -1454,27 +1499,30 @@ public static class TerminalShellSupport
                     ?? ResolveExecutable("powershell.exe", Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.System),
                         @"WindowsPowerShell\v1.0\powershell.exe")),
-                $"-NoLogo -NoExit -Command \"{disablePredictiveIntelliSenseCommand}\"");
+                $"-NoLogo -NoExit -Command \"{disablePredictiveIntelliSenseCommand}{reportCwdCommand}\"");
             AddShell(
                 "windows-powershell",
                 "Windows PowerShell",
                 ResolveExecutable("powershell.exe", Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.System),
                         @"WindowsPowerShell\v1.0\powershell.exe")),
-                $"-NoLogo -NoExit -Command \"{disablePredictiveIntelliSenseCommand}\"");
+                $"-NoLogo -NoExit -Command \"{disablePredictiveIntelliSenseCommand}{reportCwdCommand}\"");
             AddShell(
                 "cmd",
                 "Command Prompt",
                 ResolveExecutable(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
                     ?? ResolveExecutable("cmd.exe"),
-                "");
+                // $E is cmd's escape-char macro; the literal \a (BEL) terminates the OSC sequence.
+                // $P$G after it restores the normal "<path>>" prompt text.
+                "/K prompt $E]1337;CurrentDir=$P\a$P$G");
             AddShell(
                 "bash",
                 "Git Bash",
                 ResolveExecutable("bash.exe",
                     @"C:\Program Files\Git\bin\bash.exe",
                     @"C:\Program Files\Git\usr\bin\bash.exe"),
-                "--login -i");
+                // PROMPT_COMMAND must be exported so it survives the exec into a fresh login shell.
+                $"--login -i -c \"{BashCwdHookCommand}\"");
         }
         else
         {

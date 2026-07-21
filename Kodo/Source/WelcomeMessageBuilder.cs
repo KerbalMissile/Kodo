@@ -57,7 +57,7 @@ internal static class WelcomeMessageBuilder
         if (m == easter.Month && d == easter.Day)
             return new("Easter Sunday", "Happy Easter!");
         if (date == easter.AddDays(-2))
-            return new("Good Friday", "Good Friday - enjoy the long weekend!");
+            return new("Good Friday", "Wishing you a peaceful Good Friday.");
         if (date == easter.AddDays(1) && country is "CA" or "GB" or "AU" or "NZ")
             return new("Easter Monday", "Happy Easter Monday!");
 
@@ -105,7 +105,7 @@ internal static class WelcomeMessageBuilder
         if (country == "CA")
         {
             if (m == 7  && d == 1)  return new("Canada Day", "Happy Canada Day!");
-            if (m == 11 && d == 11) return new("Remembrance Day", "Lest we forget. Happy coding.");
+            if (m == 11 && d == 11) return new("Remembrance Day", "Lest we forget.");
             // Victoria Day: last Monday before May 25
             if (m == 5 && dow == DayOfWeek.Monday && d >= 18 && d <= 24)
                 return new("Victoria Day", "Happy Victoria Day! Enjoy the long weekend.");
@@ -124,13 +124,13 @@ internal static class WelcomeMessageBuilder
         if (country == "US")
         {
             if (m == 7  && d == 4)  return new("Independence Day", "Happy Fourth of July!");
-            if (m == 11 && d == 11) return new("Veterans Day", "Thank you to all veterans. Happy coding.");
+            if (m == 11 && d == 11) return new("Veterans Day", "Thank you to all who have served.");
             // Thanksgiving: fourth Thursday of November
             if (m == 11 && dow == DayOfWeek.Thursday && d >= 22 && d <= 28)
                 return new("Thanksgiving", "Happy Thanksgiving! (and happy coding after dinner)");
             // Memorial Day: last Monday of May
             if (m == 5 && dow == DayOfWeek.Monday && d >= 25)
-                return new("Memorial Day", "Happy Memorial Day! Enjoy the long weekend.");
+                return new("Memorial Day", "Remembering those who gave their lives in service.");
             // Labor Day: first Monday of September
             if (m == 9 && dow == DayOfWeek.Monday && d <= 7)
                 return new("Labor Day", "Happy Labor Day! Enjoy the long weekend.");
@@ -159,7 +159,7 @@ internal static class WelcomeMessageBuilder
         if (country == "AU")
         {
             if (m == 1  && d == 26) return new("Australia Day", "Happy Australia Day!");
-            if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget. Happy ANZAC Day.");
+            if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget.");
             if (m == 6  && dow == DayOfWeek.Monday && d >= 8 && d <= 14)
                 return new("King's Birthday (AU)", "Happy King's Birthday long weekend!");
         }
@@ -168,7 +168,7 @@ internal static class WelcomeMessageBuilder
         if (country == "NZ")
         {
             if (m == 2  && d == 6)  return new("Waitangi Day", "Happy Waitangi Day!");
-            if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget. Happy ANZAC Day.");
+            if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget.");
         }
 
         // Germany
