@@ -2300,9 +2300,8 @@
                                             Content="Restart" />
                                     <Button Classes="chrome"
                                             Focusable="False"
-                                            Click="CloseTerminalButton_OnClick"
-                                            IsEnabled="{Binding HasActiveTerminal}"
-                                            ToolTip.Tip="Close active terminal">
+                                            Click="ToggleTerminalButton_OnClick"
+                                            ToolTip.Tip="Hide terminal (Ctrl+` or Ctrl+J)">
                                         <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Canvas Width="24" Height="24">
                                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -2461,10 +2460,11 @@
                                 <Button Grid.Column="1"
                                         Classes="statusitem"
                                         Focusable="False"
-                                        Click="ToggleTerminalButton_OnClick"
-                                        ToolTip.Tip="Hide terminal (Ctrl+` or Ctrl+J)">
+                                        Click="CloseAllTerminalSessionsButton_OnClick"
+                                        IsEnabled="{Binding HasTerminalSessions}"
+                                        ToolTip.Tip="Close and delete all terminal sessions, then hide the panel">
                                     <TextBlock FontSize="12"
-                                               Text="Hide terminal" />
+                                               Text="Close all sessions" />
                                 </Button>
                             </Grid>
                         </Border>

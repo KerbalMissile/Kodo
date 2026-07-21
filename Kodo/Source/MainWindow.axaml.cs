@@ -5243,6 +5243,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         : "Home";
     public bool IsTerminalSupported => _isTerminalSupported;
     public bool HasActiveTerminal => ActiveTerminalSession is not null;
+    public bool HasTerminalSessions => TerminalSessions.Count > 0;
     public int TerminalSessionCount => TerminalSessions.Count;
     public string ActiveTerminalStatusText => ActiveTerminalSession?.StatusText ?? (IsTerminalSupported ? "No active terminal" : "Windows only");
     public string ActiveTerminalWorkingDirectory
@@ -5817,6 +5818,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         OnPropertyChanged(nameof(HasActiveTerminal));
+        OnPropertyChanged(nameof(HasTerminalSessions));
         OnPropertyChanged(nameof(TerminalSessionCount));
         OnPropertyChanged(nameof(TerminalStatusBarText));
         OnPropertyChanged(nameof(ActiveTerminalFooterText));
@@ -8092,10 +8094,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    private void CloseTerminalButton_OnClick(object? sender, RoutedEventArgs e)
+    private void CloseAllTerminalSessionsButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (ActiveTerminalSession is not null)
-            CloseTerminalSession(ActiveTerminalSession);
+        CloseAllTerminalSessions();
+        IsTerminalVisible = false;
     }
 
     private void OpenTerminalSessionButton_OnClick(object? sender, RoutedEventArgs e)
