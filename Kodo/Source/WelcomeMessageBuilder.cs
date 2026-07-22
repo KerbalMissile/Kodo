@@ -16,9 +16,7 @@ internal static class WelcomeMessageBuilder
 
     private record HolidayEntry(string Name, string? Greeting);
 
-    /// <summary>
     /// Returns a HolidayEntry when date is a public holiday (or its eve) for country, or null.
-    /// </summary>
     private static HolidayEntry? GetHolidayEntry(DateTime date, string country)
     {
         var m = date.Month;
@@ -120,7 +118,7 @@ internal static class WelcomeMessageBuilder
                 return new("Family Day", "Happy Family Day! Enjoy the long weekend.");
         }
 
-        // United States
+        // United States of America
         if (country == "US")
         {
             if (m == 7  && d == 4)  return new("Independence Day", "Happy Fourth of July!");
@@ -194,7 +192,7 @@ internal static class WelcomeMessageBuilder
 
         return null;
     }
-    /// <summary>Computes Easter Sunday for a given year using the Anonymous Gregorian algorithm.</summary>
+    // Computes Easter Sunday for a given year using the Anonymous Gregorian algorithm.
     private static DateTime ComputeEaster(int year)
     {
         int a = year % 19, b = year / 100, c = year % 100;
@@ -210,9 +208,7 @@ internal static class WelcomeMessageBuilder
 
     // Astronomical calendar helpers: compute floating-date holidays algorithmically so they stay correct through 2100.
 
-    /// <summary>
-    /// Julian Day Number of the kth new moon since J2000 (Meeus ch.49); pass k+0.5 for the full moon.
-    /// </summary>
+    // Julian Day Number of the kth new moon since J2000 (Meeus ch.49); pass k+0.5 for the full moon.
     private static double MoonPhaseJdn(double k)
     {
         double T   = k / 1236.85;
@@ -256,7 +252,7 @@ internal static class WelcomeMessageBuilder
 
     private static double Rad(double deg) => deg * Math.PI / 180.0;
 
-    /// <summary>Converts a Julian Day Number to a Gregorian DateTime (UTC noon).</summary>
+    // Converts a Julian Day Number to a Gregorian DateTime (UTC noon).
     private static DateTime JdnToDateTime(double jdn)
     {
         int j = (int)(jdn + 0.5);
@@ -272,7 +268,7 @@ internal static class WelcomeMessageBuilder
         return new DateTime(year, month, day);
     }
 
-    /// <summary>Finds the new or full moon in a given Gregorian year/month, or null if none falls in it.</summary>
+    /// Finds the new or full moon in a given Gregorian year/month, or null if none falls in it.
     private static DateTime? MoonInMonth(int year, int month, bool fullMoon = false)
     {
         double kApprox = (year - 2000) * 12.3685 + month - 1;
@@ -302,7 +298,7 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// <summary>Holi: the full moon of the Hindu month Phalguna, falling in March (occasionally late February).</summary>
+    // Holi: the full moon of the Hindu month Phalguna, falling in March (occasionally late February).
     private static DateTime? HoliDate(int year)
     {
         var march = MoonInMonth(year, 3, fullMoon: true);
@@ -311,11 +307,11 @@ internal static class WelcomeMessageBuilder
         return feb?.Day >= 20 ? feb : null;
     }
 
-    /// <summary>Vesak (Buddha Day): the full moon of Vaisakha, observed in May by Theravada countries.</summary>
+    // Vesak (Buddha Day): the full moon of Vaisakha, observed in May by Theravada countries.
     private static DateTime? VesakDate(int year) =>
         MoonInMonth(year, 5, fullMoon: true);
 
-    /// Converts an Islamic (Hijri) date to Gregorian via the tabular calendar, accurate to ±1 day.
+    // Converts an Islamic (Hijri) date to Gregorian via the tabular calendar, accurate to ±1 day.
     private static DateTime IslamicToGregorian(int iy, int im, int id)
     {
         int jdn = id
@@ -329,7 +325,7 @@ internal static class WelcomeMessageBuilder
     private static int ApproxHijriYear(int gregorianYear) =>
         (int)((gregorianYear - 622) * 1.030685);
 
-    /// <summary>Eid al-Fitr: 1 Shawwal (Islamic month 10).</summary>
+    // Eid al-Fitr: 1 Shawwal (Islamic month 10).
     private static DateTime? EidAlFitr(int year)
     {
         int hy = ApproxHijriYear(year);
@@ -341,7 +337,7 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// <summary>Eid al-Adha: 10 Dhu al-Hijjah (Islamic month 12).</summary>
+    /// Eid al-Adha: 10 Dhu al-Hijjah (Islamic month 12).
     private static DateTime? EidAlAdha(int year)
     {
         int hy = ApproxHijriYear(year);
@@ -392,9 +388,7 @@ internal static class WelcomeMessageBuilder
         return hm is 1 or 5 or 7 or 10 or 12 ? 30 : 29;
     }
 
-    /// <summary>
-    /// Converts a Hebrew date to Gregorian. Months: Tishrei=1 ... Elul=12(13), with AdarII=7 in leap years.
-    /// </summary>
+    // Converts a Hebrew date to Gregorian. Months: Tishrei=1 ... Elul=12(13), with AdarII=7 in leap years.
     private static DateTime HebrewToGregorian(int hy, int hm, int hd)
     {
         const int HebrewEpoch = 347997; // JDN of 1 Tishrei AM 1
@@ -407,7 +401,7 @@ internal static class WelcomeMessageBuilder
 
     private static int ApproxHebrewYear(int gregorianYear) => gregorianYear + 3760;
 
-    /// <summary>Rosh Hashanah: 1 Tishrei of the Hebrew year beginning in <paramref name="year"/>.</summary>
+    // Rosh Hashanah: 1 Tishrei of the Hebrew year beginning in <paramref name="year"/>.
     private static DateTime? RoshHashanah(int year)
     {
         int hy0 = ApproxHebrewYear(year);
@@ -419,7 +413,7 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// <summary>Yom Kippur: 10 Tishrei.</summary>
+    // Yom Kippur: 10 Tishrei.
     private static DateTime? YomKippur(int year)
     {
         int hy0 = ApproxHebrewYear(year);
@@ -431,7 +425,7 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// <summary>Hanukkah: 25 Kislev (first day/night).</summary>
+    // Hanukkah: 25 Kislev (first day/night).
     private static DateTime? HanukkahDate(int year)
     {
         // 25 Kislev of Hebrew year ~(Gregorian + 3761) falls in Nov/Dec.
@@ -444,7 +438,7 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// <summary>Diwali: the new moon (Amavasya) of Kartika, falling in October or early November.</summary>
+    // Diwali: the new moon (Amavasya) of Kartika, falling in October or early November.
     private static DateTime? DiwaliDate(int year)
     {
         // Kartika new moon is always in the second half of October or early November.
@@ -452,10 +446,10 @@ internal static class WelcomeMessageBuilder
         if (oct != null && oct.Value.Day >= 14) return oct;
         var nov = MoonInMonth(year, 11, fullMoon: false);
         if (nov != null && nov.Value.Day <= 15) return nov;
-        return oct; // fallback
+        return oct; // Fallback
     }
 
-    /// <summary>Sharad Navratri: begins the day after the new moon of Ashwin, falling in September or early October.</summary>
+    // Sharad Navratri: begins the day after the new moon of Ashwin, falling in September or early October.</summary>
     private static DateTime? NavratriDate(int year)
     {
         // Ashwin new moon falls in Sep (day >= 15) or early Oct (day <= 10).
