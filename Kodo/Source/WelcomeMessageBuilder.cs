@@ -41,8 +41,8 @@ internal static class WelcomeMessageBuilder
         if (m == 4  && d == 22) return new("Earth Day", "Happy Earth Day!");
         if (m == 5  && d == 5)  return new("Cinco de Mayo", "¡Feliz Cinco de Mayo!");
         if (m == 6  && d == 5)  return new("World Environment Day", "Happy World Environment Day!");
-        if (m == 9  && d == 21) return new("International Day of Peace", "Happy International Day of Peace.");
-        if (m == 12 && d == 10) return new("International Human Rights Day", "Happy Human Rights Day.");
+        if (m == 9  && d == 21) return new("International Day of Peace", "Happy International Day of Peace!");
+        if (m == 12 && d == 10) return new("International Human Rights Day", "Happy Human Rights Day!");
 
         // Mother's Day: second Sunday of May
         if (m == 5 && dow == DayOfWeek.Sunday && d >= 8 && d <= 14)
