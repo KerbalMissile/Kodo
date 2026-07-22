@@ -17,3 +17,8 @@ Kodo is now licensed under the GPL-v3.0. Treat all of Kodo's code as licensed as
 > July 16, 2026
 Please take the time to review our Privacy Policy - you can find it on our GitHub under the Policies folder.
 ---
+
+## v1.2.0 is here!
+> July 22, 2026
+Enjoy UI reworks in the Extensions menu, along with CodePredict (similar to VSC IntelliSense). Make sure all your extensions are up to date for the best experience.
+---
