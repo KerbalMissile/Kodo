@@ -1,4 +1,4 @@
-// Licensed under the Kodo Public License v1.1
+// Licensed under GPL-v3.0
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -463,15 +463,11 @@ internal static class WelcomeMessageBuilder
     /// True when date is a weekend or sandwiched into a long weekend around a Monday holiday.
     private static bool IsWeekend(DateTime date) =>
         date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-
-    /// <summary>True when <paramref name="date"/> is the Friday before a Monday public holiday.</summary>
     private static bool IsLongWeekendEve(DateTime date, string country)
     {
         if (date.DayOfWeek != DayOfWeek.Friday) return false;
         return GetHolidayEntry(date.AddDays(3), country) is not null;
     }
-
-    /// <summary>True when <paramref name="date"/> is the Tuesday after a Monday public holiday.</summary>
     private static bool IsPostLongWeekend(DateTime date, string country)
     {
         if (date.DayOfWeek != DayOfWeek.Tuesday) return false;
@@ -556,10 +552,8 @@ internal static class WelcomeMessageBuilder
         public string? strTime { get; set; }
     }
 
-    /// <summary>
-    /// Fetches sporting-event messages: hardcoded windows plus a live TheSportsDB lookup.
-    /// Returns null if nothing applies. Never throws.
-    /// </summary>
+    // Fetches sporting-event messages: hardcoded windows plus a live TheSportsDB lookup.
+    // Returns null if nothing applies. Never throws.
     public static async Task<List<string>?> FetchSportingEventMessagesAsync(HttpClient httpClient)
     {
         try
@@ -626,10 +620,6 @@ internal static class WelcomeMessageBuilder
     }
 
     // Welcome message construction
-
-    /// <summary>
-    /// Builds the candidate welcome-message pool from personalization settings and fetched sporting messages.
-    /// </summary>
     public static string[] BuildMessages(
         string userName,
         string userCountry,

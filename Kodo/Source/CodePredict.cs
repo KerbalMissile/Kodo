@@ -1,3 +1,4 @@
+// Licensed under GPL-v3.0
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,20 +19,17 @@ public enum CodePredictKind { Variable, Function, Property, Type, Namespace, Key
 // One row in the predictive completion popup.
 public sealed class CodePredictSuggestion : ICompletionData
 {
-    // Set by MainWindow before building suggestions, from its live theme brushes.
-    // Keeps the popup's text readable across light/dark theme and custom accents.
+    // Set by MainWindow from its live theme brushes before building suggestions.
     public static IBrush PanelForeground { get; set; } = Brushes.WhiteSmoke;
     public static IBrush MutedForeground { get; set; } = new SolidColorBrush(Color.Parse("#8A8A8A"));
 
     public CodePredictKind Kind { get; }
     public string Text { get; }
     public IImage? Image => null;
-    // Built lazily, once, on first access - avoids rebuilding the icon + name + kind
-    // row's control tree on every measure/arrange/render pass.
+    // Built lazily, once, on first access.
     private Control? _content;
     public object Content => _content ??= BuildContentVisual();
-    // Null: AvaloniaEdit shows this in its own popup, which duplicated the kind
-    // label already drawn in-row (kindBlock below).
+    // Null: kind is already drawn in-row (kindBlock below).
     public object? Description => null;
     public double Priority => Kind switch
     {
@@ -64,7 +62,7 @@ public sealed class CodePredictSuggestion : ICompletionData
         _ => string.Empty,
     };
 
-    // Icon glyph + accent color per kind - stand-in for VS Code's Codicons.
+    // Icon glyph + accent color per kind.
     private static (string Glyph, string Color) GlyphAndColorFor(CodePredictKind kind) => kind switch
     {
         CodePredictKind.Variable  => ("V", "#3B82F6"),
@@ -76,7 +74,7 @@ public sealed class CodePredictSuggestion : ICompletionData
         _ => ("•", "#6B7280"),
     };
 
-    // Glyph background brushes, built once and reused across every row/rebuild.
+    // Glyph background brushes, built once and reused across rebuilds.
     private static readonly Dictionary<CodePredictKind, IBrush> GlyphBrushes =
         Enum.GetValues<CodePredictKind>().ToDictionary(
             k => k,
@@ -84,8 +82,7 @@ public sealed class CodePredictSuggestion : ICompletionData
 
     private static readonly FontFamily MonoFontFamily = new("Cascadia Code,Consolas,Menlo,Monospace");
 
-    // [icon chip] [name] [kind label, right-aligned] - VS Code-style row, themed
-    // to Kodo's live panel/text colors.
+    // [icon chip] [name] [kind label, right-aligned], themed to Kodo's live colors.
     private Control BuildContentVisual()
     {
         var (glyph, _) = GlyphAndColorFor(Kind);
@@ -152,7 +149,7 @@ public sealed class CodePredictSuggestion : ICompletionData
     }
 }
 
-/// <summary>Predictive CodePredict engine: language candidates from the active .kox profile, plus per-file declared variables.</summary>
+// Predictive CodePredict engine: language candidates from the active .kox profile, plus per-file declared variables.
 public sealed class CodePredictEngine
 {
     private readonly Dictionary<string, HashSet<string>> _variablesByFile = new(StringComparer.OrdinalIgnoreCase);

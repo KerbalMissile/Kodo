@@ -1,3 +1,4 @@
+// Licensed under GPL-v3.0
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
@@ -32,16 +33,16 @@ internal static class AptabaseClient
     // Filled once at Initialize
     private static AptabaseSystemProps? _systemProps;
 
-    // Off by default until settings load; nothing sends before the user opts in.
+    // Off by default until settings load
     private static bool _isEnabled;
 
-    // Set once in Initialize(). Informational only - dev builds are tracked like any other build.
+    // Set once in Initialize()
     private static bool _isDevBuild;
 
     public static bool IsEnabled => _isEnabled;
     public static bool IsDevBuild => _isDevBuild;
 
-    /// <summary>Enables/disables analytics. Disabling discards any queued-but-unsent events.</summary>
+    // Enables/disables analytics; disabling discards queued events
     public static void SetEnabled(bool enabled)
     {
         if (_isEnabled == enabled) return;
@@ -57,7 +58,7 @@ internal static class AptabaseClient
         _ = TestConnectivityAsync();
     }
 
-    // Strips user-identifying substrings (file paths, emails) from exception messages before queueing.
+    // Strips user-identifying substrings from exception messages
     private static string? SanitizeMessage(string? message)
     {
         if (string.IsNullOrEmpty(message)) return message;
@@ -108,7 +109,7 @@ internal static class AptabaseClient
 
     public static void Initialize()
     {
-        // AssemblyInformationalVersion preserves the "-DEV" suffix; Version alone does not.
+        // Preserves the "-DEV" suffix
         var informationalVersion = System.Reflection.Assembly
             .GetExecutingAssembly()
             .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
@@ -135,7 +136,7 @@ internal static class AptabaseClient
             Console.WriteLine($"[Aptabase] Dev build detected ({appVersion})");
         }
 
-        // No connectivity test here - runs from SetEnabled once the user opts in.
+        // Connectivity test runs from SetEnabled
     }
 
     private static async Task TestConnectivityAsync()

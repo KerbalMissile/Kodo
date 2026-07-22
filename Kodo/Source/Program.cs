@@ -1,3 +1,4 @@
+// Licensed under the GPL-v3.0
 using Avalonia;
 using System;
 using System.Runtime.InteropServices;
@@ -18,18 +19,15 @@ class Program
 
         AptabaseClient.Initialize();
 
-        // AppDomain.UnhandledException is handled by App.Initialize() (CurrentDomain_OnUnhandledException),
-        // which logs, tracks, and shows the crash dialog - registering it here too duplicated crash.log entries.
+        // Unhandled exceptions are handled in App.Initialize()
         var app = BuildAvaloniaApp();
-        
-        // Flush telemetry on exit
+
         try
         {
             app.StartWithClassicDesktopLifetime(args);
         }
         finally
         {
-            // Give Aptabase time to send final events
             Task.Run(async () => await AptabaseClient.FlushAsync()).Wait(TimeSpan.FromSeconds(2));
         }
     }

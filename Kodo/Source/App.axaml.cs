@@ -1,4 +1,4 @@
-// Licensed under the Kodo Public License v1.1
+// Licensed under GPL-v3.0
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
@@ -21,10 +21,10 @@ namespace Kodo;
 // Handles global unhandled-exception wiring, crash logging, and the crash dialog UI.
 public partial class App : Application
 {
-    // Guards against multiple concurrent crash dialogs; set by the CompareExchange in ShowCrashDialog.
+    // Guards against multiple concurrent crash dialogs.
     private static int _isCrashDialogOpen;
-    // Shared colours from DialogPalette, so every code-built dialog matches.
 
+    // Shared colours from DialogPalette.
     private static readonly Color KodoDarkSurface     = DialogPalette.Surface;
     private static readonly Color KodoDarkSurfaceDeep = DialogPalette.SurfaceDeep;
     private static readonly Color KodoDarkBorder      = DialogPalette.Border;
@@ -36,8 +36,7 @@ public partial class App : Application
 
     // Initialization
 
-    // Loads AXAML resources/styles and wires up global exception handlers before
-    // the framework has finished starting up.
+    // Loads AXAML resources/styles and wires up global exception handlers.
     public override void Initialize()
     {
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
@@ -67,7 +66,6 @@ public partial class App : Application
 #endif
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // No longer behind #if !DEBUG - that guard blocked the updater in Debug builds.
             if (!CheckPendingUpdateSentinel())
                 CheckForUpdatesInBackground();
         }
@@ -78,7 +76,6 @@ public partial class App : Application
     // Auto-update
 
     // Checks for a pending-update sentinel from KodoUpdater; shows UpdateDialog if newer.
-    // Runs before the live GitHub check so a pending sentinel always wins over a redundant download.
     private static bool CheckPendingUpdateSentinel()
     {
         try
@@ -99,8 +96,7 @@ public partial class App : Application
         }
         catch
         {
-            // Sentinel handling is best-effort; fall through to the normal
-            // live update check below if anything here goes wrong.
+            // Best-effort; falls through to the normal live update check.
             return false;
         }
     }
@@ -117,7 +113,6 @@ public partial class App : Application
 
                 await Task.Delay(TimeSpan.FromSeconds(4));
 
-                // Consolidated check-then-act flow - mirrors the manual/Settings-page call sites in MainWindow.
                 await UpdateService.CheckAndHandleUpdateAsync(UpdateService.IsAutoUpdateInBackgroundEnabledInSettings());
             }
             catch
@@ -139,7 +134,7 @@ public partial class App : Application
 
             var command = $"\"{exe}\" \"%1\"";
 
-            // Register the application itself under HKCU so no elevation is needed.
+            // Registers the application under HKCU.
             using (var appKey = Registry.CurrentUser.CreateSubKey(@"Software\Classes\Applications\Kodo.exe"))
             {
                 appKey.SetValue("FriendlyAppName", "Kodo");
@@ -170,8 +165,7 @@ public partial class App : Application
         }
         catch
         {
-            // Registration failure must never crash the app; "Open with" is a convenience
-            // feature and the app is fully functional without it.
+            // Registration failure must never crash the app.
         }
     }
 
@@ -192,10 +186,9 @@ public partial class App : Application
     {
         // Unobserved Task exception - recoverable; logged as a Warning, no crash.log.
         KodoDiagnostics.LogWarning("TaskScheduler.UnobservedTaskException", e.Exception, operation: "Background task");
-        // Mark as observed first so the runtime does not re-throw it after we return.
+        // Marks the exception as observed.
         e.SetObserved();
-        // Show the crash-style dialog but marked as non-terminating so the user
-        // knows the app is still alive and they can keep working.
+        // Shows the crash-style dialog, marked non-terminating.
         ShowCrashDialog("TaskScheduler.UnobservedTaskException", e.Exception, isTerminating: false);
     }
 
@@ -225,22 +218,21 @@ public partial class App : Application
                 return;
             }
 
-            // Posts rather than blocking, since the UI thread may already be dead.
-            // For terminating crashes, pumps the dispatcher here so the dialog can show, capped at 30s.
+            // Posts to the UI thread rather than blocking.
             if (isTerminating)
             {
-                // Non-blocking post - returns immediately even if the UI thread is busy.
+                // Non-blocking post.
                 Dispatcher.UIThread.Post(
                     () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
                     DispatcherPriority.MaxValue);
 
-                // Gives the UI thread up to 30s to show/dismiss the dialog before teardown.
+                // Spin-waits up to 30s for the dialog to show/dismiss.
                 for (var i = 0; i < 300 && _isCrashDialogOpen == 1; i++)
                     Thread.Sleep(100);
             }
             else
             {
-                // Recoverable crash - just post; don't block the caller's thread at all.
+                // Recoverable crash - posts without blocking the caller.
                 Dispatcher.UIThread.Post(
                     () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
                     DispatcherPriority.MaxValue);
@@ -254,13 +246,11 @@ public partial class App : Application
 
     private static async Task ShowCrashDialogOnUiThreadAsync(string source, Exception exception, string logPath, bool isTerminating)
     {
-        // Signal "dialog is open" so the spin-wait loop in ShowCrashDialog
-        // (terminating path) knows to keep the process alive.
+        // Marks the dialog as open.
         Interlocked.Exchange(ref _isCrashDialogOpen, 1);
         try
         {
-            // Only use the main window as owner when it is still open and visible.
-            // A closing or already-closed window causes ShowDialog to throw.
+            // Uses the main window as owner only when it is still open and visible.
             Window? owner = null;
             if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
@@ -271,7 +261,7 @@ public partial class App : Application
 
             var dialog = BuildCrashDialog(source, exception, logPath, isTerminating, owner);
 
-            // ShowDialog requires a non-null owner; fall back to Show() + TCS when none.
+            // Falls back to Show() + TCS when no owner is available.
             if (owner is not null)
             {
                 await dialog.ShowDialog(owner);
@@ -290,13 +280,12 @@ public partial class App : Application
         }
         finally
         {
-            // Signal "dialog dismissed" so the spin-wait loop exits.
+            // Marks the dialog as dismissed.
             Interlocked.Exchange(ref _isCrashDialogOpen, 0);
         }
     }
 
-    // Builds the crash dialog entirely in code so it has no AXAML dependency
-    // and works even if App.axaml has not loaded yet.
+    // Builds the crash dialog entirely in code, with no AXAML dependency.
     private static Window BuildCrashDialog(
         string  source,
         Exception exception,
@@ -304,7 +293,7 @@ public partial class App : Application
         bool    isTerminating,
         Window? owner)
     {
-        // --- Header ---
+        // Header
         var titleText = new TextBlock
         {
             Text        = "Kodo crashed",
@@ -325,8 +314,7 @@ public partial class App : Application
             Margin      = new Thickness(0, 4, 0, 0),
         };
 
-        // Terminating warning - only shown when IsTerminating is true so the user
-        // knows the app is about to exit regardless of what they click.
+        // Terminating warning, shown only when isTerminating is true.
         var terminatingBanner = new Border
         {
             IsVisible        = isTerminating,
@@ -344,7 +332,7 @@ public partial class App : Application
             },
         };
 
-        // --- Source badge ---
+        // Source badge
         var sourceBadge = new Border
         {
             Background       = new SolidColorBrush(KodoDarkBadgeBg),
@@ -371,7 +359,7 @@ public partial class App : Application
             TextWrapping = TextWrapping.Wrap,
         };
 
-        // --- Exception details (scrollable, selectable) ---
+        // Exception details (scrollable, selectable)
         var exceptionText = new SelectableTextBlock
         {
             Text       = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical),
@@ -399,7 +387,7 @@ public partial class App : Application
             Child           = exceptionScroll,
         };
 
-        // --- Log path note ---
+        // Log path note
         var logPathText = new TextBlock
         {
             Text         = $"Full details in: {logPath}",
@@ -408,7 +396,7 @@ public partial class App : Application
             TextWrapping = TextWrapping.Wrap,
         };
 
-        // --- Action buttons ---
+        // Action buttons
         var copyButton = new Button
         {
             Content             = "Copy to Clipboard",
@@ -459,7 +447,7 @@ public partial class App : Application
         Grid.SetColumn(dismissButton, 1);
         buttonRow.Children.Add(dismissButton);
 
-        // --- Layout ---
+        // Layout
         var content = new StackPanel
         {
             Spacing  = 12,
@@ -479,7 +467,6 @@ public partial class App : Application
 
         var dialog = new Window
         {
-            // "Crash Report" distinguishes this from the recoverable warning dialog.
             Title  = "Kodo - Crash Report",
             Width  = 560,
             SizeToContent = SizeToContent.Height,
@@ -494,8 +481,7 @@ public partial class App : Application
             Content    = content,
         };
 
-        // Copy the full exception + source to clipboard so the user can paste it
-        // into a GitHub issue or Discord message without manually selecting text.
+        // Copies the full exception + source to the clipboard.
         copyButton.Click += async (_, _) =>
         {
             try
@@ -519,8 +505,7 @@ public partial class App : Application
         {
             try
             {
-                // Pre-fill a GitHub issue with the exception type as the title.
-                // The user can paste the clipboard payload into the body.
+                // Pre-fills a GitHub issue with the exception type as the title.
                 var title = Uri.EscapeDataString($"[Crash] {exception.GetType().Name}: {exception.Message}"
                     .Replace("\r", "").Replace("\n", " ").Trim());
                 var url = $"https://github.com/KerbalMissile/Kodo/issues/new?title={title}" +

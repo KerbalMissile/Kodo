@@ -1,3 +1,4 @@
+// Licensed under GPL-v3.0
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -89,8 +90,7 @@ public sealed class CompiledSyntaxProfile
                     : @"(?<![\p{L}\p{Nd}_])[@#][\p{L}_][\p{L}\p{Nd}_-]*",
                 RegexOptions.Compiled), "preprocessor", "#C586C0"));
             rules.Add(new(new Regex(@"(?<=\[)[\p{L}_][\p{L}\p{Nd}_:.]*(?=[,\]\(])|(?<=<)[\p{L}_][\p{L}\p{Nd}_:-]*(?=[^>]*>)", RegexOptions.Compiled), "attribute", "#C586C0"));
-            // Function calls must score before property-by-dot, so `a.b.Method()`
-            // colours "Method" as a function despite the preceding dot.
+            // Function calls must score before property-by-dot, so `a.b.Method()` colours "Method" as a function despite the preceding dot.
             rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\s*\()", RegexOptions.Compiled), "function", "#DCDCAA"));
             rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\.)", RegexOptions.Compiled), "namespace", "#4FC1FF"));
             rules.Add(new(new Regex(@"(?<=\.|->|::)[\p{L}_][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled), "property", "#9CDCFE"));
@@ -222,14 +222,6 @@ public static class EmbeddedTagContent
 {
     private const string CDataStart = "<![CDATA[";
     private const string CDataEnd = "]]>";
-
-    /// <summary>
-    /// Given the raw text of an open tag's body on a single line (between
-    /// <paramref name="start"/> and <paramref name="end"/>), determines the
-    /// actual embeddable-code range: skips a leading "&lt;![CDATA[" wrapper
-    /// (continuing to track CDATA state across lines via <paramref name="mode"/>)
-    /// and stops content at a "]]&gt;" terminator if one appears.
-    /// </summary>
     public static bool TryExtract(
         string line,
         int start,
@@ -489,8 +481,7 @@ public sealed class EmbeddedSyntaxProfile
 
         foreach (var (regex, brush, colorTokenName) in TokenRules)
         {
-            // Punctuation doesn't reserve its range, so rainbow bracket coloring
-            // (below) can still repaint it. Every other rule reserves its range.
+            // Punctuation doesn't reserve its range, so rainbow bracket color (below) can still repaint it. Every other rule reserves its range.
             var isPunctuation = string.Equals(colorTokenName, "punctuation", StringComparison.Ordinal);
 
             foreach (Match match in regex.Matches(text))
@@ -741,8 +732,7 @@ public sealed class EmbeddedSyntaxProfile
 // Decides whether a Markdown inline-code span gets language-specific highlighting or plain string coloring.
 public static class InlineCodeLanguageDetector
 {
-    // Common CLI verbs - a bare command line opening with one of these is
-    // treated as shell/console, never a language match.
+    // Common CLI verbs - a bare command line opening with one of these is treated as shell/console, never a language match.
     private static readonly HashSet<string> ShellVerbs = new(StringComparer.OrdinalIgnoreCase)
     {
         "cd", "ls", "dir", "cp", "mv", "rm", "del", "mkdir", "md", "rmdir", "rd",
@@ -761,8 +751,7 @@ public static class InlineCodeLanguageDetector
     private static readonly Regex PathSegmentRegex =
         new(@"^[\w.~-]+(?:[\\/][\w.~-]+){1,}$", RegexOptions.Compiled);
 
-    // A bare HTML/XML tag mention (e.g. `<style>`) is prose referencing markup
-    // vocabulary, not a code sample - must never be highlighted as one.
+    // A bare HTML/XML tag mention (e.g. `<style>`) is prose referencing markup vocabulary, not a code sample - must never be highlighted as one.
     private static readonly Regex BareMarkupTagRegex =
         new(@"^</?[A-Za-z][\w:-]*(?:\s+[^<>]*)?\s*/?>$", RegexOptions.Compiled);
 
@@ -858,8 +847,6 @@ public static class InlineCodeLanguageDetector
         return total;
     }
 }
-// -- Moved from MainWindow_axaml.cs: AvaloniaEdit colorizing transformers and the
-// KodoHighlightingDefinition that wires CompiledSyntaxProfile rules into AvaloniaEdit. --
 
 public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 {

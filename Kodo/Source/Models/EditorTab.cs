@@ -1,3 +1,4 @@
+// Licensed under GPL-v3.0
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Avalonia.Media;
@@ -104,14 +105,13 @@ public class EditorTab : INotifyPropertyChanged
 
     public string TabTitle => IsDirty ? $"{DisplayName} •" : DisplayName;
 
-    // 1-based line number remembered for scroll-position restore on tab switch.
+    // 1-based line number for scroll-position restore
     public int TopLineNumber { get; set; } = 1;
 
-    // Pixel-exact scroll offset, saved alongside TopLineNumber.
+    // Pixel-exact scroll offset
     public double ScrollOffsetY { get; set; } = 0.0;
 
-    // Caret position for this tab. The editor control is shared across tabs, so
-    // this is what keeps caret/selection from leaking between tabs on switch.
+    // Caret position for this tab
     public int CaretOffset { get; set; } = 0;
 
     public void Rename(string path, string displayName)

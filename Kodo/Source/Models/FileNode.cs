@@ -1,3 +1,4 @@
+// Licensed under GPL-v3.0
 using System.Collections.ObjectModel;
 
 namespace Kodo.Models;

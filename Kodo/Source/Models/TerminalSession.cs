@@ -1,3 +1,4 @@
+// Licensed under GPL-v3.0
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -32,7 +33,7 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
 
     public string ShellDisplayName { get; }
 
-    /// <summary>Last-saved screen buffer, written/read on session switch. Null until first shown.</summary>
+    // Last-saved screen buffer; null until first shown
     public TerminalSnapshot? Snapshot { get; set; }
 
     public string Title
@@ -49,10 +50,10 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>True once <see cref="Title"/> is set explicitly, so shell-reported titles stop overwriting it.</summary>
+    // True once Title is set explicitly
     public bool HasCustomTitle { get; private set; }
 
-    /// <summary>Applies a shell-reported title; no-ops once <see cref="HasCustomTitle"/> is set.</summary>
+    // Applies a shell-reported title; no-ops once HasCustomTitle is set
     public void ApplyAutoTitle(string title)
     {
         if (HasCustomTitle || _title == title)
@@ -116,14 +117,14 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>Tab-strip status dot color: green=ready, blue=paused, amber=transitioning, red=failed, gray=closed.</summary>
+    // Tab-strip status dot color
     public string StatusDotColor => StatusText switch
     {
         "Ready"                           => "#22C55E", // green
         "Paused"                          => "#38BDF8", // blue
-        "Exited" or "Closed"              => "#94A3B8", // gray  (transient; session removed immediately after)
+        "Exited" or "Closed"              => "#94A3B8", // gray
         var s when s.StartsWith("Failed") => "#EF4444", // red
-        _                                 => "#F59E0B", // amber - Launching…, Starting…, etc.
+        _                                 => "#F59E0B", // amber
     };
 
     public Process? Process
@@ -178,7 +179,7 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
         }
         catch
         {
-            // Ignore terminal process cleanup failures on shutdown.
+            // Ignore cleanup failures on shutdown
         }
     }
 

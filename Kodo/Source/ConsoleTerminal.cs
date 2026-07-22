@@ -1,3 +1,4 @@
+// Licensed under GPL-v3.0
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,10 +17,7 @@ namespace Kodo;
 
 // Public surface
 
-/// <summary>
-/// A self-contained Avalonia control hosting a shell via ConPTY, rendering VT/ANSI output directly.
-/// Drop it into AXAML exactly where EmbeddedTerminalHost used to live.
-/// </summary>
+// Avalonia control hosting a shell via ConPTY, rendering VT/ANSI output.
 public sealed class ConsoleTerminal : Control
 {
     // Standard 16-colour ANSI palette
@@ -115,28 +113,22 @@ public sealed class ConsoleTerminal : Control
         _blinkTimer.Start();
 
         AttachedToVisualTree   += (_, _) => Focus();
-        // Doesn't call Stop() on detach - toggling IsVisible would kill the ConPTY process.
+        // Detaching from the visual tree does not call Stop().
     }
 
     // Public API
 
-    /// <summary>
-    /// Fired when the shell exits, with the process handle from Start().
-    /// Subscribers use it to reject a stale wake-up from a previous <see cref="Stop"/> call.
-    /// </summary>
+    // Fired when the shell exits, with the process handle from Start().
     public event EventHandler<IntPtr>? SessionExited;
 
-    /// <summary>Fired when the shell reports a new window title via OSC 0/2.</summary>
+    // Fired when the shell reports a new window title via OSC 0/2.
     public event EventHandler<string>? TitleChanged;
 
-    /// <summary>Fired when the shell reports its current working directory via OSC 1337;CurrentDir=&lt;path&gt; (emitted by the prompt hooks in <see cref="TerminalShellSupport.DetectTerminalShells"/>).</summary>
+    // Fired when the shell reports its current working directory via OSC 1337;CurrentDir=<path>.
     public event EventHandler<string>? WorkingDirectoryChanged;
 
-    /// <summary>Start a shell. Stops any previously running session first.</summary>
-    /// <param name="suppressOutputUntilRestored">
-    /// Pass true when restoring a snapshot right after, so output is discarded until then.
-    /// Leave <c>false</c> (default) for brand-new sessions.
-    /// </param>
+    // Starts a shell; stops any previous session first.
+    // suppressOutputUntilRestored: discard output until a pending restore completes.
     public void Start(string shellPath, string arguments, string workingDirectory,
                       bool suppressOutputUntilRestored = false)
     {
@@ -183,7 +175,7 @@ public sealed class ConsoleTerminal : Control
             NativeConPty.LaunchProcess(cmdLine, workingDirectory, _hPcon,
                 out _hProcess, out _hThread);
 
-            // Suppresses output for 500ms so the shell's startup redraw can't wipe a pending restore.
+            // Suppresses output for 500ms while a restore is pending.
             _suppressOutputUntilTick = suppressOutputUntilRestored
                 ? Environment.TickCount64 + 500
                 : 0;
@@ -191,7 +183,7 @@ public sealed class ConsoleTerminal : Control
             // Start reading output
             _ = Task.Run(() => ReadOutputLoop(_cts.Token), _cts.Token);
 
-            // Watches for process exit, capturing the handle so stale wake-ups can be rejected.
+            // Watches for process exit and captures the handle.
             var watchedHandle = _hProcess;
             _ = Task.Run(() =>
             {
@@ -257,16 +249,13 @@ public sealed class ConsoleTerminal : Control
         if (seq is not null) SendInput(seq);
     }
 
-    /// <summary>True while a ConPTY process is running in this control.</summary>
+    // True while a ConPTY process is running in this control.
     public bool HasLiveProcess => _hPcon != IntPtr.Zero;
 
-    /// <summary>
-    /// The process handle from the most recent successful <see cref="Start"/> call.
-    /// Verifies a SessionExited post belongs to the subscribed process; zero if none running.
-    /// </summary>
+    // Process handle from the most recent Start() call; zero if none running.
     public IntPtr CurrentProcessHandle => _hProcess;
 
-    /// Captures the screen buffer and cursor state for restoring this session later.
+    // Captures the screen buffer and cursor state for restoring this session later.
     public TerminalSnapshot SaveSnapshot()
     {
         lock (_lock)
@@ -280,12 +269,12 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
-    /// Replaces the screen buffer with a saved snapshot, keeping the ConPTY process running.
+    // Replaces the screen buffer with a saved snapshot; keeps the ConPTY process running.
     public void RestoreSnapshot(TerminalSnapshot snap)
     {
         lock (_lock)
         {
-            // Restores into the current grid dimensions so the next Resize() is a no-op.
+            // Restores into the current grid dimensions.
             var copyR = Math.Min(_rows, snap.Rows);
             var copyC = Math.Min(_cols, snap.Cols);
             var newCells = new TermCell[_rows, _cols];
@@ -306,10 +295,8 @@ public sealed class ConsoleTerminal : Control
             _csiParam.Clear();
             _csiParam.Append(snap.CsiParam);
             _scrollOffset  = 0;
-
-            // The suppression window already covers the startup screen-clear; expires on its own.
         }
-        // Redraw immediately with the restored content.
+        // Redraws immediately with the restored content.
         InvalidateVisual();
     }
 
@@ -353,9 +340,9 @@ public sealed class ConsoleTerminal : Control
             return;
         }
 
-        // Handle before base so window-level shortcuts can't swallow terminal keys.
+        // Handled here before base.OnKeyDown.
 
-        // 1. Special keys (arrows, F-keys, Home/End) never produce TextInput - intercept here.
+        // Special keys (arrows, F-keys, Home/End).
         var seq = KeyToVt(e.Key, e.KeyModifiers);
         if (seq is not null)
         {
@@ -365,7 +352,7 @@ public sealed class ConsoleTerminal : Control
             return;
         }
 
-        // 2. Ctrl+letter -> control character. Mark handled so window shortcuts don't fire.
+        // Ctrl+letter maps to a control character.
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
             !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
         {
@@ -379,7 +366,7 @@ public sealed class ConsoleTerminal : Control
             }
         }
 
-        // Alt+key ESC-prefixes the character for readline/vim, when it won't fire TextInput.
+        // Alt+key sends an ESC-prefixed character.
         if (e.KeyModifiers == KeyModifiers.Alt)
         {
             var altChar = AltKeyChar(e.Key);
@@ -392,7 +379,7 @@ public sealed class ConsoleTerminal : Control
             }
         }
 
-        // 4. Everything else arrives via OnTextInput - let base run.
+        // Everything else arrives via OnTextInput.
         base.OnKeyDown(e);
     }
 
@@ -473,7 +460,7 @@ public sealed class ConsoleTerminal : Control
         e.Handled = true;
     }
 
-    // Cached typefaces - avoids per-call font lookup and keeps glyph metrics consistent.
+    // Cached typefaces.
     private static readonly Typeface TypefaceNormal = new(FontFamily, FontStyle.Normal, FontWeight.Regular);
     private static readonly Typeface TypefaceBold   = new(FontFamily, FontStyle.Normal, FontWeight.Bold);
 
@@ -481,7 +468,7 @@ public sealed class ConsoleTerminal : Control
     {
         lock (_lock)
         {
-            // Fill with default background first so unpainted cells are erased.
+            // Fill with default background first.
             ctx.FillRectangle(new SolidColorBrush(DefaultBg), new Rect(Bounds.Size));
 
             var isCursorVisible = _scrollOffset == 0 && _cursorVisible && _cursorBlinkOn;
@@ -517,7 +504,7 @@ public sealed class ConsoleTerminal : Control
                 var cell = GetDisplayCell(r, c, scrollbackStart);
                 var absRow = ScreenRowToAbsRow(r);
 
-                // Integer pixel positions avoid glyph drift from fractional CellW.
+                // Integer pixel positions.
                 var x = (int)Math.Round(c * CellW);
                 var x1 = (int)Math.Round((c + 1) * CellW);
                 var y = r * CellH;          // CellH is already integral (17.0)
@@ -542,7 +529,7 @@ public sealed class ConsoleTerminal : Control
                     }
                 }
 
-                // Always paint the cell background so the old cursor cell is restored.
+                // Always paint the cell background.
                 var bg = atCursor ? DefaultFg
                        : isCurrentMatch ? SearchCurrentBg
                        : isMatch ? SearchMatchBg
@@ -602,7 +589,7 @@ public sealed class ConsoleTerminal : Control
         ctx.DrawText(ft, new Point(rect.X + pad, rect.Y + pad));
     }
 
-    // Resolves the cell at a screen row/col, blending in scrollback once scrolled up.
+    // Resolves the cell at a screen row/col, including scrollback.
     private TermCell GetDisplayCell(int screenRow, int col, int scrollbackStart)
     {
         if (_scrollOffset == 0)
@@ -618,7 +605,7 @@ public sealed class ConsoleTerminal : Control
         return _cells[liveRow, col];
     }
 
-    // Thin bar on the right edge showing roughly where in the scrollback the view sits.
+    // Scroll-position indicator on the right edge.
     private void DrawScrollIndicator(DrawingContext ctx)
     {
         var totalLines = _scrollback.Count + _rows;
@@ -805,7 +792,7 @@ public sealed class ConsoleTerminal : Control
     private (int cols, int rows) CalcSize(Size? size = null)
     {
         var s = size ?? Bounds.Size;
-        // Uses the same rounding as Render so column count matches the painted grid.
+        // Uses the same rounding as Render.
         var cols = Math.Max(10, (int)(s.Width / CellW));
         var rows = Math.Max(3,  (int)(s.Height / CellH));
         return (cols, rows);
@@ -929,9 +916,7 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
-    // OSC payload is "<code>;<text>". Codes 0 and 2 set the window title.
-    // Code 1337 with a "CurrentDir=<path>" payload reports the shell's cwd (iTerm2-style
-    // convention; emitted by our own prompt hooks, not something every shell does by default).
+    // OSC payload is "<code>;<text>". Codes 0/2 set the window title; 1337 CurrentDir=<path> reports cwd.
     private void HandleOscComplete()
     {
         var s = _oscBuf.ToString();
@@ -1279,9 +1264,7 @@ public readonly record struct TermCell(
     bool  Bold,
     bool  Underline);
 
-/// <summary>
-/// Immutable capture of a terminal's screen buffer, stored per session.
-/// </summary>
+// Immutable capture of a terminal's screen buffer, stored per session.
 public sealed class TerminalSnapshot(
     TermCell[,] cells,
     int rows, int cols,
@@ -1422,11 +1405,9 @@ internal static class NativeConPty
         }
     }
 }
-// -- Moved from MainWindow_axaml.cs: shell discovery, working-directory/title
-// heuristics, and other terminal-session logic that doesn't depend on MainWindow
-// view-model state. --
+// Shell discovery and terminal-session helpers moved from MainWindow_axaml.cs.
 
-/// <summary>One selectable shell (PowerShell, cmd, bash, ...) the terminal panel can launch.</summary>
+// One selectable shell (PowerShell, cmd, bash, ...) the terminal panel can launch.
 public sealed class TerminalShellOption
 {
     public string Id { get; init; } = string.Empty;
@@ -1435,27 +1416,18 @@ public sealed class TerminalShellOption
     public string Arguments { get; init; } = string.Empty;
 }
 
-/// <summary>Static helpers for shell discovery, panel-height clamping, and terminal-tab title formatting.</summary>
+// Static helpers for shell discovery, panel-height clamping, and terminal-tab title formatting.
 public static class TerminalShellSupport
 {
     private const double MinPanelHeight = 120;
     private const double MaxPanelHeight = 420;
 
-    // Raw string literal so the embedded " and \ characters (needed for the printf OSC escape
-    // sequence and for quoting the path against spaces) don't have to be hand-escaped. The inner
-    // "s are already the \"-escaped form required once this whole thing sits inside bash's
-    // outer -c "..." argument on the process command line. Uses `pwd -W` (a Git-for-Windows/MSYS
-    // extension) rather than $PWD, since $PWD is MSYS-style ("/c/Users/...") and wouldn't resolve
-    // as a real Windows path on the .NET side.
+    // Raw string literal for the bash cwd-report hook; uses `pwd -W` for a Windows-style path.
     private const string BashCwdHookCommand = """
         export PROMPT_COMMAND='printf \"\033]1337;CurrentDir=%s\007\" \"$(pwd -W)\"'; exec bash --login -i
         """;
 
-    /// <param name="enablePSReadLinePrediction">
-    /// Off by default. PSReadLine's predictive IntelliSense used to be disabled unconditionally
-    /// because it rendered as glitchy artifacts in the ConPTY terminal; this now lets users opt
-    /// back into it from Settings instead.
-    /// </param>
+    // enablePSReadLinePrediction: off by default; opt-in from Settings.
     public static IEnumerable<TerminalShellOption> DetectTerminalShells(bool enablePSReadLinePrediction = false)
     {
         var shells = new List<TerminalShellOption>();
@@ -1477,15 +1449,12 @@ public static class TerminalShellSupport
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // Disables PSReadLine's predictive IntelliSense, which renders as glitchy artifacts in
-            // the ConPTY terminal. Left in place unless the user opts into it via Settings.
+            // Disables PSReadLine's predictive IntelliSense unless enabled via Settings.
             var disablePredictiveIntelliSenseCommand = enablePSReadLinePrediction
                 ? string.Empty
                 : "try { Set-PSReadLineOption -PredictionSource None } catch {}; ";
 
-            // Wraps whatever "prompt" function is already defined (default or from the user's
-            // profile) so every prompt redraw also reports the shell's cwd via OSC 1337, which
-            // ConsoleTerminal.WorkingDirectoryChanged picks up to keep the tab title in sync with cd.
+            // Wraps the existing prompt function to also report cwd via OSC 1337.
             const string reportCwdCommand =
                 "if (-not $global:__KodoOrigPrompt) { $global:__KodoOrigPrompt = $function:prompt }; " +
                 "function global:prompt { " +
@@ -1512,8 +1481,7 @@ public static class TerminalShellSupport
                 "Command Prompt",
                 ResolveExecutable(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
                     ?? ResolveExecutable("cmd.exe"),
-                // $E is cmd's escape-char macro; the literal \a (BEL) terminates the OSC sequence.
-                // $P$G after it restores the normal "<path>>" prompt text.
+                // $E is cmd's escape-char macro; $P$G restores the normal prompt after.
                 "/K prompt $E]1337;CurrentDir=$P\a$P$G");
             AddShell(
                 "bash",
@@ -1521,7 +1489,7 @@ public static class TerminalShellSupport
                 ResolveExecutable("bash.exe",
                     @"C:\Program Files\Git\bin\bash.exe",
                     @"C:\Program Files\Git\usr\bin\bash.exe"),
-                // PROMPT_COMMAND must be exported so it survives the exec into a fresh login shell.
+                // PROMPT_COMMAND is exported to survive the exec into a login shell.
                 $"--login -i -c \"{BashCwdHookCommand}\"");
         }
         else
@@ -1595,8 +1563,7 @@ public static class TerminalShellSupport
 
         var trimmedPath = rawTitle.TrimEnd('\\', '/');
 
-        // If the reported path points at a file (or just looks like one), use the
-        // name of the folder that contains it rather than the file name itself.
+        // If the path looks like a file, use its containing folder name instead.
         if (File.Exists(trimmedPath) || (!Directory.Exists(trimmedPath) && Path.HasExtension(trimmedPath)))
         {
             var parentDir = Path.GetDirectoryName(trimmedPath);
@@ -1609,8 +1576,7 @@ public static class TerminalShellSupport
         return string.IsNullOrWhiteSpace(lastSegment) ? rawTitle : lastSegment;
     }
 
-    // Windows drive-letter path (C:\...), UNC path (\\server\share\...), or a
-    // Unix-style absolute path (e.g. under WSL bash) - anything else is left alone.
+    // Windows drive-letter path, UNC path, or Unix-style absolute path; anything else is left alone.
     private static bool LooksLikeFilePath(string text)
     {
         if (text.Length >= 3 && char.IsLetter(text[0]) && text[1] == ':' && (text[2] == '\\' || text[2] == '/'))

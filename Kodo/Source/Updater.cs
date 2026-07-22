@@ -1,4 +1,4 @@
-// Licensed under the Kodo Public License v1.1
+// Licensed under GPL-v3.0
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -292,12 +292,6 @@ internal static class UpdateService
     }
 
     // Consolidated check-then-act flow, replacing duplicated check/install/dialog branches at each call site.
-
-    /// <summary>
-    /// Checks for an update and installs silently or shows UpdateDialog, per installInBackground.
-    /// Returns the <see cref="UpdateInfo"/> found, or <c>null</c>. Never throws.
-    /// </summary>
-    /// onUpdateFound fires the moment an update is found, before the install/dialog branch runs.
     public static async Task<UpdateInfo?> CheckAndHandleUpdateAsync(
         bool installInBackground,
         Action<UpdateInfo>? onUpdateFound = null,
@@ -769,10 +763,6 @@ internal sealed class AppUpdateScheduler
     private readonly Func<bool> _isEnabled;
     private readonly Func<bool> _isManualCheckInProgress;
     private readonly Func<bool> _installInBackground;
-
-    /// <param name="isEnabled">Mirrors the "Automatically check for and install Kodo updates" setting.</param>
-    /// True while a manual Check for Updates click is in flight, so the tick doesn't race it.
-    /// <param name="installInBackground">Mirrors the "Update automatically without asking" sub-setting.</param>
     public AppUpdateScheduler(Func<bool> isEnabled, Func<bool> isManualCheckInProgress, Func<bool> installInBackground)
     {
         _isEnabled = isEnabled;
@@ -780,18 +770,12 @@ internal sealed class AppUpdateScheduler
         _installInBackground = installInBackground;
         _timer.Tick += async (_, _) => await OnTickAsync().ConfigureAwait(true);
     }
-
-    /// <summary>
-    /// Starts or stops the timer to match <c>isEnabled</c>. Call once at startup and again on toggle.
-    /// </summary>
     public void UpdateLifecycle()
     {
         _timer.Stop();
         if (_isEnabled())
             _timer.Start();
     }
-
-    /// <summary>Stops the timer outright - call when the window is closing.</summary>
     public void Stop() => _timer.Stop();
 
     // Fires every six hours while enabled; skips while a manual check is in flight.
