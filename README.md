@@ -31,6 +31,7 @@ Released under the [GPL-v3.0 license](LICENSE.md).
 |---|---|
 | 🧩 **Extension Marketplace** | Install syntax highlighting and themes via `.kox` files |
 | 🧑‍💻 **Integrated Terminal** | Run code from within Kodo, no extra terminal needed |
+| ✍️ **CodePredict** | Built-in code completion that pulls from `.kox` profiles |
 | 🎨 **Themes** | Built-in Dark, Light, and System Default modes + custom extension themes |
 | 📁 **Folder Support** | Open and browse entire project folders in the file explorer |
 | 💾 **Autosave** | Configurable autosave so you never lose work |
@@ -50,7 +51,7 @@ Released under the [GPL-v3.0 license](LICENSE.md).
 
 Releases are also available through installers on the [Releases page](https://github.com/KerbalMissile/Kodo/releases) - download, install, and run.
 
-If you're running from source, feel free to clone the repository and modify code. Make sure all submissions comply with KPL v1.1. Feedback, PRs and discussions are always and will always be welcome!
+If you're running from source, feel free to clone the repository and modify code. Make sure all submissions comply with GPL v3.0. Feedback, PRs and discussions are always and will always be welcome!
 
 ---
 
