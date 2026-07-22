@@ -26,7 +26,7 @@ public sealed class CodePredictSuggestion : ICompletionData
     public CodePredictKind Kind { get; }
     public string Text { get; }
     public IImage? Image => null;
-    // Built lazily, once, on first access - avoids rebuilding the icon+name+kind
+    // Built lazily, once, on first access - avoids rebuilding the icon + name + kind
     // row's control tree on every measure/arrange/render pass.
     private Control? _content;
     public object Content => _content ??= BuildContentVisual();
@@ -453,5 +453,3 @@ public sealed class CodePredictEngine
             .ToList();
     }
 }
-
-
