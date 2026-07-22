@@ -333,9 +333,8 @@ public class ExtensionThemeDefinition
     public string PreviewBorder { get; init; } = "#4A4A4A";
 }
 
-/// <summary>
+
 /// A named group of theme cards from one extension; multi-theme groups render as a collapsible section.
-/// </summary>
 public class ThemeExtensionGroup : INotifyPropertyChanged
 {
     private bool _isExpanded;
@@ -343,12 +342,10 @@ public class ThemeExtensionGroup : INotifyPropertyChanged
     public string GroupName { get; }
     public IReadOnlyList<LoadedExtension> Themes { get; }
 
-    /// <summary>True when this extension packs more than one theme.</summary>
+    /// True when this extension packs more than one theme.
     public bool IsMultiTheme => Themes.Count > 1;
 
-    /// <summary>
     /// Whether the card row is expanded; single-theme groups are always shown.
-    /// </summary>
     public bool IsExpanded
     {
         get => _isExpanded;
@@ -361,7 +358,7 @@ public class ThemeExtensionGroup : INotifyPropertyChanged
         }
     }
 
-    /// <summary>▶ when collapsed, ▼ when expanded.</summary>
+    /// ▶ when collapsed, ▼ when expanded.
     public string ChevronGlyph => _isExpanded ? "▾" : "▸";
 
     public ThemeExtensionGroup(string groupName, IReadOnlyList<LoadedExtension> themes)
@@ -2605,9 +2602,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return builder.Uri.ToString();
     }
 
-    /// <summary>
     /// Converts a GitHub blob-viewer URL to the Contents API form for raw bytes.
-    /// </summary>
     private static string NormalizeGitHubBlobViewerUrl(string url)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -2632,10 +2627,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return url; // non-blob github.com URL (e.g. releases page) - leave alone
     }
 
-    /// <summary>
+
     /// Normalises any of GitHub's three URL forms to the Contents API form.
     /// Third-party URLs are returned unchanged.
-    /// </summary>
     private static string NormalizeGitHubUrl(string url)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -2680,9 +2674,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return url;
     }
 
-    /// <summary>
+
     /// True when the URL is a GitHub Contents API endpoint, used to decide whether to add the raw+json Accept header.
-    /// </summary>
+
     private static bool IsGitHubContentsApiUrl(string url) =>
         !string.IsNullOrWhiteSpace(url) &&
         url.StartsWith("https://api.github.com/repos/", StringComparison.OrdinalIgnoreCase) &&
@@ -3983,10 +3977,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasThemeExtensions => ThemeExtensions.Any();
 
-    /// <summary>
+
     /// ThemeExtensions grouped by name; multi-theme extensions collapse into one group.
     /// Bind Settings/tutorial theme lists to this instead of <see cref="ThemeExtensions"/>.
-    /// </summary>
+
     public IEnumerable<ThemeExtensionGroup> GroupedThemeExtensions =>
         ThemeExtensions
             .GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
@@ -4628,9 +4622,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>
+
     /// When on, also appends Debug-level traces to kodo.log; useful for diagnosing issues but noisy, so off by default.
-    /// </summary>
+
     public bool IsVerboseLoggingEnabled
     {
         get => _isVerboseLoggingEnabled;
@@ -4660,16 +4654,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasDeveloperOptionsStatus => !string.IsNullOrWhiteSpace(DeveloperOptionsStatusText);
 
-    /// <summary>Path to kodo.log (main log), shown in developer options.</summary>
+    /// Path to kodo.log (main log), shown in developer options.
     public string MainLogFilePath => KodoDiagnostics.MainLogFilePath;
 
-    /// <summary>Path to crash.log, shown in developer options.</summary>
+    /// Path to crash.log, shown in developer options.
     public string CrashLogFilePath => KodoDiagnostics.CrashLogFilePath;
 
-    /// <summary>Path to the folder that contains kodo.log and crash.log.</summary>
+    /// Path to the folder that contains kodo.log and crash.log.    
     public string CrashLogFolderPath => KodoDiagnostics.LogDirectoryPath;
 
-    /// <summary>Path to the folder that contains kodosettings.json, shown in the button tooltip.</summary>
+    /// Path to the folder that contains kodosettings.json, shown in the button tooltip.
     public string SettingsFolderPath =>
         Path.GetDirectoryName(SettingsFilePath) ?? string.Empty;
 
@@ -5290,9 +5284,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Personalization settings
 
-    /// <summary>
     /// ISO country code for the user, used to pick region-appropriate holiday messages.
-    /// </summary>
     public string UserCountry
     {
         get => _userCountry;
@@ -5315,9 +5307,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>
+
     /// True when the user's country is US, driving American spelling instead of British/Canadian.
-    /// </summary>
+
     public bool IsAmericanEnglish => _userCountry == "US";
 
     // Regional spelling: US gets "Color"/"personalize"; everyone else gets "Colour"/"personalise".
@@ -5327,9 +5319,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? "These settings personalize the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible."
         : "These settings personalise the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible.";
 
-    /// <summary>
+
     /// Hemisphere override: 0 auto-detect, 1 north, 2 south; affects the inferred season for greetings.
-    /// </summary>
+
     public int UserHemisphereIndex
     {
         get => _userHemisphere;
@@ -5344,9 +5336,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>
+
     /// UTC offset entered by the user; overrides the system clock for time-of-day greetings when set.
-    /// </summary>
+
     public string UserTimezoneOffset
     {
         get => _userTimezoneOffset;
@@ -5361,9 +5353,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>
+
     /// Optional display name for personalised greetings; empty omits the name.
-    /// </summary>
+
     public string UserName
     {
         get => _userName;
@@ -5381,9 +5373,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Welcome message
 
-    /// <summary>
+
     /// Infers the user's country from OS regional settings; returns an ISO code or empty string if unknown.
-    /// </summary>
+
     private static string DetectCountryCode()
     {
         try
@@ -5399,9 +5391,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Populated by FetchSportingEventMessagesAsync and joined into the greeting pool once available.
     private List<string>? _sportingEventMessages;
 
-    /// <summary>
+
     /// Best-effort fetch of sporting-event greeting lines.
-    /// </summary>
+
     private async Task FetchSportingEventMessagesAsync()
     {
         var messages = await WelcomeMessageBuilder.FetchSportingEventMessagesAsync(MarketplaceHttpClient);
@@ -5436,9 +5428,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static readonly DateTime _kodoBirthDate = new(2026, 4, 18);
 
-    /// <summary>
+
     /// True on April 18, Kodo's birthday; drives celebratory UI accents throughout the app.
-    /// </summary>
+
     public bool IsKodoBirthday
     {
         get
@@ -5448,7 +5440,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>How old Kodo is today (whole years since April 18 2026).</summary>
+    /// How old Kodo is today (whole years since April 18 2026).
     public int KodoBirthdayAge
     {
         get
@@ -5462,9 +5454,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>
     /// Short status-bar note shown on Kodo's birthday; empty every other day.
-    /// </summary>
     public string StatusBarBirthdayText
     {
         get
@@ -5475,7 +5465,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>True only when StatusBarBirthdayText is non-empty (i.e. on the birthday).</summary>
+    // True only when StatusBarBirthdayText is non-empty (i.e. on the birthday).
     public bool IsStatusBarBirthdayVisible => IsKodoBirthday;
 
     public string GetStartedSubtitleText => "Open a file or folder to get started, or create something new.";
@@ -6396,10 +6386,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Theme application
 
-    /// <summary>
+
     /// Sets theme brushes and <see cref="Application.RequestedThemeVariant"/> without notifications, saves, or refresh.
     /// Call before <c>DataContext = this</c> so bindings read correct colors on first evaluation.
-    /// </summary>
+
     private void ApplyThemeBrushes(string themeName)
     {
         _requestedThemeName = themeName;
@@ -7770,7 +7760,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ?? AvailableTerminalShells.FirstOrDefault();
     }
 
-    /// <summary>Derives a tab-title-friendly name from the workspace/working-directory path (e.g. "Kodo" from ".../Kodo"), falling back to the shell name for root paths.</summary>
+    /// Derives a tab-title-friendly name from the workspace/working-directory path (e.g. "Kodo" from ".../Kodo"), falling back to the shell name for root paths.
     private static string GetWorkspaceDisplayName(string workingDirectory, string fallback)
     {
         if (string.IsNullOrWhiteSpace(workingDirectory))
@@ -7864,11 +7854,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FocusActiveTerminal();
     }
 
-    /// <summary>
     /// Tracks the active session's live working directory (via the shell's OSC 1337 CWD reports,
     /// see <see cref="TerminalShellSupport.DetectTerminalShells"/>) and keeps tab titles in sync
     /// as the user cd's around.
-    /// </summary>
     private void TerminalHostControl_OnWorkingDirectoryChanged(object? sender, string path)
     {
         if (ActiveTerminalSession is not { } session) return;
@@ -7879,13 +7867,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RetitleTerminalSessions();
     }
 
-    /// <summary>
+
     /// Recomputes auto-generated tab titles from each session's working-directory folder name.
     /// The first session in a given directory keeps the bare name (e.g. "Kodo"); later sessions
     /// sharing that same directory get " 2", " 3", etc., in tab order. Sessions the user has
     /// renamed (<see cref="TerminalSession.HasCustomTitle"/>) are left untouched and don't
     /// consume a slot in another session's numbering.
-    /// </summary>
+
     private void RetitleTerminalSessions()
     {
         var seenCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -9117,10 +9105,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CloseTab(tab);
     }
 
-    /// <summary>
+
     /// After a rename or move, updates every open tab under <paramref name="oldPath"/> to the new location,
     /// patching <c>_currentFilePath</c> if the active tab is affected.
-    /// </summary>
+
     private void RetargetTabPaths(string oldPath, string newPath, bool wasDirectory)
     {
         foreach (var tab in OpenTabs.Where(t => !t.IsUntitled))
@@ -9150,9 +9138,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>
+
     /// Shows a small modal asking for a new name; returns the trimmed input, or null if cancelled/empty.
-    /// </summary>
     private async Task<string?> ShowRenameDialogAsync(string currentName)
     {
         string? result = null;
@@ -9563,9 +9550,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Encoding detection & change
 
-    /// <summary>
+
     /// Detects a file's encoding from its BOM, falling back to UTF-8 (no BOM).
-    /// </summary>
+
     private static System.Text.Encoding DetectFileEncoding(string path)
     {
         try
@@ -9592,9 +9579,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>
+
     /// Shows an encoding picker and immediately re-saves the file if a different encoding is chosen.
-    /// </summary>
+
     private async void EncodingStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (!HasFileOpen) return;
@@ -12138,12 +12125,12 @@ public sealed class NewsItem
     public bool HasBody      => !string.IsNullOrWhiteSpace(Body);
     public bool HasUpdatedAt => !string.IsNullOrWhiteSpace(UpdatedAt);
 }
-/// <summary>
+
 /// The full schema Kodo persists to <c>kodosettings.json</c>. Pure data - no I/O, no
 /// defaults resolution logic beyond simple property initializers. MainWindow owns
 /// reading/writing this to disk (LoadSettings / BuildSettingsSnapshot / PersistSettingsSnapshot);
 /// this type only defines the shape.
-/// </summary>
+
 internal sealed class AppSettings
 {
     // Single source of truth for the default terminal panel height.
@@ -12205,7 +12192,7 @@ internal sealed class AppSettings
     public bool HasAcceptedPrivacyPolicy { get; set; }
 }
 
-/// <summary>One entry in AppSettings.RecentFiles - a recently opened file or folder.</summary>
+/// One entry in AppSettings.RecentFiles - a recently opened file or folder.
 public sealed class RecentFileEntry
 {
     public string Path { get; set; } = string.Empty;
