@@ -51,6 +51,10 @@ Released under the [GPL-v3.0 license](LICENSE.md).
 
 Releases are also available through installers on the [Releases page](https://github.com/KerbalMissile/Kodo/releases) - download, install, and run.
 
+**Prerequisites (app):** Windows 10 (1809+) or Windows 11. Linux and macOS are currently not supported.
+
+Source users, please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for required packages.
+
 If you're running from source, feel free to clone the repository and modify code. Make sure all submissions comply with GPL v3.0. Feedback, PRs and discussions are always and will always be welcome!
 
 ---
