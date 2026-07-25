@@ -21,12 +21,12 @@ internal sealed record AptabaseEvent(
     [property: JsonPropertyName("sessionId")]   string               SessionId,
     [property: JsonPropertyName("eventName")]   string               EventName,
     [property: JsonPropertyName("systemProps")] AptabaseSystemProps  SystemProps,
-    [property: JsonPropertyName("props")]       Dictionary<string,string>? Props);
+    [property: JsonPropertyName("props")] Dictionary<string, string>? Props);
 
 internal static class AptabaseClient
 {
     private static readonly HttpClient _client = new();
-    private static readonly string _appKey = KEYS.AptabaseKey;
+    private static string? _appKey;
     private static string? _sessionId;
     private static readonly Queue<(string eventName, string? message)> _eventQueue = new();
 
@@ -45,9 +45,18 @@ internal static class AptabaseClient
     // Enables/disables analytics; disabling discards queued events
     public static void SetEnabled(bool enabled)
     {
+        if (enabled && (_isDevBuild || string.IsNullOrWhiteSpace(_appKey)))
+        {
+            _isEnabled = false;
+            return;
+        }
+
         if (_isEnabled == enabled) return;
+
         _isEnabled = enabled;
-        Console.WriteLine($"[Aptabase] Data tracking {(enabled ? "enabled" : "disabled")}");
+
+        Console.WriteLine(
+            $"[Aptabase] Data tracking {(enabled ? "enabled" : "disabled")}");
 
         if (!enabled)
         {
@@ -119,7 +128,9 @@ internal static class AptabaseClient
             ? informationalVersion
             : System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0";
 
-        _isDevBuild = appVersion.EndsWith("-DEV", StringComparison.OrdinalIgnoreCase);
+        var readableVersion = appVersion.Split('+', 2)[0]; //Exclude metadatas
+
+        _isDevBuild = readableVersion.EndsWith("-DEV", StringComparison.OrdinalIgnoreCase);
 
         _sessionId   = Guid.NewGuid().ToString();
         _systemProps = new AptabaseSystemProps(
@@ -134,9 +145,20 @@ internal static class AptabaseClient
         if (_isDevBuild)
         {
             Console.WriteLine($"[Aptabase] Dev build detected ({appVersion})");
+            return;
         }
 
+        _appKey = GetAptabaseKey();
+
+        Console.WriteLine($"[Aptabase] Initialized with session: {_sessionId}");
+        Console.WriteLine($"[Aptabase] App Key: {_appKey}");
+
         // Connectivity test runs from SetEnabled
+    }
+
+    private static string? GetAptabaseKey()
+    {
+        return Environment.GetEnvironmentVariable("KODO_APTABASE_KEY");
     }
 
     private static async Task TestConnectivityAsync()
