@@ -2861,18 +2861,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         baseExt.IsDirectorySource = true;
         baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(folderPath, isDirectory: true);
 
-        var languagePath = Path.Combine(folderPath, "language.json");
-        if (File.Exists(languagePath))
+        foreach (var languageFileName in EnumerateLanguageProfileNames())
         {
-            using var langDoc = JsonDocument.Parse(File.ReadAllText(languagePath));
-            ParseLanguage(langDoc.RootElement, baseExt);
-        }
+            var langPath = Path.Combine(folderPath, languageFileName);
+            if (!File.Exists(langPath)) continue;
 
-        var language2Path = Path.Combine(folderPath, "language2.json");
-        if (File.Exists(language2Path))
-        {
-            using var lang2Doc = JsonDocument.Parse(File.ReadAllText(language2Path));
-            ParseLanguage(lang2Doc.RootElement, baseExt);
+            using var langDoc = JsonDocument.Parse(File.ReadAllText(langPath));
+            ParseLanguage(langDoc.RootElement, baseExt);
         }
 
         var iconPath = Path.Combine(folderPath, "icon.png");
@@ -2997,20 +2992,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         baseExt.IsDirectorySource = false;
         baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(koxPath, isDirectory: false);
 
-        var languageEntry = archive.GetEntry("language.json");
-        if (languageEntry is not null)
+        foreach (var languageFileName in EnumerateLanguageProfileNames())
         {
-            using var langStream = languageEntry.Open();
+            var langEntry = archive.GetEntry(languageFileName);
+            if (langEntry is null) continue;
+
+            using var langStream = langEntry.Open();
             using var langDoc = JsonDocument.Parse(langStream);
             ParseLanguage(langDoc.RootElement, baseExt);
-        }
-
-        var language2Entry = archive.GetEntry("language2.json");
-        if (language2Entry is not null)
-        {
-            using var lang2Stream = language2Entry.Open();
-            using var lang2Doc = JsonDocument.Parse(lang2Stream);
-            ParseLanguage(lang2Doc.RootElement, baseExt);
         }
 
         var iconEntry = archive.GetEntry("icon.png") ?? archive.GetEntry("icon.svg");
@@ -3057,6 +3046,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Every language profile file a .kox / extension folder may contain, in load order.
+    // "language.json" and "language2.json" are the original two files legacy extensions
+    // ship with - their names are kept as-is for backward compatibility. "language1.json"
+    // and "language3.json" through "language5.json" fill in the remaining slots without
+    // touching that existing pair, bringing the total to six.
+    // Each file is parsed independently: a profile whose own "extensions" array is non-empty
+    // becomes an additional scoped LanguageSyntaxProfile (see ParseLanguage), otherwise it's
+    // merged into the extension's base profile. Used by both LoadExtensionsFromFolder and
+    // LoadExtensionsFromKox so multi-language-in-one-package extensions aren't capped at two.
     private static IEnumerable<string> EnumerateLanguageProfileNames()
     {
         yield return "language.json";
@@ -11517,7 +11515,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var windowTitle  = isCritical ? "Kodo - Warning" : "Kodo - Notice";
             var logPath      = KodoDiagnostics.MainLogFilePath;
 
-            // --- Header ---
+            // Header
             var titleText = new TextBlock
             {
                 Text         = titleLabel,
@@ -11629,7 +11627,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 TextWrapping = TextWrapping.Wrap,
             };
 
-            // --- Action buttons ---
+            // Action buttons
             var copyButton = new Button
             {
                 Content             = "Copy to Clipboard",
