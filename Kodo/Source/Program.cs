@@ -14,7 +14,10 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        AttachConsole(0xFFFFFFFF);
+        if (OperatingSystem.IsWindows())
+        {
+            AttachConsole(0xFFFFFFFF);
+        }
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
         AptabaseClient.Initialize();
