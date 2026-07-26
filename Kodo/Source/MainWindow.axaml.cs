@@ -762,6 +762,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _startupActiveTabPath;
     private string? _startupFilePath;
     private string _extensionSearchText = string.Empty;
+    private string _settingsSearchText = string.Empty;
     private string _selectedInstalledExtensionSort = ExtensionSortModes.Alphabetical;
     private string _selectedMarketplaceExtensionSort = ExtensionSortModes.Alphabetical;
     private string _selectedExtensionTypeFilter = ExtensionTypeFilters.All;
@@ -4797,6 +4798,113 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             NotifyExtensionFiltersChanged();
         }
+    }
+
+    public string SettingsSearchText
+    {
+        get => _settingsSearchText;
+        set
+        {
+            if (_settingsSearchText == value) return;
+            _settingsSearchText = value;
+            OnPropertyChanged();
+            NotifySettingsSearchChanged();
+        }
+    }
+
+    // True if the search box is empty (nothing to filter) or the given keyword blob
+    // contains the search text. Keywords should include the card's title plus the
+    // labels of its more findable controls, so e.g. "font" surfaces the Editor card.
+    private bool MatchesSettingsSearch(string keywords)
+    {
+        var query = _settingsSearchText?.Trim();
+        return string.IsNullOrEmpty(query) ||
+               keywords.Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public bool IsThemeSettingsVisible =>
+        MatchesSettingsSearch("Theme dark light system appearance color colour scheme accent");
+
+    public bool IsAccentColourSettingsVisible =>
+        MatchesSettingsSearch("Accent Colour color theme kodo windows custom purple");
+
+    public bool IsEditorSettingsVisible =>
+        MatchesSettingsSearch("Editor word wrap CodePredict code suggestions completion autocomplete tab size font size");
+
+    public bool IsTerminalSettingsVisible =>
+        MatchesSettingsSearch("Terminal shell PowerShell PSReadLine predictive IntelliSense");
+
+    public bool IsDisplaySettingsVisible =>
+        MatchesSettingsSearch("Display status bar file path");
+
+    public bool IsTabsLaunchSettingsVisible =>
+        MatchesSettingsSearch("Tabs Launch confirm closing unsaved restore open tabs startup");
+
+    public bool IsAutosaveSettingsVisible =>
+        MatchesSettingsSearch("Autosave auto save");
+
+    public bool IsUpdatesSettingsVisible =>
+        MatchesSettingsSearch("Updates update Kodo background automatically check extensions");
+
+    public bool IsDiscordRichPresenceSettingsVisible =>
+        MatchesSettingsSearch("Discord Rich Presence RPC detailed");
+
+    public bool IsPrivacySettingsVisible =>
+        MatchesSettingsSearch("Privacy data tracking anonymous usage analytics policy");
+
+    public bool IsPersonalizationSettingsVisible =>
+        MatchesSettingsSearch("Personalization name country hemisphere time zone offset");
+
+    public bool IsDeveloperOptionsSettingsVisible =>
+        MatchesSettingsSearch("Developer Options logs verbose logging crash diagnostic export folder extensions settings");
+
+    public bool IsHelpSettingsVisible =>
+        MatchesSettingsSearch("Help tutorial Discord website shortcuts keyboard");
+
+    public bool IsAboutSettingsVisible =>
+        MatchesSettingsSearch("About version check for updates release copyright Kodo");
+
+    public bool IsWhatsNewSettingsVisible =>
+        MatchesSettingsSearch("What's New changelog release notes");
+
+    // Search active, but every card was filtered out - lets the empty-state
+    // placeholder tell the difference from "Settings just hasn't loaded yet".
+    public bool IsSettingsSearchEmptyVisible =>
+        !string.IsNullOrWhiteSpace(_settingsSearchText) &&
+        !IsThemeSettingsVisible &&
+        !IsAccentColourSettingsVisible &&
+        !IsEditorSettingsVisible &&
+        !IsTerminalSettingsVisible &&
+        !IsDisplaySettingsVisible &&
+        !IsTabsLaunchSettingsVisible &&
+        !IsAutosaveSettingsVisible &&
+        !IsUpdatesSettingsVisible &&
+        !IsDiscordRichPresenceSettingsVisible &&
+        !IsPrivacySettingsVisible &&
+        !IsPersonalizationSettingsVisible &&
+        !IsDeveloperOptionsSettingsVisible &&
+        !IsHelpSettingsVisible &&
+        !IsAboutSettingsVisible &&
+        !IsWhatsNewSettingsVisible;
+
+    private void NotifySettingsSearchChanged()
+    {
+        OnPropertyChanged(nameof(IsThemeSettingsVisible));
+        OnPropertyChanged(nameof(IsAccentColourSettingsVisible));
+        OnPropertyChanged(nameof(IsEditorSettingsVisible));
+        OnPropertyChanged(nameof(IsTerminalSettingsVisible));
+        OnPropertyChanged(nameof(IsDisplaySettingsVisible));
+        OnPropertyChanged(nameof(IsTabsLaunchSettingsVisible));
+        OnPropertyChanged(nameof(IsAutosaveSettingsVisible));
+        OnPropertyChanged(nameof(IsUpdatesSettingsVisible));
+        OnPropertyChanged(nameof(IsDiscordRichPresenceSettingsVisible));
+        OnPropertyChanged(nameof(IsPrivacySettingsVisible));
+        OnPropertyChanged(nameof(IsPersonalizationSettingsVisible));
+        OnPropertyChanged(nameof(IsDeveloperOptionsSettingsVisible));
+        OnPropertyChanged(nameof(IsHelpSettingsVisible));
+        OnPropertyChanged(nameof(IsAboutSettingsVisible));
+        OnPropertyChanged(nameof(IsWhatsNewSettingsVisible));
+        OnPropertyChanged(nameof(IsSettingsSearchEmptyVisible));
     }
 
     public bool IsUpdatingAllExtensions
@@ -11515,7 +11623,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var windowTitle  = isCritical ? "Kodo - Warning" : "Kodo - Notice";
             var logPath      = KodoDiagnostics.MainLogFilePath;
 
-            // Header
+            // --- Header ---
             var titleText = new TextBlock
             {
                 Text         = titleLabel,
@@ -11627,7 +11735,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 TextWrapping = TextWrapping.Wrap,
             };
 
-            // Action buttons
+            // --- Action buttons ---
             var copyButton = new Button
             {
                 Content             = "Copy to Clipboard",

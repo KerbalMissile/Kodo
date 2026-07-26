@@ -3956,7 +3956,18 @@
                             </StackPanel>
                         </StackPanel>
 
-
+                        <TextBox Grid.Column="1"
+                                 Width="260"
+                                 VerticalAlignment="Center"
+                                 Text="{Binding SettingsSearchText, Mode=TwoWay}"
+                                 PlaceholderText="Search settings..."
+                                 Background="{Binding ButtonBrush}"
+                                 Foreground="{Binding PrimaryTextBrush}"
+                                 BorderBrush="{Binding SurfaceBorderBrush}"
+                                 CornerRadius="10"
+                                 Height="36"
+                                 Padding="12,0"
+                                 VerticalContentAlignment="Center" />
                     </Grid>
                 </Border>
 
@@ -3975,7 +3986,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsThemeSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4195,7 +4207,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsAccentColourSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4292,7 +4305,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsEditorSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4363,7 +4377,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsTerminalSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4409,7 +4424,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsDisplaySettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4434,7 +4450,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsTabsLaunchSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4461,7 +4478,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsAutosaveSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4485,7 +4503,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsUpdatesSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4541,7 +4560,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsDiscordRichPresenceSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4578,7 +4598,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsPrivacySettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4607,7 +4628,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsPersonalizationSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4692,7 +4714,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsDeveloperOptionsSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4767,7 +4790,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsHelpSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4808,7 +4832,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsAboutSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4903,7 +4928,8 @@
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
-                                Padding="24">
+                                Padding="24"
+                                IsVisible="{Binding IsWhatsNewSettingsVisible}">
                             <StackPanel Spacing="14">
                                 <Grid ColumnDefinitions="*,Auto"
                                       ColumnSpacing="16">
@@ -5063,6 +5089,25 @@
                                         </StackPanel>
                                     </StackPanel>
                                 </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Search active, but nothing matches it - mirrors the extensions
+                             search-empty pattern (IsInstalledSearchEmptyVisible etc.) -->
+                        <Border IsVisible="{Binding IsSettingsSearchEmptyVisible}"
+                                Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="24">
+                            <StackPanel Spacing="6" HorizontalAlignment="Center">
+                                <TextBlock HorizontalAlignment="Center"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="No settings match your search." />
+                                <TextBlock HorizontalAlignment="Center"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           FontSize="12"
+                                           Text="Try a different word, or clear the search box above." />
                             </StackPanel>
                         </Border>
 
