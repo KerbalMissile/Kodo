@@ -53,12 +53,14 @@ Look at the existing code and match it. A few things to keep consistent:
 Extensions are the best way to contribute without touching the core app. A `.kox` file is just a renamed `.zip` containing:
 
 ```
-manifest.json     ← required
-language.json     ← for language extensions
-language2.json    ← optional, a second language profile in the same package
-theme.json        ← for theme extensions
-icon.png/icon.svg ← optional, must be square
+manifest.json                          ← required
+language.json                          ← for language extensions
+language1.json ... language5.json      ← optional, additional language profiles in the same package
+theme.json                             ← for theme extensions
+icon.png/icon.svg                      ← optional, must be square
 ```
+
+A single `.kox` can bundle up to six language profile files (`language.json` plus `language1.json` through `language5.json`). `language.json` and `language2.json` are the original pair legacy extensions ship with, so their names stay as-is - `language1.json` and `language3.json`-`language5.json` just fill in the remaining slots without renumbering anything. Each file is parsed independently: if a profile's own `extensions` array is non-empty, it's kept scoped to just those file extensions; otherwise it's merged into the extension's base profile. This lets one package support several related file types with different keyword sets (e.g. `.myl` and `.mylconfig`) without needing separate extensions.
 
 ### manifest.json
 
@@ -87,6 +89,7 @@ All fields are optional unless noted. Below is a full example followed by field 
   "functions": [],
   "properties": [],
   "namespaces": [],
+  "blacklist": [],
   "commentLine": "//",
   "commentBlockStart": "/*",
   "commentBlockEnd": "*/",
@@ -124,6 +127,12 @@ All fields are optional unless noted. Below is a full example followed by field 
 
 All five accept a JSON array of strings. Word-boundary matching is applied automatically, so `"int"` won't match inside `"integer"`.
 
+**Autocomplete blacklist**
+
+| Field | Description |
+|---|---|
+| `blacklist` | Function/keyword names to suppress from autocomplete suggestions while the caret is inside a call to that same name (e.g. typing arguments inside `foo(...)` won't suggest `foo` itself). Prevents distracting, self-referential suggestions. Matching is case-insensitive. |
+
 **Comment delimiters**
 
 | Field | Description |
@@ -151,6 +160,8 @@ Any key you omit falls back to the built-in default for that category.
 ### theme.json
 
 Supports: `themeId`, `displayName`, `baseTheme` (`"Dark"` or `"Light"`), and color keys for `windowBackground`, `topBar`, `sidebar`, `button`, `buttonHover`, `editorBackground`, `card`, `primaryText`, `mutedText`, `surfaceBorder`, `accent`, `previewBackground`, `previewBorder`.
+
+`theme.json` can be either a single theme object or a JSON array of theme objects. Use an array to ship several related themes in one `.kox` (e.g. a "Dark Themes" pack) - each entry becomes its own installable theme sharing the same `manifest.json`, grouped together in the marketplace/installed list by that shared manifest.
 
 ---
 
