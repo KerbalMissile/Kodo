@@ -68,12 +68,48 @@ public partial class App : Application
         {
             if (!CheckPendingUpdateSentinel())
                 CheckForUpdatesInBackground();
+
+            LaunchStandaloneUpdaterIfNeeded();
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
     // Auto-update
+
+    // KodoUpdater.exe is the only thing that keeps polling for updates while Kodo itself
+    // is closed, but nothing ever spawned it - so "update in the background" silently did
+    // nothing once the user quit Kodo. Launch it detached on every startup; its own named
+    // mutex (see KodoUpdaterProgram.Main) makes a redundant launch a harmless instant no-op
+    // if a copy is already resident.
+    [SupportedOSPlatform("windows")]
+    private static void LaunchStandaloneUpdaterIfNeeded()
+    {
+        try
+        {
+            if (!UpdateService.IsAutoUpdateEnabledInSettings())
+                return;
+
+            var exeDir = AppContext.BaseDirectory;
+            var updaterPath = Path.Combine(exeDir, "KodoUpdater.exe");
+            if (!File.Exists(updaterPath))
+                return;
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = updaterPath,
+                WorkingDirectory = exeDir,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            // Best-effort - if this fails, updates simply fall back to the in-app
+            // 6-hour check that only runs while Kodo is open.
+            KodoDiagnostics.LogWarning("App.LaunchStandaloneUpdaterIfNeeded", ex, operation: "AutoUpdate");
+        }
+    }
 
     // Checks for a pending-update sentinel from KodoUpdater; shows UpdateDialog if newer.
     private static bool CheckPendingUpdateSentinel()
