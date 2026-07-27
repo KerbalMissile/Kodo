@@ -22,3 +22,8 @@ Please take the time to review our Privacy Policy - you can find it on our GitHu
 > July 22, 2026
 Enjoy UI reworks in the Extensions menu, along with CodePredict (similar to VSC IntelliSense). Make sure all your extensions are up to date for the best experience.
 ---
+
+## v1.3.0/v1.3.1 are here!
+> July 27, 2026
+Minor updater bugfixes, plus a new settings search bar!
+---
