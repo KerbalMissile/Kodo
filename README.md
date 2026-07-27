@@ -17,7 +17,7 @@
 
 ---
 
-Kodo is built by [KerbalMissile](https://github.com/KerbalMissile) and [SS-YYC](https://github.com/SS-YYC) around a single idea: your editor should stay out of your way. Quick setup, syntax highlighting via extensions, and zero friction from launch to coding.
+Kodo is built by [KerbalMissile](https://github.com/KerbalMissile) and [SS-YYC](https://github.com/SS-YYC) around a few simple ideas: your editor should stay out of your way. Quick setup, syntax highlighting via extensions, and zero friction from launch to coding. Also to make coding human again by not integrating any AI features.
 
 Released under the [GPL-v3.0 license](LICENSE.md).
 
