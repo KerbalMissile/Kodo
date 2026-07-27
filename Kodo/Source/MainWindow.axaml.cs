@@ -4962,6 +4962,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(AutoUpdateAppStatusText));
             SaveSettings();
             _appUpdateScheduler.UpdateLifecycle();
+
+            // Keep KodoUpdater's logon-autostart registration in sync immediately, rather than waiting
+            // for Kodo to relaunch - flipping this off should stop it being resident right away, and
+            // flipping it on should make it survive the next reboot right away.
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (value) Task.Run(UpdateService.EnsureAutostartRegistered);
+                else Task.Run(UpdateService.RemoveAutostartRegistration);
+            }
         }
     }
 

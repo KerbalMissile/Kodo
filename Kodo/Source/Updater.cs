@@ -197,6 +197,70 @@ internal static class UpdateService
         public bool AutoUpdateAppInBackgroundEnabled { get; set; }
     }
 
+    // Autostart (survives reboot/logoff)
+
+    // Without this, KodoUpdater.exe only ever exists because Kodo.exe happened to spawn it - it dies with the
+    // session and never comes back until the user manually reopens Kodo. Registering a per-user logon task means
+    // the standalone updater resumes polling on its own after every reboot, with no dependency on Kodo ever running.
+    [SupportedOSPlatform("windows")]
+    public static void EnsureAutostartRegistered()
+    {
+        try
+        {
+            var exeDir = AppContext.BaseDirectory;
+            var updaterPath = Path.Combine(exeDir, "KodoUpdater.exe");
+            if (!File.Exists(updaterPath))
+                return;
+
+            // /F overwrites silently, so re-running this on every launch (or every settings save) is a safe no-op
+            // if the task already points at the right path. /DELAY staggers it slightly past logon so it isn't
+            // fighting other startup apps for disk/network the instant the desktop appears.
+            RunSchtasks(
+                "/Create /F " +
+                $"/TN \"{AutostartTaskName}\" " +
+                $"/TR \"\\\"{updaterPath}\\\"\" " +
+                "/SC ONLOGON /RL LIMITED /DELAY 0000:30");
+        }
+        catch (Exception ex)
+        {
+            // Best-effort - falls back to the existing "spawned by Kodo.exe" path if this fails
+            // (e.g. Task Scheduler service disabled, or schtasks.exe missing in a stripped-down environment).
+            KodoDiagnostics.LogWarning("UpdateService.EnsureAutostartRegistered", ex, operation: "AutoUpdate");
+        }
+    }
+
+    // Removes the logon task; called when the user turns app auto-update off entirely, so a resident
+    // background updater doesn't keep running against their explicit choice.
+    [SupportedOSPlatform("windows")]
+    public static void RemoveAutostartRegistration()
+    {
+        try
+        {
+            RunSchtasks($"/Delete /TN \"{AutostartTaskName}\" /F");
+        }
+        catch
+        {
+            // Best-effort; an orphaned task with nothing new to do just polls and finds no update.
+        }
+    }
+
+    private const string AutostartTaskName = "Kodo-KodoUpdater-Autostart";
+
+    [SupportedOSPlatform("windows")]
+    private static void RunSchtasks(string arguments)
+    {
+        using var proc = Process.Start(new ProcessStartInfo
+        {
+            FileName = "schtasks.exe",
+            Arguments = arguments,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        });
+        proc?.WaitForExit(5000);
+    }
+
     // Download
 
     // Downloads the installer to a temp path with progress reporting.

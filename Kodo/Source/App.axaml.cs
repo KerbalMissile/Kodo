@@ -82,13 +82,24 @@ public partial class App : Application
     // nothing once the user quit Kodo. Launch it detached on every startup; its own named
     // mutex (see KodoUpdaterProgram.Main) makes a redundant launch a harmless instant no-op
     // if a copy is already resident.
+    //
+    // That alone only keeps it alive for the rest of the current login session though - if
+    // the machine reboots or the user logs off, the detached process dies with the session
+    // and nothing brings it back until Kodo.exe happens to be opened again. So this also
+    // (re)registers a per-user logon task pointing at KodoUpdater.exe, making the background
+    // updater genuinely autonomous: it resumes polling on its own after every reboot, with
+    // no dependency on Kodo ever having been launched that session.
     [SupportedOSPlatform("windows")]
     private static void LaunchStandaloneUpdaterIfNeeded()
     {
         try
         {
             if (!UpdateService.IsAutoUpdateEnabledInSettings())
+            {
+                // User has auto-update off entirely - make sure no logon task is left resident.
+                UpdateService.RemoveAutostartRegistration();
                 return;
+            }
 
             var exeDir = AppContext.BaseDirectory;
             var updaterPath = Path.Combine(exeDir, "KodoUpdater.exe");
@@ -102,6 +113,8 @@ public partial class App : Application
                 UseShellExecute = false,
                 CreateNoWindow = true,
             });
+
+            UpdateService.EnsureAutostartRegistered();
         }
         catch (Exception ex)
         {
