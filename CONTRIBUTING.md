@@ -24,7 +24,7 @@ That's it. No complicated build pipeline, no extra tools.
 
 A) Absolutely no AI integration into native / default Kodo.
 
-B) Extensions that add or utilize AI are allowed, but only if the effect is minimal. Ex: AI chat interfaces are not allowed. While adding AI to something like CodePredict is allowed. Whether AI extensions are accepted or declined is up to the discretion of the maintaner reviewing the PR. 
+B) Extensions that add or utilize AI are allowed, but only if the effect is minimal. Ex: AI chat interfaces are not allowed. While adding AI to something like CodePredict is allowed. Whether AI extensions are accepted or declined is up to the discretion of the maintainer reviewing the PR. 
 
 2: 
 
