@@ -5677,7 +5677,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         !IsAutoUpdateAppEnabled
             ? "Kodo only updates when you download a new installer yourself."
             : IsAutoUpdateAppInBackgroundEnabled
-                ? "Checking for new Kodo versions on launch and every few hours, and installing them automatically without asking."
+                ? "Checking for new Kodo versions on launch and every few hours, and installing them automatically in the background once Kodo is closed."
                 : "Checking for new Kodo versions on launch and every few hours, and prompting to install them.";
 
     public string StatusBarFilePathVisibilityText => IsStatusBarFilePathVisible
@@ -8445,8 +8445,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            // Mirrors the silent startup flow: fetch the asset, then show or silently install.
-            var update = await UpdateService.CheckAndHandleUpdateAsync(IsAutoUpdateAppInBackgroundEnabled);
+            // A button labelled "Open Releases Page" silently installing and exiting Kodo out
+            // from under the user is not what they clicked for - always just check and show
+            // the dialog here. Actual background installs are KodoUpdater.exe's job.
+            var update = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: false);
             if (update is null)
                 // No installer asset found (rate-limited, draft release, etc.) - fall back to the releases page.
                 OpenUrl(ReleasesPageUrl);

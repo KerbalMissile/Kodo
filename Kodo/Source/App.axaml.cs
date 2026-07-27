@@ -162,7 +162,15 @@ public partial class App : Application
 
                 await Task.Delay(TimeSpan.FromSeconds(4));
 
-                await UpdateService.CheckAndHandleUpdateAsync(UpdateService.IsAutoUpdateInBackgroundEnabledInSettings());
+                // When "install in background" is on, KodoUpdater.exe owns the whole
+                // download+install cycle - including while Kodo is running - and only
+                // installs once it confirms Kodo has closed. If this in-app check also
+                // silently installed here, Kodo would Environment.Exit(0) a few seconds
+                // after the user just opened it. Defer to the standalone updater instead.
+                if (UpdateService.IsAutoUpdateInBackgroundEnabledInSettings())
+                    return;
+
+                await UpdateService.CheckAndHandleUpdateAsync(installInBackground: false);
             }
             catch
             {

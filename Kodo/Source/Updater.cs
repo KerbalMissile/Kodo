@@ -848,9 +848,18 @@ internal sealed class AppUpdateScheduler
         if (!_isEnabled() || _isManualCheckInProgress())
             return;
 
+        // "Install in background" means KodoUpdater.exe owns the download+install cycle,
+        // including while Kodo is running - it only ever installs once it confirms Kodo has
+        // closed. This in-app check must never also silently install (and Environment.Exit)
+        // out from under a live session just because the setting is on; that's exactly the
+        // scenario the standalone updater exists to avoid. So while the setting is on, this
+        // tick is a no-op - KodoUpdater's own poll picks up the same release independently.
+        if (_installInBackground())
+            return;
+
         try
         {
-            await UpdateService.CheckAndHandleUpdateAsync(_installInBackground()).ConfigureAwait(true);
+            await UpdateService.CheckAndHandleUpdateAsync(installInBackground: false).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
