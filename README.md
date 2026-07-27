@@ -19,6 +19,8 @@
 
 Kodo is built by [KerbalMissile](https://github.com/KerbalMissile) and [SS-YYC](https://github.com/SS-YYC) around a few simple ideas: your editor should stay out of your way. Quick setup, syntax highlighting via extensions, and zero friction from launch to coding. To make coding human again by not integrating any AI features or assists.
 
+Kodo is around ~74% lighter than VSCode with no extensions installed. 
+
 Released under the [GPL-v3.0 license](LICENSE.md).
 
 **[▶ Watch the Demo (this is from a Beta version)](https://youtu.be/jYXhelB9CfM)  ·  [🌐 Website](https://kerbalmissile.github.io/Kodo-Website/)  ·  [💬 Join The Discord](https://discord.gg/cUQ6C88Z9C)**
