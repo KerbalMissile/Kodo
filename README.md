@@ -29,7 +29,7 @@ Released under the [GPL-v3.0 license](LICENSE.md).
 
 ## Features
 
-| | |
+| Feature | Description |
 |---|---|
 | 🧩 **Extension Marketplace** | Install syntax highlighting and themes via `.kox` files |
 | 🧑‍💻 **Integrated Terminal** | Run code from within Kodo, no extra terminal needed |
