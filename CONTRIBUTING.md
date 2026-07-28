@@ -20,15 +20,13 @@ That's it. No complicated build pipeline, no extra tools.
 
 ## Rules
 
-1. AI Integration
+1. **AI Integration**
+   - **a)** No AI integration in native/default Kodo, full stop.
+   - **b)** Extensions may add or use AI, but only where the effect is minimal and scoped. For example: enhancing an existing feature like CodePredict with AI is allowed; adding a general-purpose AI chat interface is not. Acceptance of AI-related extensions is at the maintainer's discretion during PR review, even if a submission technically fits these guidelines.
 
-1a. No AI integration in native/default Kodo, full stop.
-1b. Extensions may add or use AI, but only where the effect is minimal and scoped. For example: enhancing an existing feature like CodePredict with AI is allowed; adding a general-purpose AI chat interface is not. Acceptance of AI-related extensions is at the maintainer's discretion during PR review, even if a submission technically fits these guidelines.
-
-2. Code Quality
-
-PRs to the main Kodo app (not extensions) must be high-quality and add clear, meaningful value.
-Bloat, redundant functionality, or low-value features will be rejected, regardless of code quality.
+2. **Code Quality**
+   - PRs to the main Kodo app (not extensions) must be high-quality and add clear, meaningful value.
+   - Bloat, redundant functionality, or low-value features will be rejected, regardless of code quality.
 
 ---
 
