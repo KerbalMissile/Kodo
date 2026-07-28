@@ -51,13 +51,13 @@ Released under the [GPL-v3.0 license](LICENSE.md).
 
 ## Getting Started
 
-Releases are also available through installers on the [Releases page](https://github.com/KerbalMissile/Kodo/releases) - download, install, and run.
+Releases are available through installers on the [Releases page](https://github.com/KerbalMissile/Kodo/releases) - download, install, and run.
 
 **Prerequisites (app):** Windows 10 (1809+) or Windows 11. Linux and macOS are currently not supported.
 
 Source users, please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for required packages.
 
-If you're running from source, feel free to clone the repository and modify code. Make sure all submissions comply with GPL v3.0. Feedback, PRs and discussions are always and will always be welcome!
+If you're running from source, feel free to clone the repository and modify code. Make sure all submissions comply with GPL v3.0 and the rules in the [CONTRIBUTING.md](CONTRIBUTING.md). Feedback, PRs and discussions are always and will always be welcome!
 
 ---
 
@@ -69,7 +69,7 @@ Contributions are welcome. The best ways to help:
 - **Pull Requests** - keep them focused; one change per PR
 - **Extensions** - build a `.kox` and submit it to the marketplace
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full details, including how to build and submit extensions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full details and rules, including how to build and submit extensions.
 
 ---
 
