@@ -10,42 +10,17 @@ using System.Threading.Tasks;
 
 namespace KodoUpdater;
 
-// KodoUpdater is a tiny, headless, long-lived background process. Its only job
-// is to poll GitHub Releases for a newer Kodo build every 6 hours - even while
-// Kodo itself is closed - and either:
-//   a) silently download + install the update directly (when the user has
-//      opted into "Automatically install updates in the background" AND Kodo
-//      isn't currently running), or
-//   b) download the installer and write a "pending update" sentinel file that
-//      Kodo picks up and shows a normal Update dialog for on its next launch.
-//
-// It deliberately has zero dependency on Avalonia or any Kodo.exe types -
-// it's a standalone exe so it can run detached from Kodo's own process tree.
-// Anything it can't do safely (parse settings, reach GitHub, write a file) is
-// swallowed and retried on the next cycle; this process must never crash loud
-// enough to show a Windows error dialog, since nobody is watching it.
 internal static class Program
 {
     private const string RepoOwner = "KerbalMissile";
     private const string RepoName = "Kodo";
     private const string LatestReleaseUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
-    private static readonly TimeSpan PollInterval = TimeSpan.FromHours(6);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(30);
 
     private static readonly HttpClient Http = CreateHttpClient();
 
     private static async Task Main(string[] args)
     {
-        // Single-instance guard: if a previous KodoUpdater is already resident
-        // (e.g. Kodo was relaunched and spawned another one), just exit. Using
-        // a named mutex rather than a process-name check avoids false positives
-        // from unrelated exes that happen to share the name during debugging.
-        //
-        // Wrapped in its own try/catch - if mutex creation itself fails for some
-        // reason (rare, but possible in locked-down environments), we'd rather
-        // risk a duplicate resident process than have the updater die silently
-        // before it ever reaches the poll loop. Nobody is watching this process,
-        // so an unhandled exception here would just mean updates quietly stop
-        // working forever with zero indication why.
         Mutex? singleInstance = null;
         try
         {
@@ -85,18 +60,23 @@ internal static class Program
         if (!settings.AutoUpdateAppEnabled)
             return;
 
-        // Already have a pending, not-yet-installed update from a previous
-        // cycle - don't re-download, just leave the sentinel for Kodo (or
-        // retry the silent install if Kodo still isn't running).
+        var localVersion = ReadInstalledKodoVersion();
         var pending = PendingUpdate.TryRead();
         if (pending is not null && File.Exists(pending.InstallerPath))
         {
-            if (settings.AutoUpdateAppInBackgroundEnabled && !IsKodoRunning())
-                LaunchInstallerSilently(pending.InstallerPath);
-            return;
+            if (!IsNewerVersion(pending.Version, localVersion))
+            {
+                PendingUpdate.Clear();
+                try { File.Delete(pending.InstallerPath); } catch { /* best-effort cleanup */ }
+            }
+            else
+            {
+                if (settings.AutoUpdateAppInBackgroundEnabled && !IsKodoRunning())
+                    LaunchInstallerSilently(pending.InstallerPath);
+                return;
+            }
         }
 
-        var localVersion = ReadInstalledKodoVersion();
         var update = await CheckForUpdateAsync(localVersion);
         if (update is null)
             return;
@@ -119,9 +99,6 @@ internal static class Program
             return;
         }
 
-        // Otherwise, leave the installer downloaded and write the sentinel so
-        // Kodo's own launch-time check can show UpdateDialog pre-loaded with
-        // installerPath, skipping the download step entirely.
         PendingUpdate.Write(update.Version, installerPath);
     }
 
@@ -154,8 +131,6 @@ internal static class Program
         public bool AutoUpdateAppInBackgroundEnabled { get; set; }
     }
 
-    // ── Version / process detection ──────────────────────────────────────
-
     // KodoUpdater.exe is installed side-by-side with Kodo.exe, so its own
     // directory is the install directory - no registry lookup needed.
     private static string ReadInstalledKodoVersion()
@@ -185,14 +160,11 @@ internal static class Program
         }
         catch
         {
-            // If we can't tell, assume it's running - safer to fall back to
-            // the sentinel-prompt path than to silently kill/replace a file
-            // a running Kodo might be touching.
             return true;
         }
     }
 
-    // ── GitHub release check / download (mirrors Kodo's own UpdateService) ─
+    // GitHub release check / download (mirrors Kodo's own UpdateService) 
 
     private static HttpClient CreateHttpClient()
     {
@@ -272,10 +244,6 @@ internal static class Program
 
         return destPath;
     }
-
-    // Launches the installer with the same silent flags Kodo's UpdateService
-    // uses, but with no foreground process to exit afterward - this updater
-    // process simply keeps running its poll loop.
     private static void LaunchInstallerSilently(string installerPath)
     {
         try
@@ -312,10 +280,6 @@ internal static class Program
         [JsonPropertyName("browser_download_url")] public string BrowserDownloadUrl { get; set; } = "";
     }
 }
-
-// Shared sentinel-file format. Kept identical in shape to the one Kodo.exe
-// reads in App.axaml.cs (PendingUpdateService) - see Updater.cs - so either
-// side can write/read it without a shared assembly reference.
 internal static class PendingUpdate
 {
     private static string FilePath => Path.Combine(Path.GetTempPath(), "Kodo-Update", "pending.json");
