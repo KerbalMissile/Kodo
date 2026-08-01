@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <strong>A fast, lightweight code editor. No accounts. No ads. Free forever.</strong>
+  <strong>A fast, lightweight code editor. No accounts. No ads whatsoever. Free forever.</strong>
 </p>
 
 <p align="center">
