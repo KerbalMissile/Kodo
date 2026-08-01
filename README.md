@@ -66,7 +66,7 @@ If you're running from source, feel free to clone the repository and modify code
 Contributions are welcome. The best ways to help:
 
 - **Bug reports** - open an Issue with steps to reproduce
-- **Pull Requests** - keep them focused; one change per PR
+- **Pull Requests** - keep them focused; one change or fix per PR
 - **Extensions** - build a `.kox` and submit it to the marketplace
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for full details and rules, including how to build and submit extensions.
