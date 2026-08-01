@@ -3,7 +3,6 @@
 .vscode/
 .vs/
 *.user
-**/app.manifest
 Kodo/Source/KEYS.cs
 Kodo/Kodo.sln
 Kodo/Source/Source.sln
