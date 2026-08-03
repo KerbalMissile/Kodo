@@ -1834,34 +1834,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            // Fetches ANNOUNCEMENTS.md via the Contents API under GitHubOperationTimeout.
-            using var request = new HttpRequestMessage(HttpMethod.Get, AnnouncementsUrl);
-            request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-            request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
+            foreach (var url in new[] { GitHubRepoInfo.AnnouncementsUrl, "https://api.github.com/repos/KerbalMissile/Kodo/contents/Announcements/ANNOUNCEMENTS.md" })
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+                request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
 
-            var (response, md) = await RunWithGitHubTimeoutAsync(
-                "News / Announcements fetch",
-                async ct =>
-                {
-                    using var resp = await MarketplaceHttpClient.SendAsync(request, ct);
-                    resp.EnsureSuccessStatusCode();
-                    var body = await resp.Content.ReadAsStringAsync(ct);
-                    // Return a tuple; ownership of HttpResponseMessage stays inside the
-                    // lambda so the using-scope disposes it after we've read the body.
-                    return (resp, body);
-                });
+                var md = await RunWithGitHubTimeoutAsync<string?>(
+                    "News / Announcements fetch",
+                    async ct =>
+                    {
+                        try
+                        {
+                            using var resp = await MarketplaceHttpClient.SendAsync(request, ct);
+                            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+                                return null;
+                            if (!resp.IsSuccessStatusCode)
+                                return null;
 
-            var items = ParseAnnouncementsMd(md);
-            foreach (var item in items)
-                NewsItems.Add(item);
+                            return await resp.Content.ReadAsStringAsync(ct);
+                        }
+                        catch
+                        {
+                            return null;
+                        }
+                    });
+
+                if (string.IsNullOrWhiteSpace(md))
+                    continue;
+
+                var items = ParseAnnouncementsMd(md);
+                foreach (var item in items)
+                    NewsItems.Add(item);
+                if (NewsItems.Count > 0)
+                    return;
+            }
         }
         catch (Exception ex)
         {
             KodoDiagnostics.LogDebug("Failed to fetch announcements", ex);
-            IsNewsError = true;
-
-            // Shows the warning dialog on a failed news fetch; fire-and-forget.
-            _ = ShowWarningDialogAsync("News / Announcements fetch", ex);
+            IsNewsError = false;
         }
         finally
         {

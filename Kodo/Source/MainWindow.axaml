@@ -1175,13 +1175,7 @@
                         <StackPanel Grid.Column="1"
                                     Orientation="Horizontal"
                                     Spacing="12"
-                                    VerticalAlignment="Center">
-                            <Button Classes="chrome"
-                                    Click="SaveButton_OnClick"
-                                    IsVisible="{Binding CanShowSaveActions}"
-                                    ToolTip.Tip="Save (Ctrl+S)"
-                                    Content="Save" />
-                        </StackPanel>
+                                    VerticalAlignment="Center" />
                     </Grid>
                 </Border>
 
