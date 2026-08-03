@@ -52,7 +52,15 @@ public partial class App : Application
         {
             // desktop.Args[0] is the file path when launched via "Open with" / double-click.
             var startupFilePath = desktop.Args?.Length > 0 ? desktop.Args[0] : null;
-            desktop.MainWindow  = new MainWindow(startupFilePath);
+            var mainWindow = new MainWindow(startupFilePath);
+            desktop.MainWindow = mainWindow;
+
+            // We only reach here as the primary instance (Program.Main already
+            // exited secondary launches before the app was built). Listen for
+            // file paths handed off by any later launches and open them as tabs
+            // in this window instead of letting a new process open its own.
+            SingleInstance.StartListening(handoffPath =>
+                Dispatcher.UIThread.Post(() => mainWindow.ActivateFromSecondaryInstance(handoffPath)));
 
             AptabaseClient.TrackEvent("app_launched");
             desktop.Exit += async (_, _) => await AptabaseClient.FlushAsync();

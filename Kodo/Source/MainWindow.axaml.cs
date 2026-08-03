@@ -7280,6 +7280,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await OpenFileFromPathAsync(path);
     }
 
+    // Invoked (via SingleInstance) when a second Kodo launch was redirected here instead
+    // of opening its own window - e.g. double-clicking another file in Explorer while
+    // Kodo is already running. Brings this window to front and opens the file as a tab.
+    public async void ActivateFromSecondaryInstance(string? filePath)
+    {
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+
+        Show();
+        Activate();
+
+        var trimmedPath = filePath?.Trim().Trim('"');
+        if (!string.IsNullOrWhiteSpace(trimmedPath) && File.Exists(trimmedPath))
+        {
+            await OpenFileFromPathAsync(trimmedPath);
+        }
+    }
+
     // Central method used by Open File, Open From Tree, and Open Recent
     private async Task OpenFileFromPathAsync(string path)
     {
