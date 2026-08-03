@@ -1,0 +1,99 @@
+PRIVACY POLICY - KODO
+Last updated: July 16, 2026
+
+Kodo is a free, open-source code editor. This policy explains what data
+Kodo collects, when, and why.
+
+1. OUR APPROACH
+
+Kodo does not require an account, does not run a server, and does not
+collect your source code, file contents, file names, or any content you
+edit. The only data Kodo can send off your device is a small, optional
+analytics signal described below, and it is off by default.
+
+2. ANONYMOUS USAGE ANALYTICS (OPT-IN)
+
+On first launch, Kodo asks whether you'd like to enable anonymous
+analytics. You can accept or decline, and you can change your answer at
+any time in Settings. If you don't respond, analytics stays off.
+
+When enabled, Kodo sends two kinds of events to Aptabase
+(https://aptabase.com), a privacy-focused analytics provider, hosted in
+the US region (us.aptabase.com):
+
+  Event         When it fires                    Data included
+  ------------  --------------------------------  --------------------------
+  app_launched  Once per app start                None beyond the system
+                                                    info below
+  app_crash     When Kodo hits an unhandled error  The exception's error
+                                                    message text
+
+Every event is also tagged with:
+  - App version
+  - Operating system name and build (e.g. "Windows 11 Pro 24H2")
+  - Whether a debugger was attached (development-only signal)
+  - A randomly generated session ID that resets each time you open Kodo
+
+This session ID is not a persistent device identifier, is not linked to
+your identity, and cannot be used to track you across sessions or app
+restarts. Kodo has no user accounts, so there is nothing to tie this data
+to a person.
+
+Crash messages: the app_crash event includes the error message text from
+the exception. Before being sent, this text is automatically scrubbed of
+common user-identifying substrings - Windows user-profile paths
+(C:\Users\<name>\...), UNC paths, Unix/WSL home paths (/home/<name>/...,
+/Users/<name>/...), and email addresses are redacted. Other incidental
+details (such as project or file names elsewhere in the message) may
+still be present, so if that matters to you, please leave analytics
+disabled - a crash log is also always written locally (see below).
+
+Disabling analytics immediately stops all future events and discards
+anything queued but not yet sent.
+
+3. LOCAL LOGS (NOT TRANSMITTED)
+
+Kodo writes diagnostic logs to your machine, stored under
+%AppData%\Kodo\:
+
+  - kodo.log  - general warnings, debug traces, and critical events
+  - crash.log - a rolling snapshot of recent activity plus full crash
+                details, generated when a critical error occurs
+
+These logs stay on your device, unredacted. Kodo does not upload them
+automatically. If you report a bug, you may choose to share them yourself
+(e.g. attaching to a GitHub issue).
+
+4. UPDATE CHECKS
+
+Kodo periodically checks GitHub for new releases and marketplace
+extension updates. These are standard HTTPS requests to GitHub's
+API/CDN endpoints and jsDelivr; no personal data is attached beyond what's
+inherent in any web request (e.g. your IP address, visible to
+GitHub/jsDelivr as it would be to any site you visit).
+
+5. THIRD PARTIES
+
+  - Aptabase - analytics processor, only contacted if you opt in.
+    See: https://aptabase.com/privacy
+  - GitHub - source of update/release/marketplace data.
+    See: https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement
+  - jsDelivr - CDN fallback for marketplace assets.
+
+6. YOUR CHOICES
+
+  - Decline or later disable analytics in Settings at any time.
+  - Delete local logs directly from %AppData%\Kodo\.
+  - Since Kodo is open source, you can review exactly what's collected in
+    AptabaseClient.cs and the consent-handling code in MainWindow.axaml.cs
+    at https://github.com/KerbalMissile/Kodo
+
+7. CHANGES TO THIS POLICY
+
+If Kodo's data practices change (e.g. new analytics events are added),
+this document will be updated and the changelog will note it.
+
+8. CONTACT
+
+Open an issue at https://github.com/KerbalMissile/Kodo for privacy
+questions.
