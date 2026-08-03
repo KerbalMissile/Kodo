@@ -874,7 +874,6 @@ internal static class WelcomeMessageBuilder
             messages.Add("What are we building today?");
             messages.Add("Back at it again!");
             messages.Add("Let's get to work!");
-            messages.Add("Hey there!");
             messages.Add($"Happy {dayName}!");
         }
 

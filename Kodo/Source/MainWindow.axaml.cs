@@ -592,19 +592,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // GitHub Contents API endpoint for the extension index JSON, fetched with the raw+json Accept header for direct file bytes.
     private static readonly string[] MarketplaceIndexUrls =
     [
-        GitHubRepoInfo.GetExtensionsIndexUrl("Kodo-IDE"),
-        GitHubRepoInfo.GetExtensionsIndexUrl("KerbalMissile"),
+        "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/ExtensionsIndex.json",
     ];
     private static readonly string[] LatestReleaseApiUrls =
-        GitHubRepoInfo.Owners.Select(GitHubRepoInfo.GetLatestReleaseApiUrl).ToArray();
+    [
+        "https://api.github.com/repos/Kodo-IDE/Kodo/releases/latest",
+    ];
     private static readonly string[] ReleasesApiUrls =
-        GitHubRepoInfo.Owners.Select(GitHubRepoInfo.GetReleasesApiUrl).ToArray();
-    private static readonly string ReleasesPageUrl = GitHubRepoInfo.ReleaseNotesUrl;
-    private static readonly string PrivacyPolicyUrl = GitHubRepoInfo.PrivacyPolicyUrl;
+    [
+        "https://api.github.com/repos/Kodo-IDE/Kodo/releases",
+    ];
+    private static readonly string ReleasesPageUrl = "https://github.com/Kodo-IDE/Kodo/releases";
+    private static readonly string PrivacyPolicyUrl = "https://github.com/Kodo-IDE/Kodo/blob/main/Policies/PRIVACY%20POLICY.txt";
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
     private const string WebsiteUrl = "https://kodo-ide.github.io/Kodo-Website/";
     // GitHub Contents API endpoint for ANNOUNCEMENTS.md, same raw+json Accept header as the marketplace index.
-    private static readonly string AnnouncementsUrl = GitHubRepoInfo.AnnouncementsUrl;
+    private static readonly string AnnouncementsUrl = "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Announcements/ANNOUNCEMENTS.md";
 
     private bool _isNewsLoading = true;
     private bool _isNewsError;
@@ -929,7 +932,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(GitHubRepoInfo.UserAgent);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Kodo/2.0.0-DEV (https://github.com/Kodo-IDE/Kodo)");
         return client;
     }
 
@@ -937,7 +940,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "Kodo", "Extensions");
     private string ProjectExtensionsFolderPath =>
-        Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", GitHubRepoInfo.OfficialExtensionsFolderName));
+        Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Extensions"));
 
     // Flat list that backs the ItemsControl – directories insert/remove their children in-place
     public ObservableCollection<FileTreeItem> FileTreeItems { get; } = new();
@@ -1856,8 +1859,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             foreach (var url in new[]
             {
                 "https://raw.githubusercontent.com/Kodo-IDE/Kodo/main/Announcements/ANNOUNCEMENTS.md",
-                GitHubRepoInfo.AnnouncementsUrl,
-                "https://api.github.com/repos/KerbalMissile/Kodo/contents/Announcements/ANNOUNCEMENTS.md"
+                AnnouncementsUrl
             })
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -2488,13 +2490,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var suffix = GetExtensionPackageRelativePath(path);
             Add(BuildGitHubContentsUrl("Kodo-IDE", "Kodo-Extensions", PrefixExtensionPath("Extensions", suffix)));
-            Add(BuildGitHubContentsUrl("KerbalMissile", "Kodo", PrefixExtensionPath("Official_Extensions", suffix)));
         }
         else if (TryParseGitHubRawUrl(downloadUrl, out _, out _, out var rawPath))
         {
             var suffix = GetExtensionPackageRelativePath(rawPath);
             Add(BuildGitHubContentsUrl("Kodo-IDE", "Kodo-Extensions", PrefixExtensionPath("Extensions", suffix)));
-            Add(BuildGitHubContentsUrl("KerbalMissile", "Kodo", PrefixExtensionPath("Official_Extensions", suffix)));
         }
 
         return candidates;
@@ -4062,7 +4062,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch
             {
                 _privacyPolicyText = "The Privacy Policy could not be loaded. You can read it at " +
-                                      GitHubRepoInfo.PrivacyPolicyUrl;
+                                      PrivacyPolicyUrl;
             }
 
             return _privacyPolicyText;
@@ -12064,11 +12064,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     // Pre-fill a GitHub issue with the context as the title, mirroring the crash dialog.
                     var title = Uri.EscapeDataString($"[Warning] {context}: {exception.Message}"
                         .Replace("\r", "").Replace("\n", " ").Trim());
-                    var url = GitHubRepoInfo.GetIssueUrl(
-                        $"[Warning] {context}: {exception.Message}"
-                            .Replace("\r", "").Replace("\n", " ").Trim(),
-                        KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true)) +
-                        "&labels=bug&template=bug_report.md";
+                    var body = Uri.EscapeDataString(KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true));
+                    var url = $"https://github.com/Kodo-IDE/Kodo/issues/new?title={title}&body={body}&labels=bug&template=bug_report.md";
                     Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
                 }
                 catch

@@ -33,7 +33,9 @@ internal sealed record UpdateDownloadProgress(double Fraction, string Label);
 internal static class UpdateService
 {
     // Repo that publishes Kodo releases. Update if the repo ever moves.
-    private static readonly string LatestReleaseUrl = GitHubRepoInfo.LatestReleaseApiUrl;
+    private const string LatestReleaseUrl = "https://api.github.com/repos/Kodo-IDE/Kodo/releases/latest";
+    private const string ReleaseNotesUrl = "https://github.com/Kodo-IDE/Kodo/releases";
+    private const string UserAgent = "Kodo/2.0.0-DEV (https://github.com/Kodo-IDE/Kodo)";
 
     private static readonly HttpClient Http = CreateHttpClient();
 
@@ -44,7 +46,7 @@ internal static class UpdateService
             Timeout = TimeSpan.FromSeconds(15),
         };
         // GitHub's API requires a User-Agent header on every request.
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(GitHubRepoInfo.UserAgent);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
     }
@@ -82,7 +84,7 @@ internal static class UpdateService
 
             return new UpdateInfo(
                 Version: release.TagName,
-                ReleaseNotesUrl: release.HtmlUrl ?? GitHubRepoInfo.ReleaseNotesUrl,
+                ReleaseNotesUrl: release.HtmlUrl ?? ReleaseNotesUrl,
                 AssetDownloadUrl: asset.BrowserDownloadUrl,
                 AssetName: asset.Name,
                 AssetSizeBytes: asset.Size);
