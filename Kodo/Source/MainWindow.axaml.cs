@@ -608,6 +608,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string WebsiteUrl = "https://kodo-ide.github.io/Kodo-Website/";
     // GitHub Contents API endpoint for ANNOUNCEMENTS.md, same raw+json Accept header as the marketplace index.
     private static readonly string AnnouncementsUrl = "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Announcements/ANNOUNCEMENTS.md";
+    private static readonly string NewsCachePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Kodo",
+        "news-cache.json");
 
     private bool _isNewsLoading = true;
     private bool _isNewsError;
@@ -622,6 +626,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _discordReconnectTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
     private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(175) };
+    private readonly DispatcherTimer _codePredictRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     // Coalesces concurrent background saves into a single writer that always ends on the latest snapshot.
     private readonly object _settingsWriteLock = new();
@@ -1149,6 +1154,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _discordReconnectTimer.Tick += DiscordReconnectTimer_OnTick;
         _editorStateRefreshTimer.Tick += EditorStateRefreshTimer_OnTick;
         _wordCountRefreshTimer.Tick += WordCountRefreshTimer_OnTick;
+        _codePredictRefreshTimer.Tick += CodePredictRefreshTimer_OnTick;
         _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         _extensionAutoUpdateTimer.Tick += ExtensionAutoUpdateTimer_OnTick;
@@ -1848,7 +1854,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async Task FetchAnnouncementsAsync()
+    private async Task FetchAnnouncementsAsync(bool forceNetwork)
     {
         IsNewsLoading = true;
         IsNewsError = false;
@@ -1856,6 +1862,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
+            if (!forceNetwork && LoadCachedAnnouncements())
+                return;
+
             foreach (var url in new[]
             {
                 "https://raw.githubusercontent.com/Kodo-IDE/Kodo/main/Announcements/ANNOUNCEMENTS.md",
@@ -1894,7 +1903,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 foreach (var item in items)
                     NewsItems.Add(item);
                 if (NewsItems.Count > 0)
+                {
+                    SaveNewsCache();
                     return;
+                }
             }
         }
         catch (Exception ex)
@@ -1907,6 +1919,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             IsNewsLoading = false;
             OnPropertyChanged(nameof(IsNewsContentVisible));
             OnPropertyChanged(nameof(IsNewsEmpty));
+        }
+    }
+
+    private bool LoadCachedAnnouncements()
+    {
+        try
+        {
+            if (!File.Exists(NewsCachePath))
+                return false;
+
+            var json = File.ReadAllText(NewsCachePath);
+            var items = JsonSerializer.Deserialize<List<NewsItem>>(json);
+            if (items is null || items.Count == 0)
+                return false;
+
+            foreach (var item in items)
+                NewsItems.Add(item);
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void SaveNewsCache()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(NewsCachePath);
+            if (!string.IsNullOrWhiteSpace(dir))
+                Directory.CreateDirectory(dir);
+
+            var json = JsonSerializer.Serialize(NewsItems.ToList());
+            File.WriteAllText(NewsCachePath, json);
+        }
+        catch
+        {
+            // Best-effort cache only.
         }
     }
 
@@ -6213,6 +6265,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _wordCountRefreshTimer.Start();
     }
 
+    private void QueueCodePredictRefresh()
+    {
+        _codePredictRefreshTimer.Stop();
+        _codePredictRefreshTimer.Start();
+    }
+
+    private void CodePredictRefreshTimer_OnTick(object? sender, EventArgs e)
+    {
+        _codePredictRefreshTimer.Stop();
+        UpdateCodePredict();
+    }
+
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _wordCountRefreshTimer.Stop();
@@ -7604,7 +7668,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _ = RefreshExtensionsAndAutoUpdateAsync();
         _ = RefreshLatestReleaseAsync();
-        _ = FetchAnnouncementsAsync();
+        _ = FetchAnnouncementsAsync(forceNetwork: false);
         _ = FetchSportingEventMessagesAsync();
 
         // Exactly one of tutorial (first launch) or What's New splash (subsequent launches) shows per run.
@@ -8510,7 +8574,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private void RefreshNewsButton_OnClick(object? sender, RoutedEventArgs e) =>
-        _ = FetchAnnouncementsAsync();
+        _ = FetchAnnouncementsAsync(forceNetwork: true);
 
     private void OpenTutorialButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -10357,12 +10421,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var lineText = EditorTextBox.Document.GetText(line.Offset, line.Length);
             var colOffset = pos.Value.Column - 1; // Column is 1-based
 
-            foreach (Match m in StrictLinkElementGenerator.UrlRegex.Matches(lineText))
-            {
-                var trimmedLength = m.Value.TrimEnd(')', ']', '}', '.', ',', ':', ';', '!', '?', '\'', '"').Length;
-                if (colOffset >= m.Index && colOffset < m.Index + trimmedLength)
-                    return true;
-            }
+            if (StrictLinkElementGenerator.TryGetLinkSpan(lineText, colOffset, out _, out _))
+                return true;
         }
         catch
         {
@@ -10387,7 +10447,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         QueueRefreshState(fullRefresh: true);
         QueueWordCountRefresh();
         RestartAutoSaveTimerIfNeeded();
-        UpdateCodePredict();
+        QueueCodePredictRefresh();
     }
 
 	// Fires before the character is written; skips an auto-inserted closing character.
@@ -12365,13 +12425,11 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 public sealed class StrictLinkElementGenerator : LinkElementGenerator
 {
     private static readonly char[] TrailingPunctuation = [')', ']', '}', '.', ',', ':', ';', '!', '?', '\'', '"'];
-    private static readonly Regex StrictUrlRegex = new(
-        @"https?://[^\s<>""'\[\](){}\|\\^`]+",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private const string HttpPrefix = "http";
 
-    // Exposed so the hover-tooltip handler can reuse the same regex without
-    // duplicating the pattern.
-    internal static Regex UrlRegex => StrictUrlRegex;
+    private int _cachedLineNumber = -1;
+    private string _cachedLineText = string.Empty;
+    private List<(int Start, int Length)> _cachedSpans = [];
 
     public StrictLinkElementGenerator()
     {
@@ -12382,22 +12440,88 @@ public sealed class StrictLinkElementGenerator : LinkElementGenerator
     {
         var line = CurrentContext.VisualLine;
         var document = CurrentContext.Document;
+        var lineNumber = line.FirstDocumentLine.LineNumber;
         var lineText = document.GetText(line.FirstDocumentLine.Offset, line.FirstDocumentLine.Length);
+
+        if (lineNumber != _cachedLineNumber || !string.Equals(lineText, _cachedLineText, StringComparison.Ordinal))
+        {
+            _cachedLineNumber = lineNumber;
+            _cachedLineText = lineText;
+            _cachedSpans = ParseUrlSpans(lineText);
+        }
+
         var relativeOffset = offset - line.FirstDocumentLine.Offset;
+        foreach (var span in _cachedSpans)
+        {
+            if (relativeOffset != span.Start)
+                continue;
 
-        var match = StrictUrlRegex.Match(lineText, relativeOffset);
-        if (!match.Success || match.Index != relativeOffset)
-            return null;
+            var url = lineText.Substring(span.Start, span.Length).TrimEnd(TrailingPunctuation);
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return null;
 
-        var url = match.Value.TrimEnd(TrailingPunctuation);
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            return null;
+            var linkText = new VisualLineLinkText(line, url.Length);
+            linkText.NavigateUri = uri;
+            linkText.RequireControlModifierForClick = RequireControlModifierForClick;
+            return linkText;
+        }
 
-        var linkText = new VisualLineLinkText(line, url.Length);
-        linkText.NavigateUri = uri;
-        linkText.RequireControlModifierForClick = RequireControlModifierForClick;
-        return linkText;
+        return null;
     }
+
+    internal static bool TryGetLinkSpan(string lineText, int columnOffset, out int start, out int length)
+    {
+        foreach (var span in ParseUrlSpans(lineText))
+        {
+            if (columnOffset < span.Start || columnOffset >= span.Start + span.Length)
+                continue;
+
+            start = span.Start;
+            length = span.Length;
+            return true;
+        }
+
+        start = 0;
+        length = 0;
+        return false;
+    }
+
+    private static List<(int Start, int Length)> ParseUrlSpans(string lineText)
+    {
+        var spans = new List<(int Start, int Length)>();
+        if (string.IsNullOrWhiteSpace(lineText))
+            return spans;
+
+        var index = 0;
+        while (index < lineText.Length)
+        {
+            var httpIndex = lineText.IndexOf(HttpPrefix, index, StringComparison.OrdinalIgnoreCase);
+            if (httpIndex < 0)
+                break;
+
+            if (httpIndex > 0 && IsUrlChar(lineText[httpIndex - 1]))
+            {
+                index = httpIndex + 4;
+                continue;
+            }
+
+            var end = httpIndex;
+            while (end < lineText.Length && IsUrlChar(lineText[end]))
+                end++;
+
+            var url = lineText[httpIndex..end].TrimEnd(TrailingPunctuation);
+            if (Uri.TryCreate(url, UriKind.Absolute, out _))
+                spans.Add((httpIndex, url.Length));
+
+            index = Math.Max(end, httpIndex + 4);
+        }
+
+        return spans;
+    }
+
+    private static bool IsUrlChar(char ch) =>
+        !char.IsWhiteSpace(ch) &&
+        ch is not '<' and not '>' and not '"' and not '\'' and not '[' and not ']' and not '(' and not ')' and not '{' and not '}' and not '|' and not '\\' and not '^' and not '`';
 }
 
 // Converts bold flag to FontWeight for the release-notes run template.
@@ -12412,15 +12536,6 @@ public sealed class BoolToFontWeightConverter : Avalonia.Data.Converters.IValueC
         throw new NotSupportedException();
 }
 
-// Caps each marketplace tile's own Width at exactly 1/5th of the Extensions page's
-// available content width. The UniformGrid's fixed Columns="5" only sets how many
-// columns to lay out - it doesn't stop an individual tile's content from demanding
-// more width than its column actually has, which is what let the rightmost column
-// spill past the window edge. Setting this as the tile's explicit Width makes that
-// impossible: every tile is sized to fit, so 5 always fit the row exactly, at any
-// window size. Accounts for the ScrollViewer's own Padding="24" (48px total) and
-// the scrollbar gutter, then splits the remainder five ways, subtracting the tile's
-// own Margin="6" on each side (12px) so no column steals space from its neighbor.
 public sealed class MarketplaceTileWidthConverter : Avalonia.Data.Converters.IValueConverter
 {
     public static readonly MarketplaceTileWidthConverter Instance = new();
