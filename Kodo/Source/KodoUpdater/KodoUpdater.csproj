@@ -21,4 +21,8 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Include="..\GitHubRepoInfo.cs" Link="GitHubRepoInfo.cs" />
+  </ItemGroup>
+
 </Project>
