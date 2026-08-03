@@ -14,7 +14,7 @@ namespace Kodo;
 public sealed class CompiledSyntaxProfile
 {
     private const string MarkupTextToken = "markupText";
-    private const string MarkupTextFallback = "#F4F4F4";
+    private const string MarkupTextFallback = "#eeeeee";
     private const string VariableIdentifierBodyPattern = "[\\p{L}_][\\p{L}\\p{Nd}_]*";
     private const string CommonStringPrefixPattern =
         "(?i)(?<![\\p{L}\\p{Nd}_])(?:fr|rf|br|rb|ur|ru|cr|rc|f|r|u|b|c)(?=(?:\\\"\\\"\\\"|'''|\\\"|'|#+\\\"))";
