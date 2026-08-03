@@ -8,7 +8,7 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationIcon>..\Assets\kodo_logo.ico</ApplicationIcon>
     <Version>1.3.4</Version>
-    <InformationalVersion>v1.3.4-DEV</InformationalVersion>
+    <InformationalVersion>v1.3.4</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
