@@ -146,7 +146,8 @@ public class FileTreeItem : INotifyPropertyChanged
         return ext switch
 			{
 			    ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "C#",
-			    ".axaml" or ".xaml" or ".xml" => "XML",
+			    ".xml" => "XML",
+			    ".axaml" or ".xaml" => "XAML",
 			    ".html" or ".htm" => "HTML",
 			    ".json" or ".yaml" or ".yml" or ".toml" => "JSON",
 			    ".txt" or ".rst" or ".log" => "TXT",
