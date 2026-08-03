@@ -9,7 +9,7 @@ internal static class GitHubRepoInfo
     private const string PersonalOwner = "KerbalMissile";
     private const string RepoName = "Kodo";
     private const string ExtensionsRepoName = "Kodo-Extensions";
-    private const string OfficialExtensionsFolder = "Official_Extensions";
+    private const string OfficialExtensionsFolder = "Extensions";
     private const string SharedExtensionsFolder = "Extensions";
 
     public static readonly string[] Owners = [OrganizationOwner, PersonalOwner];
