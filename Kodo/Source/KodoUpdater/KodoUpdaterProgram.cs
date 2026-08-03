@@ -174,30 +174,25 @@ internal static class Program
 
     private static async Task<UpdateInfo?> CheckForUpdateAsync(string localVersion)
     {
-        foreach (var owner in GitHubRepoInfo.Owners)
+        try
         {
-            try
-            {
-                var url = GitHubRepoInfo.GetLatestReleaseApiUrl(owner);
-                using var response = await Http.GetAsync(url);
-                if (!response.IsSuccessStatusCode) continue;
+            using var response = await Http.GetAsync("https://api.github.com/repos/Kodo-IDE/Kodo/releases/latest");
+            if (!response.IsSuccessStatusCode) return null;
 
-                await using var stream = await response.Content.ReadAsStreamAsync();
-                var release = await JsonSerializer.DeserializeAsync<GitHubRelease>(stream, JsonOptions);
-                if (release is null || string.IsNullOrWhiteSpace(release.TagName)) continue;
-                if (release.Draft || release.Prerelease) continue;
-                if (!IsNewerVersion(release.TagName, localVersion)) continue;
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            var release = await JsonSerializer.DeserializeAsync<GitHubRelease>(stream, JsonOptions);
+            if (release is null || string.IsNullOrWhiteSpace(release.TagName)) return null;
+            if (release.Draft || release.Prerelease) return null;
+            if (!IsNewerVersion(release.TagName, localVersion)) return null;
 
-                var asset = release.Assets?.FirstOrDefault(a =>
-                    a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
-                if (asset is null) continue;
+            var asset = release.Assets?.FirstOrDefault(a =>
+                a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+            if (asset is null) return null;
 
-                return new UpdateInfo(release.TagName, asset.BrowserDownloadUrl, asset.Name);
-            }
-            catch
-            {
-                // Try the other owner.
-            }
+            return new UpdateInfo(release.TagName, asset.BrowserDownloadUrl, asset.Name);
+        }
+        catch
+        {
         }
 
         return null;
