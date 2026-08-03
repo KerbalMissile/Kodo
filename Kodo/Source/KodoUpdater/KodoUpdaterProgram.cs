@@ -12,9 +12,6 @@ namespace KodoUpdater;
 
 internal static class Program
 {
-    private const string RepoOwner = "KerbalMissile";
-    private const string RepoName = "Kodo";
-    private const string LatestReleaseUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(30);
 
     private static readonly HttpClient Http = CreateHttpClient();
@@ -176,27 +173,33 @@ internal static class Program
 
     private static async Task<UpdateInfo?> CheckForUpdateAsync(string localVersion)
     {
-        try
+        foreach (var owner in GitHubRepoInfo.Owners)
         {
-            using var response = await Http.GetAsync(LatestReleaseUrl);
-            if (!response.IsSuccessStatusCode) return null;
+            try
+            {
+                var url = GitHubRepoInfo.GetLatestReleaseApiUrl(owner);
+                using var response = await Http.GetAsync(url);
+                if (!response.IsSuccessStatusCode) continue;
 
-            await using var stream = await response.Content.ReadAsStreamAsync();
-            var release = await JsonSerializer.DeserializeAsync<GitHubRelease>(stream, JsonOptions);
-            if (release is null || string.IsNullOrWhiteSpace(release.TagName)) return null;
-            if (release.Draft || release.Prerelease) return null;
-            if (!IsNewerVersion(release.TagName, localVersion)) return null;
+                await using var stream = await response.Content.ReadAsStreamAsync();
+                var release = await JsonSerializer.DeserializeAsync<GitHubRelease>(stream, JsonOptions);
+                if (release is null || string.IsNullOrWhiteSpace(release.TagName)) continue;
+                if (release.Draft || release.Prerelease) continue;
+                if (!IsNewerVersion(release.TagName, localVersion)) continue;
 
-            var asset = release.Assets?.FirstOrDefault(a =>
-                a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
-            if (asset is null) return null;
+                var asset = release.Assets?.FirstOrDefault(a =>
+                    a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+                if (asset is null) continue;
 
-            return new UpdateInfo(release.TagName, asset.BrowserDownloadUrl, asset.Name);
+                return new UpdateInfo(release.TagName, asset.BrowserDownloadUrl, asset.Name);
+            }
+            catch
+            {
+                // Try the other owner.
+            }
         }
-        catch
-        {
-            return null;
-        }
+
+        return null;
     }
 
     private static bool IsNewerVersion(string remote, string local)

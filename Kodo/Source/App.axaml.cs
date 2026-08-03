@@ -143,7 +143,7 @@ public partial class App : Application
             var (version, installerPath) = pending.Value;
             var update = new UpdateInfo(
                 Version: version,
-                ReleaseNotesUrl: $"https://github.com/KerbalMissile/Kodo/releases",
+                ReleaseNotesUrl: GitHubRepoInfo.ReleaseNotesUrl,
                 AssetDownloadUrl: string.Empty, // unused: installer is already on disk
                 AssetName: Path.GetFileName(installerPath),
                 AssetSizeBytes: 0);
@@ -573,8 +573,11 @@ public partial class App : Application
                 // Pre-fills a GitHub issue with the exception type as the title.
                 var title = Uri.EscapeDataString($"[Crash] {exception.GetType().Name}: {exception.Message}"
                     .Replace("\r", "").Replace("\n", " ").Trim());
-                var url = $"https://github.com/KerbalMissile/Kodo/issues/new?title={title}" +
-                          $"&labels=bug&template=bug_report.md";
+                var url = GitHubRepoInfo.GetIssueUrl(
+                    $"[Crash] {exception.GetType().Name}: {exception.Message}"
+                        .Replace("\r", "").Replace("\n", " ").Trim(),
+                    "Please describe what you were doing when the crash happened.") +
+                    "&labels=bug&template=bug_report.md";
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             }
             catch

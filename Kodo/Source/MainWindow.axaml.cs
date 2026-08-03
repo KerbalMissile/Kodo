@@ -590,15 +590,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly string CurrentAppVersion = KodoDiagnostics.AppVersion;
     public string CopyrightText => $"© {DateTime.Now.Year} KerbalMissile and SS-YYC. Licensed under GPL-3.0.";
     // GitHub Contents API endpoint for the extension index JSON, fetched with the raw+json Accept header for direct file bytes.
-    private const string DefaultMarketplaceIndexUrl = "https://api.github.com/repos/KerbalMissile/Kodo/contents/Indexs/ExtensionsIndex.json";
-    private const string LatestReleaseApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases/latest";
-    private const string ReleasesApiUrl = "https://api.github.com/repos/KerbalMissile/Kodo/releases";
-    private const string ReleasesPageUrl = "https://github.com/KerbalMissile/Kodo/releases";
-    private const string PrivacyPolicyUrl = "https://github.com/KerbalMissile/Kodo/blob/ec55927b6ef8afd0833e4caf74cab8d744205842/Policies/PRIVACY%20POLICY.txt";
+    private static readonly string DefaultMarketplaceIndexUrl = GitHubRepoInfo.MarketplaceIndexUrl;
+    private static readonly string[] LatestReleaseApiUrls =
+        GitHubRepoInfo.Owners.Select(GitHubRepoInfo.GetLatestReleaseApiUrl).ToArray();
+    private static readonly string[] ReleasesApiUrls =
+        GitHubRepoInfo.Owners.Select(GitHubRepoInfo.GetReleasesApiUrl).ToArray();
+    private static readonly string ReleasesPageUrl = GitHubRepoInfo.ReleaseNotesUrl;
+    private static readonly string PrivacyPolicyUrl = GitHubRepoInfo.PrivacyPolicyUrl;
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
     private const string WebsiteUrl = "https://kerbalmissile.github.io/Kodo-Website/";
     // GitHub Contents API endpoint for ANNOUNCEMENTS.md, same raw+json Accept header as the marketplace index.
-    private const string AnnouncementsUrl = "https://api.github.com/repos/KerbalMissile/Kodo/contents/Announcements/ANNOUNCEMENTS.md";
+    private static readonly string AnnouncementsUrl = GitHubRepoInfo.AnnouncementsUrl;
 
     private bool _isNewsLoading = true;
     private bool _isNewsError;
@@ -923,7 +925,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("Kodo/1.0.0-DEV (https://github.com/KerbalMissile/Kodo)");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(GitHubRepoInfo.UserAgent);
         return client;
     }
 
@@ -1937,49 +1939,66 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task<ReleaseInfo?> TryFetchLatestStableReleaseAsync()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApiUrl);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
+        foreach (var url in LatestReleaseApiUrls)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Accept.ParseAdd("application/vnd.github+json");
 
-        return await RunWithGitHubTimeoutAsync<ReleaseInfo?>(
-            "Latest stable release fetch",
-            async ct =>
-            {
-                using var response = await MarketplaceHttpClient.SendAsync(request, ct);
-                if (!response.IsSuccessStatusCode)
-                    return null;
+            var release = await RunWithGitHubTimeoutAsync<ReleaseInfo?>(
+                "Latest stable release fetch",
+                async ct =>
+                {
+                    using var response = await MarketplaceHttpClient.SendAsync(request, ct);
+                    if (!response.IsSuccessStatusCode)
+                        return null;
 
-                var json = await response.Content.ReadAsStringAsync(ct);
-                using var doc = JsonDocument.Parse(json);
-                return ParseReleaseInfo(doc.RootElement);
-            });
+                    var json = await response.Content.ReadAsStringAsync(ct);
+                    using var doc = JsonDocument.Parse(json);
+                    return ParseReleaseInfo(doc.RootElement);
+                });
+
+            if (release is not null)
+                return release;
+        }
+
+        return null;
     }
 
     private async Task<ReleaseInfo?> TryFetchLatestListedReleaseAsync()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, ReleasesApiUrl);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
+        foreach (var url in ReleasesApiUrls)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Accept.ParseAdd("application/vnd.github+json");
 
-        return await RunWithGitHubTimeoutAsync<ReleaseInfo?>(
-            "Releases list fetch",
-            async ct =>
-            {
-                using var response = await MarketplaceHttpClient.SendAsync(request, ct);
-                response.EnsureSuccessStatusCode();
-
-                var json = await response.Content.ReadAsStringAsync(ct);
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.ValueKind != JsonValueKind.Array)
-                    return null;
-
-                foreach (var release in doc.RootElement.EnumerateArray())
+            var release = await RunWithGitHubTimeoutAsync<ReleaseInfo?>(
+                "Releases list fetch",
+                async ct =>
                 {
-                    var parsedRelease = ParseReleaseInfo(release);
-                    if (parsedRelease is not null)
-                        return parsedRelease;
-                }
+                    using var response = await MarketplaceHttpClient.SendAsync(request, ct);
+                    if (!response.IsSuccessStatusCode)
+                        return null;
 
-                return null;
-            });
+                    var json = await response.Content.ReadAsStringAsync(ct);
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                        return null;
+
+                    foreach (var release in doc.RootElement.EnumerateArray())
+                    {
+                        var parsedRelease = ParseReleaseInfo(release);
+                        if (parsedRelease is not null)
+                            return parsedRelease;
+                    }
+
+                    return null;
+                });
+
+            if (release is not null)
+                return release;
+        }
+
+        return null;
     }
 
     private static ReleaseInfo? ParseReleaseInfo(JsonElement releaseElement)
@@ -3887,7 +3906,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch
             {
                 _privacyPolicyText = "The Privacy Policy could not be loaded. You can read it at " +
-                                      "https://github.com/KerbalMissile/Kodo/blob/main/PRIVACY_POLICY.txt";
+                                      GitHubRepoInfo.PrivacyPolicyUrl;
             }
 
             return _privacyPolicyText;
@@ -11889,8 +11908,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     // Pre-fill a GitHub issue with the context as the title, mirroring the crash dialog.
                     var title = Uri.EscapeDataString($"[Warning] {context}: {exception.Message}"
                         .Replace("\r", "").Replace("\n", " ").Trim());
-                    var url = $"https://github.com/KerbalMissile/Kodo/issues/new?title={title}" +
-                              $"&labels=bug&template=bug_report.md";
+                    var url = GitHubRepoInfo.GetIssueUrl(
+                        $"[Warning] {context}: {exception.Message}"
+                            .Replace("\r", "").Replace("\n", " ").Trim(),
+                        "Please describe what you were doing when the warning appeared.") +
+                        "&labels=bug&template=bug_report.md";
                     Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
                 }
                 catch
