@@ -28,11 +28,14 @@ internal static class GitHubRepoInfo
 
     public static string LatestReleaseApiUrl => BuildLatestReleaseApiUrl(OrganizationOwner);
     public static string ExtensionsIndexUrl => BuildExtensionsContentsUrl(OrganizationOwner, "Indexs/ExtensionsIndex.json");
-    public static string FallbackExtensionsIndexUrl => BuildExtensionsContentsUrl(PersonalOwner, "Indexs/ExtensionsIndex.json");
+    public static string FallbackExtensionsIndexUrl => BuildContentsUrl(PersonalOwner, "Indexs/ExtensionsIndex.json");
 
     public static string GetLatestReleaseApiUrl(string owner) => BuildLatestReleaseApiUrl(owner);
     public static string GetReleasesApiUrl(string owner) => BuildReleasesApiUrl(owner);
-    public static string GetExtensionsIndexUrl(string owner) => BuildExtensionsContentsUrl(owner, "Indexs/ExtensionsIndex.json");
+    public static string GetExtensionsIndexUrl(string owner) =>
+        owner.Equals(PersonalOwner, StringComparison.OrdinalIgnoreCase)
+            ? BuildContentsUrl(PersonalOwner, "Indexs/ExtensionsIndex.json")
+            : BuildExtensionsContentsUrl(owner, "Indexs/ExtensionsIndex.json");
 
     public static string GetFallbackReleaseNotesUrl() => BuildReleasesUrl(PersonalOwner);
 

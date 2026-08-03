@@ -602,7 +602,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly string ReleasesPageUrl = GitHubRepoInfo.ReleaseNotesUrl;
     private static readonly string PrivacyPolicyUrl = GitHubRepoInfo.PrivacyPolicyUrl;
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
-    private const string WebsiteUrl = "https://kerbalmissile.github.io/Kodo-Website/";
+    private const string WebsiteUrl = "https://kodo-ide.github.io/Kodo-Website/";
     // GitHub Contents API endpoint for ANNOUNCEMENTS.md, same raw+json Accept header as the marketplace index.
     private static readonly string AnnouncementsUrl = GitHubRepoInfo.AnnouncementsUrl;
 
@@ -2379,15 +2379,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 $"Extension download - {marketplaceExtension.Name}",
                 async ct =>
                 {
-                    using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, marketplaceExtension.DownloadUrl);
-                    // Contents API URLs require raw+json to receive file bytes directly
-                    // instead of a base64-wrapped JSON envelope.
-                    if (IsGitHubContentsApiUrl(marketplaceExtension.DownloadUrl))
-                        downloadRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-                    using var downloadResponse = await MarketplaceHttpClient.SendAsync(
-                        downloadRequest, HttpCompletionOption.ResponseContentRead, ct);
-                    downloadResponse.EnsureSuccessStatusCode();
-                    return await downloadResponse.Content.ReadAsByteArrayAsync(ct);
+                    var downloadUrls = BuildExtensionDownloadUrlCandidates(marketplaceExtension.DownloadUrl);
+                    foreach (var downloadUrl in downloadUrls)
+                    {
+                        using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
+                        // Contents API URLs require raw+json to receive file bytes directly
+                        // instead of a base64-wrapped JSON envelope.
+                        if (IsGitHubContentsApiUrl(downloadUrl))
+                            downloadRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+
+                        using var downloadResponse = await MarketplaceHttpClient.SendAsync(
+                            downloadRequest, HttpCompletionOption.ResponseContentRead, ct);
+                        if (!downloadResponse.IsSuccessStatusCode)
+                            continue;
+
+                        return await downloadResponse.Content.ReadAsByteArrayAsync(ct);
+                    }
+
+                    throw new HttpRequestException($"Unable to download extension package from any known location for {marketplaceExtension.Name}.");
                 });
 
             ValidateDownloadedExtensionPackage(marketplaceExtension, bytes);
@@ -2441,6 +2450,83 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 $"Downloaded package version '{manifestVersion}' is older than the marketplace version '{marketplaceExtension.Version}'.");
         }
     }
+
+    private static IEnumerable<string> BuildExtensionDownloadUrlCandidates(string downloadUrl)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var candidates = new List<string>();
+
+        void Add(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+            if (seen.Add(url))
+                candidates.Add(url);
+        }
+
+        Add(downloadUrl);
+
+        if (TryParseGitHubContentsUrl(downloadUrl, out _, out _, out var path))
+        {
+            var suffix = GetExtensionPackageRelativePath(path);
+            Add(BuildGitHubContentsUrl("Kodo-IDE", "Kodo-Extensions", PrefixExtensionPath("Extensions", suffix)));
+            Add(BuildGitHubContentsUrl("KerbalMissile", "Kodo", PrefixExtensionPath("Official_Extensions", suffix)));
+        }
+
+        return candidates;
+    }
+
+    private static bool TryParseGitHubContentsUrl(string url, out string owner, out string repo, out string path)
+    {
+        owner = string.Empty;
+        repo = string.Empty;
+        path = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(url))
+            return false;
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+
+        if (!uri.Host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var segments = uri.AbsolutePath.TrimStart('/').Split('/');
+        if (segments.Length < 6 ||
+            !segments[0].Equals("repos", StringComparison.OrdinalIgnoreCase) ||
+            !segments[3].Equals("contents", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        owner = segments[1];
+        repo = segments[2];
+        path = string.Join("/", segments, 4, segments.Length - 4);
+        return true;
+    }
+
+    private static string GetExtensionPackageRelativePath(string path)
+    {
+        var normalized = path.Replace('\\', '/').TrimStart('/');
+        var segments = normalized.Split('/', 2);
+        if (segments.Length == 2 &&
+            (segments[0].Equals("Extensions", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].Equals("Official_Extensions", StringComparison.OrdinalIgnoreCase)))
+        {
+            return segments[1];
+        }
+
+        return normalized;
+    }
+
+    private static string PrefixExtensionPath(string folderName, string suffix)
+    {
+        suffix = suffix.Replace('\\', '/').TrimStart('/');
+        return string.IsNullOrWhiteSpace(suffix) ? folderName : $"{folderName}/{suffix}";
+    }
+
+    private static string BuildGitHubContentsUrl(string owner, string repo, string path) =>
+        $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
 
     private async Task UninstallExtensionAsync(LoadedExtension extension)
     {
@@ -11788,7 +11874,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // Scrollable, selectable stack trace.
             var exceptionText = new SelectableTextBlock
             {
-                Text         = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context),
+                Text         = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true),
                 FontSize     = 12,
                 FontFamily   = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
                 Foreground   = new SolidColorBrush(Color.Parse("#CE9178")),
@@ -11815,7 +11901,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var logPathText = new TextBlock
             {
-                Text         = $"Logged to: {logPath}",
+                Text         = "Logged to: %AppData%\\Kodo\\kodo.log",
                 FontSize     = 11,
                 Foreground   = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
@@ -11909,8 +11995,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var clip = TopLevel.GetTopLevel(dialog)?.Clipboard;
                     if (clip is not null)
                     {
-                        var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context);
-                        await clip.SetTextAsync(text);
+                var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true);
+                await clip.SetTextAsync(text);
                         copyButton.Content   = "Copied!";
                         copyButton.Foreground = PrimaryTextBrush;
                     }
@@ -11931,7 +12017,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var url = GitHubRepoInfo.GetIssueUrl(
                         $"[Warning] {context}: {exception.Message}"
                             .Replace("\r", "").Replace("\n", " ").Trim(),
-                        "Please describe what you were doing when the warning appeared.") +
+                        KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true)) +
                         "&labels=bug&template=bug_report.md";
                     Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
                 }

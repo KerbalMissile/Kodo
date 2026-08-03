@@ -427,7 +427,7 @@ public partial class App : Application
         // Exception details (scrollable, selectable)
         var exceptionText = new SelectableTextBlock
         {
-            Text       = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical),
+            Text       = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true),
             FontSize   = 12,
             FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
             Foreground = new SolidColorBrush(KodoTokenOrange),
@@ -455,7 +455,7 @@ public partial class App : Application
         // Log path note
         var logPathText = new TextBlock
         {
-            Text         = $"Full details in: {logPath}",
+            Text         = "Full details in: %AppData%\\Kodo\\kodo.log",
             FontSize     = 11,
             Foreground   = new SolidColorBrush(KodoTextDim),
             TextWrapping = TextWrapping.Wrap,
@@ -554,7 +554,7 @@ public partial class App : Application
                 var clip = TopLevel.GetTopLevel(dialog)?.Clipboard;
                 if (clip is not null)
                 {
-                    var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical);
+                    var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true);
                     await clip.SetTextAsync(text);
                     copyButton.Content   = "Copied!";
                     copyButton.Foreground = Brushes.White;
@@ -576,7 +576,7 @@ public partial class App : Application
                 var url = GitHubRepoInfo.GetIssueUrl(
                     $"[Crash] {exception.GetType().Name}: {exception.Message}"
                         .Replace("\r", "").Replace("\n", " ").Trim(),
-                    "Please describe what you were doing when the crash happened.") +
+                    KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true)) +
                     "&labels=bug&template=bug_report.md";
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             }

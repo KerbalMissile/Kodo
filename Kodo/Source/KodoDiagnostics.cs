@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
 namespace Kodo;
@@ -123,7 +124,8 @@ internal static class KodoDiagnostics
         Exception exception,
         bool isTerminating,
         KodoSeverity severity,
-        string? operation = null)
+        string? operation = null,
+        bool redactPaths = false)
     {
         var timestamp = UtcNow();
         var sb = new StringBuilder();
@@ -141,16 +143,17 @@ internal static class KodoDiagnostics
         sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
         sb.Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
           .Append(" / ").AppendLine(Environment.Is64BitProcess ? "64-bit" : "32-bit");
-        sb.Append("Log: ").AppendLine(MainLogFilePath);
+        sb.Append("Log: ").AppendLine(redactPaths ? RedactPath(MainLogFilePath) : MainLogFilePath);
         sb.AppendLine();
-        sb.AppendLine(exception.ToString());
+        sb.AppendLine(redactPaths ? RedactExceptionText(exception.ToString()) : exception.ToString());
         return sb.ToString();
     }
 
     public static string BuildDiagnosticSummary(
         string source,
         bool isTerminating,
-        string? operation = null)
+        string? operation = null,
+        bool redactPaths = false)
     {
         var timestamp = UtcNow().ToString("yyyy-MM-dd HH:mm:ss") + " UTC";
         var summary = new StringBuilder();
@@ -162,7 +165,7 @@ internal static class KodoDiagnostics
             summary.Append("  |  Operation: ").Append(operation);
 
         summary.Append("  |  ").Append(isTerminating ? "Terminating" : "Recoverable");
-        return summary.ToString();
+        return redactPaths ? RedactExceptionText(summary.ToString()) : summary.ToString();
     }
 
     // Typed logging API
@@ -273,6 +276,52 @@ internal static class KodoDiagnostics
             WritePayloadToDisk(sb.ToString(), CrashLogFilePath);
         }
         catch { /* crash log generation must never itself crash */ }
+    }
+
+    private static string RedactExceptionText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return text;
+
+        var result = text;
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+
+        if (!string.IsNullOrWhiteSpace(appData))
+            result = result.Replace(appData, @"%AppData%", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(localAppData))
+            result = result.Replace(localAppData, @"%LocalAppData%", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(repoRoot))
+            result = result.Replace(repoRoot, @"<repo>", StringComparison.OrdinalIgnoreCase);
+
+        return Regex.Replace(
+            result,
+            @"\b[A-Za-z]:\\[^\r\n\t]+",
+            _ => "<path>",
+            RegexOptions.Compiled);
+    }
+
+    private static string RedactPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return path;
+
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+
+        if (!string.IsNullOrWhiteSpace(repoRoot) &&
+            path.StartsWith(repoRoot, StringComparison.OrdinalIgnoreCase))
+            return path.Replace(repoRoot, "<repo>", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(appData) &&
+            path.StartsWith(appData, StringComparison.OrdinalIgnoreCase))
+            return path.Replace(appData, "%AppData%", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(localAppData) &&
+            path.StartsWith(localAppData, StringComparison.OrdinalIgnoreCase))
+            return path.Replace(localAppData, "%LocalAppData%", StringComparison.OrdinalIgnoreCase);
+
+        return path;
     }
 
     private static void WritePayloadToDisk(string payload, string primaryPath)

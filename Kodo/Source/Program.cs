@@ -1,4 +1,4 @@
-// Licensed under the GPL-v3.0
+﻿// Licensed under the GPL-v3.0
 using Avalonia;
 using System;
 using System.IO;
@@ -139,8 +139,7 @@ internal static class SingleInstance
         }
         catch
         {
-            // If the primary instance is unreachable (e.g. it's shutting down right
-            // now), there's nothing useful to do - the user can just relaunch Kodo.
+            
         }
     }
 }
