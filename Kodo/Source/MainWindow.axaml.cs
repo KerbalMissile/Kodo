@@ -1842,10 +1842,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            foreach (var url in new[] { GitHubRepoInfo.AnnouncementsUrl, "https://api.github.com/repos/KerbalMissile/Kodo/contents/Announcements/ANNOUNCEMENTS.md" })
+            foreach (var url in new[]
+            {
+                "https://raw.githubusercontent.com/Kodo-IDE/Kodo/main/Announcements/ANNOUNCEMENTS.md",
+                GitHubRepoInfo.AnnouncementsUrl,
+                "https://api.github.com/repos/KerbalMissile/Kodo/contents/Announcements/ANNOUNCEMENTS.md"
+            })
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+                if (IsGitHubContentsApiUrl(url))
+                    request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
                 request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
 
                 var md = await RunWithGitHubTimeoutAsync<string?>(
@@ -2382,6 +2388,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var downloadUrls = BuildExtensionDownloadUrlCandidates(marketplaceExtension.DownloadUrl);
                     foreach (var downloadUrl in downloadUrls)
                     {
+
                         using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
                         // Contents API URLs require raw+json to receive file bytes directly
                         // instead of a base64-wrapped JSON envelope.
@@ -2472,9 +2479,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Add(BuildGitHubContentsUrl("Kodo-IDE", "Kodo-Extensions", PrefixExtensionPath("Extensions", suffix)));
             Add(BuildGitHubContentsUrl("KerbalMissile", "Kodo", PrefixExtensionPath("Official_Extensions", suffix)));
         }
+        else if (TryParseGitHubRawUrl(downloadUrl, out _, out _, out var rawPath))
+        {
+            var suffix = GetExtensionPackageRelativePath(rawPath);
+            Add(BuildGitHubContentsUrl("Kodo-IDE", "Kodo-Extensions", PrefixExtensionPath("Extensions", suffix)));
+            Add(BuildGitHubContentsUrl("KerbalMissile", "Kodo", PrefixExtensionPath("Official_Extensions", suffix)));
+        }
 
         return candidates;
     }
+
 
     private static bool TryParseGitHubContentsUrl(string url, out string owner, out string repo, out string path)
     {
@@ -2502,6 +2516,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         owner = segments[1];
         repo = segments[2];
         path = string.Join("/", segments, 4, segments.Length - 4);
+        return true;
+    }
+
+    private static bool TryParseGitHubRawUrl(string url, out string owner, out string repo, out string path)
+    {
+        owner = string.Empty;
+        repo = string.Empty;
+        path = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(url))
+            return false;
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+
+        if (!uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var segments = uri.AbsolutePath.TrimStart('/').Split('/');
+        if (segments.Length < 3)
+            return false;
+
+        owner = segments[0];
+        repo = segments[1];
+        path = string.Join("/", segments, 2, segments.Length - 2);
         return true;
     }
 
