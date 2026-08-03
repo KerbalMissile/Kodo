@@ -30,5 +30,5 @@ Minor updater bugfixes, plus a new settings search bar!
 
 ## GitHub Repo Migration
 > August 3, 2026
-We are in the process of migrating Kodo's GitHub repository, stay tuned to the Discord Server for live updates.
+Kodo's code has been migrated and we are monitoring performance. Let us know if you encounter any bugs by making an Issue!
 ---
