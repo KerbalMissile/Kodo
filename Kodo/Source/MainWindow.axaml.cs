@@ -187,6 +187,7 @@ public class FileTreeItem : INotifyPropertyChanged
 				".kox" => "KOX",
                 ".exe" => "EXE",
                 ".dll" => "DLL",
+                ".gitignore" => "IGNR",
 			    _ => "..",
 			};
     }
