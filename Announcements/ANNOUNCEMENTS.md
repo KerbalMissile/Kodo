@@ -27,3 +27,8 @@ Enjoy UI reworks in the Extensions menu, along with CodePredict (similar to VSC 
 > July 27, 2026
 Minor updater bugfixes, plus a new settings search bar!
 ---
+
+## GitHub Repo Migration
+> August 3, 2026
+We are in the process of migrating Kodo's GitHub repository, stay tuned to the Discord Server for live updates.
+---
