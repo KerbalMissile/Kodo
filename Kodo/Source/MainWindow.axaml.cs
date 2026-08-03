@@ -1533,9 +1533,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (remoteJson is null)
                     continue;
 
+                var parsedExtensions = new List<MarketplaceExtension>();
+                var parsedErrors = new List<string>();
+                ParseAndApplyMarketplaceIndex(remoteJson, parsedExtensions, parsedErrors);
+
+                if (parsedExtensions.Count == 0)
+                {
+                    extensionLoadErrors.Add($"Marketplace index at {indexUrl} did not contain any extensions.");
+                    continue;
+                }
+
                 marketplaceExtensions.Clear();
                 extensionLoadErrors.Clear();
-                ParseAndApplyMarketplaceIndex(remoteJson, marketplaceExtensions, extensionLoadErrors);
+                marketplaceExtensions.AddRange(parsedExtensions);
+                extensionLoadErrors.AddRange(parsedErrors);
                 TryWriteMarketplaceIndexCache(remoteJson);
                 if (newETag is not null)
                 {
@@ -2477,13 +2488,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var suffix = GetExtensionPackageRelativePath(path);
             Add(BuildGitHubContentsUrl("Kodo-IDE", "Kodo-Extensions", PrefixExtensionPath("Extensions", suffix)));
-            Add(BuildGitHubContentsUrl("KerbalMissile", "Kodo", PrefixExtensionPath("Extensions", suffix)));
+            Add(BuildGitHubContentsUrl("KerbalMissile", "Kodo", PrefixExtensionPath("Official_Extensions", suffix)));
         }
         else if (TryParseGitHubRawUrl(downloadUrl, out _, out _, out var rawPath))
         {
             var suffix = GetExtensionPackageRelativePath(rawPath);
             Add(BuildGitHubContentsUrl("Kodo-IDE", "Kodo-Extensions", PrefixExtensionPath("Extensions", suffix)));
-            Add(BuildGitHubContentsUrl("KerbalMissile", "Kodo", PrefixExtensionPath("Extensions", suffix)));
+            Add(BuildGitHubContentsUrl("KerbalMissile", "Kodo", PrefixExtensionPath("Official_Extensions", suffix)));
         }
 
         return candidates;
@@ -2550,7 +2561,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var segments = normalized.Split('/', 2);
         if (segments.Length == 2 &&
             (segments[0].Equals("Extensions", StringComparison.OrdinalIgnoreCase) ||
-             segments[0].Equals("Extensions", StringComparison.OrdinalIgnoreCase)))
+             segments[0].Equals("Official_Extensions", StringComparison.OrdinalIgnoreCase)))
         {
             return segments[1];
         }
