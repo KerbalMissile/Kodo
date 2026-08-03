@@ -590,7 +590,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly string CurrentAppVersion = KodoDiagnostics.AppVersion;
     public string CopyrightText => $"© {DateTime.Now.Year} KerbalMissile and SS-YYC. Licensed under GPL-3.0.";
     // GitHub Contents API endpoint for the extension index JSON, fetched with the raw+json Accept header for direct file bytes.
-    private static readonly string DefaultMarketplaceIndexUrl = GitHubRepoInfo.MarketplaceIndexUrl;
+    private static readonly string[] MarketplaceIndexUrls =
+    [
+        GitHubRepoInfo.GetExtensionsIndexUrl("Kodo-IDE"),
+        GitHubRepoInfo.GetExtensionsIndexUrl("KerbalMissile"),
+    ];
     private static readonly string[] LatestReleaseApiUrls =
         GitHubRepoInfo.Owners.Select(GitHubRepoInfo.GetLatestReleaseApiUrl).ToArray();
     private static readonly string[] ReleasesApiUrls =
@@ -933,7 +937,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "Kodo", "Extensions");
     private string ProjectExtensionsFolderPath =>
-        Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Extensions"));
+        Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", GitHubRepoInfo.OfficialExtensionsFolderName));
 
     // Flat list that backs the ItemsControl – directories insert/remove their children in-place
     public ObservableCollection<FileTreeItem> FileTreeItems { get; } = new();
@@ -1499,33 +1503,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // Only attaches the conditional header when we already have marketplace data to fall back on.
             _marketplaceIndexETag ??= TryReadMarketplaceIndexETag();
             var hasLocalDataToReuseOn304 = marketplaceExtensions.Count > 0;
-            using var indexRequest = new HttpRequestMessage(HttpMethod.Get, DefaultMarketplaceIndexUrl);
-            indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-            if (hasLocalDataToReuseOn304 && _marketplaceIndexETag is not null)
-                indexRequest.Headers.TryAddWithoutValidation("If-None-Match", _marketplaceIndexETag);
+            foreach (var indexUrl in MarketplaceIndexUrls)
+            {
+                using var indexRequest = new HttpRequestMessage(HttpMethod.Get, indexUrl);
+                indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+                if (hasLocalDataToReuseOn304 && _marketplaceIndexETag is not null)
+                    indexRequest.Headers.TryAddWithoutValidation("If-None-Match", _marketplaceIndexETag);
 
-            var (statusCode, remoteJson, newETag) = await RunWithGitHubTimeoutAsync(
-                "Marketplace index fetch",
-                async ct =>
+                var (statusCode, remoteJson, newETag) = await RunWithGitHubTimeoutAsync(
+                    "Marketplace index fetch",
+                    async ct =>
+                    {
+                        using var indexResponse = await MarketplaceHttpClient.SendAsync(indexRequest, ct);
+                        if ((int)indexResponse.StatusCode == 304)
+                            return (304, (string?)null, (string?)null);
+                        if (!indexResponse.IsSuccessStatusCode)
+                            return (0, (string?)null, (string?)null);
+                        var body = await indexResponse.Content.ReadAsStringAsync(ct);
+                        var etag = indexResponse.Headers.ETag?.Tag;
+                        return (200, body, etag);
+                    });
+
+                if (statusCode == 304)
                 {
-                    using var indexResponse = await MarketplaceHttpClient.SendAsync(indexRequest, ct);
-                    if ((int)indexResponse.StatusCode == 304)
-                        return (304, (string?)null, (string?)null);
-                    indexResponse.EnsureSuccessStatusCode();
-                    var body = await indexResponse.Content.ReadAsStringAsync(ct);
-                    var etag = indexResponse.Headers.ETag?.Tag;
-                    return (200, body, etag);
-                });
+                    KodoDiagnostics.LogDebug("Marketplace index: 304 Not Modified - reusing cached data.");
+                    break;
+                }
 
-            if (statusCode == 304)
-            {
-                // Index unchanged - reuse whatever is already in the collection
-                // (disk-cache seed or previous refresh).  No parse, no disk write.
-                KodoDiagnostics.LogDebug("Marketplace index: 304 Not Modified - reusing cached data.");
-            }
-            else if (remoteJson is not null)
-            {
-                // Fresh 200 - parse, update disk cache, store new ETag.
+                if (remoteJson is null)
+                    continue;
+
                 marketplaceExtensions.Clear();
                 extensionLoadErrors.Clear();
                 ParseAndApplyMarketplaceIndex(remoteJson, marketplaceExtensions, extensionLoadErrors);
@@ -1535,6 +1542,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _marketplaceIndexETag = newETag;
                     TryWriteMarketplaceIndexETag(newETag);
                 }
+                break;
             }
         }
         catch (Exception ex)
