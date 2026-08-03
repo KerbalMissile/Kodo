@@ -626,7 +626,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _discordReconnectTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
     private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(175) };
-    private readonly DispatcherTimer _codePredictRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private readonly DispatcherTimer _InsightRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     // Coalesces concurrent background saves into a single writer that always ends on the latest snapshot.
     private readonly object _settingsWriteLock = new();
@@ -644,9 +644,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly HtmlEmbeddedColorizer _htmlEmbeddedColorizer = new();
     private readonly MarkdownColorizer _markdownColorizer = new();
     private readonly EmojiTypefaceColorizer _emojiTypefaceColorizer = new();
-    // Predictive CodePredict: engine tracks per-file variables + language candidates,
+    // Predictive Insight: engine tracks per-file variables + language candidates,
     // _completionWindow is the currently-open popup (null when nothing is showing).
-    private readonly CodePredictEngine _CodePredictEngine = new();
+    private readonly InsightEngine _InsightEngine = new();
     private CompletionWindow? _completionWindow;
     private EditorTab? _activeEditorTab;
     private int _nextUntitledTabNumber = 1;
@@ -692,7 +692,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isStatusBarFilePathVisible = true;
     private bool _isWordWrapEnabled;
     // Defaults to true - predictive completion is on unless the user turns it off.
-    private bool _isCodePredictEnabled = true;
+    private bool _isInsightEnabled = true;
     private bool _suppressExplorerWidthRefresh;
     private bool _isConfirmBeforeClosingUnsavedTabsEnabled = true;
     private bool _isRestoreOpenTabsOnLaunchEnabled;
@@ -1113,7 +1113,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         KodoDiagnostics.VerboseLoggingEnabled = _isVerboseLoggingEnabled;
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
         _isWordWrapEnabled = settings.WordWrapEnabled;
-        _isCodePredictEnabled = settings.CodePredictEnabled;
+        _isInsightEnabled = settings.InsightEnabled;
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
         _isAutoUpdateExtensionsEnabled = settings.AutoUpdateExtensionsEnabled;
@@ -1154,7 +1154,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _discordReconnectTimer.Tick += DiscordReconnectTimer_OnTick;
         _editorStateRefreshTimer.Tick += EditorStateRefreshTimer_OnTick;
         _wordCountRefreshTimer.Tick += WordCountRefreshTimer_OnTick;
-        _codePredictRefreshTimer.Tick += CodePredictRefreshTimer_OnTick;
+        _InsightRefreshTimer.Tick += InsightRefreshTimer_OnTick;
         _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         _extensionAutoUpdateTimer.Tick += ExtensionAutoUpdateTimer_OnTick;
@@ -4943,15 +4943,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public bool IsCodePredictEnabled
+    public bool IsInsightEnabled
     {
-        get => _isCodePredictEnabled;
+        get => _isInsightEnabled;
         set
         {
-            if (_isCodePredictEnabled == value) return;
-            _isCodePredictEnabled = value;
+            if (_isInsightEnabled == value) return;
+            _isInsightEnabled = value;
             OnPropertyChanged();
-            if (!_isCodePredictEnabled)
+            if (!_isInsightEnabled)
                 CloseCompletionWindow();
             SaveSettings();
         }
@@ -5058,7 +5058,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         MatchesSettingsSearch("Accent Colour color theme kodo windows custom purple");
 
     public bool IsEditorSettingsVisible =>
-        MatchesSettingsSearch("Editor word wrap CodePredict code suggestions completion autocomplete tab size font size");
+        MatchesSettingsSearch("Editor word wrap Insight code suggestions completion autocomplete tab size font size");
 
     public bool IsTerminalSettingsVisible =>
         MatchesSettingsSearch("Terminal shell PowerShell PSReadLine predictive IntelliSense");
@@ -6265,16 +6265,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _wordCountRefreshTimer.Start();
     }
 
-    private void QueueCodePredictRefresh()
+    private void QueueInsightRefresh()
     {
-        _codePredictRefreshTimer.Stop();
-        _codePredictRefreshTimer.Start();
+        _InsightRefreshTimer.Stop();
+        _InsightRefreshTimer.Start();
     }
 
-    private void CodePredictRefreshTimer_OnTick(object? sender, EventArgs e)
+    private void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
     {
-        _codePredictRefreshTimer.Stop();
-        UpdateCodePredict();
+        _InsightRefreshTimer.Stop();
+        UpdateInsight();
     }
 
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
@@ -6567,6 +6567,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // Treat it like a missing file rather than overwriting with defaults.
             if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
 
+            if (json.Contains("\"CodePredictEnabled\"", StringComparison.Ordinal))
+                json = json.Replace("\"CodePredictEnabled\"", "\"InsightEnabled\"", StringComparison.Ordinal);
+
             // Cap recursion depth so a deeply-nested or adversarial settings file
             // cannot cause a StackOverflowException inside the deserializer.
             var opts = new JsonSerializerOptions { MaxDepth = 32 };
@@ -6632,7 +6635,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             VerboseLoggingEnabled                   = IsVerboseLoggingEnabled,
             StatusBarFilePathVisible               = IsStatusBarFilePathVisible,
             WordWrapEnabled                        = IsWordWrapEnabled,
-            CodePredictEnabled                        = IsCodePredictEnabled,
+            InsightEnabled                        = IsInsightEnabled,
             TabSize                                = TabSize,
             EditorFontSize                         = EditorFontSize,
             ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
@@ -7430,7 +7433,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (closingActiveTab)
             CloseCompletionWindow();
-        _CodePredictEngine.ForgetFile(tab.Path);
+        _InsightEngine.ForgetFile(tab.Path);
         OpenTabs.RemoveAt(index);
         _corruptedTabs.Remove(tab);
 
@@ -9058,7 +9061,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         sb.AppendLine($"Tab size: {TabSize}");
         sb.AppendLine($"Font size: {EditorFontSize}px");
         sb.AppendLine($"Word wrap: {IsWordWrapEnabled}");
-        sb.AppendLine($"CodePredict: {IsCodePredictEnabled}");
+        sb.AppendLine($"Insight: {IsInsightEnabled}");
         sb.AppendLine($"Auto-save: {IsAutoSaveEnabled}");
 
         // Appearance
@@ -10447,7 +10450,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         QueueRefreshState(fullRefresh: true);
         QueueWordCountRefresh();
         RestartAutoSaveTimerIfNeeded();
-        QueueCodePredictRefresh();
+        QueueInsightRefresh();
     }
 
 	// Fires before the character is written; skips an auto-inserted closing character.
@@ -10526,13 +10529,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         caret.Offset = offset;
     }
 
-    // CodePredict (predictive completion popup)
+    // Insight (predictive completion popup)
 
     // Recomputes and shows/updates/hides the completion popup based on the word at
     // the caret. Called after every real text edit (see EditorTextBox_OnTextChanged).
-    private void UpdateCodePredict()
+    private void UpdateInsight()
     {
-        if (!IsCodePredictEnabled)
+        if (!IsInsightEnabled)
         {
             CloseCompletionWindow();
             return;
@@ -10555,7 +10558,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, doc.TextLength);
         var text = doc.Text;
 
-        var wordStart = CodePredictEngine.FindWordStart(text, offset);
+        var wordStart = InsightEngine.FindWordStart(text, offset);
         var prefix = text[wordStart..offset];
 
         // Require at least one word character already typed, so the popup doesn't pop
@@ -10567,14 +10570,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         var fileKey = ActiveEditorTab?.Path ?? "untitled";
-        _CodePredictEngine.ScanDocument(fileKey, text);
+        _InsightEngine.ScanDocument(fileKey, text);
 
         // Keeps popup rows in sync with the active theme even if it changed
         // while a suggestion list was already open.
-        CodePredictSuggestion.PanelForeground = PrimaryTextBrush;
-        CodePredictSuggestion.MutedForeground = MutedTextBrush;
+        InsightSuggestion.PanelForeground = PrimaryTextBrush;
+        InsightSuggestion.MutedForeground = MutedTextBrush;
 
-        var suggestions = _CodePredictEngine.GetSuggestions(prefix, fileKey, CurrentLanguageExtension, text, offset);
+        var suggestions = _InsightEngine.GetSuggestions(prefix, fileKey, CurrentLanguageExtension, text, offset);
         if (suggestions.Count == 0)
         {
             CloseCompletionWindow();
@@ -10606,10 +10609,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Row geometry - kept as named constants so the popup's MaxHeight can be an
     // exact multiple of a row, rather than cutting off partway through one.
-    private const double CodePredictRowHeight = 26d;
-    private const double CodePredictListVerticalPadding = 8d;  // ListBox Padding(0,4) top+bottom
-    private const double CodePredictBorderThickness = 2d;      // 1px top + 1px bottom
-    private const int CodePredictVisibleRows = 8;
+    private const double InsightRowHeight = 26d;
+    private const double InsightListVerticalPadding = 8d;  // ListBox Padding(0,4) top+bottom
+    private const double InsightBorderThickness = 2d;      // 1px top + 1px bottom
+    private const int InsightVisibleRows = 8;
 
     // Builds a CompletionWindow styled to match Kodo's own panels (CardBrush background,
     // SurfaceBorderBrush border, accent-tinted selected row).
@@ -10617,8 +10620,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var window = new CompletionWindow(EditorTextBox.TextArea)
         {
-            MaxHeight = CodePredictRowHeight * CodePredictVisibleRows
-                + CodePredictListVerticalPadding + CodePredictBorderThickness,
+            MaxHeight = InsightRowHeight * InsightVisibleRows
+                + InsightListVerticalPadding + InsightBorderThickness,
             MaxWidth = 460,
             Width = 460,
         };
@@ -10674,7 +10677,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var rowPaddingStyle = new Style(x => x.OfType<ListBoxItem>());
         rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(6, 3)));
         // A fixed MinHeight keeps every row the same height so the virtualizing panel positions them consistently.
-        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, CodePredictRowHeight));
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, InsightRowHeight));
         window.Styles.Add(rowPaddingStyle);
 
         window.Closed += (_, _) => _completionWindow = null;
@@ -10683,7 +10686,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // Lets the open CodePredict popup own navigation/accept/dismiss keys before smart-enter/smart-tab.
+        // Lets the open Insight popup own navigation/accept/dismiss keys before smart-enter/smart-tab.
         if (_completionWindow is not null && e.Key is Key.Enter or Key.Tab or Key.Escape
             or Key.Up or Key.Down or Key.PageUp or Key.PageDown)
         {
@@ -12587,8 +12590,8 @@ internal sealed class AppSettings
     public bool VerboseLoggingEnabled { get; set; }
     public bool StatusBarFilePathVisible { get; set; } = true;
     public bool WordWrapEnabled { get; set; }
-    // Predictive completion (CodePredict). Defaults to true - on unless the user disables it.
-    public bool CodePredictEnabled { get; set; } = true;
+    // Predictive completion (Insight). Defaults to true - on unless the user disables it.
+    public bool InsightEnabled { get; set; } = true;
     public int TabSize { get; set; } = 4;
     public int EditorFontSize { get; set; } = 14;
     public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
@@ -12643,3 +12646,4 @@ public sealed class RecentFileEntry
     public DateTime LastOpened { get; set; } = DateTime.Now;
     public bool IsPinned { get; set; }
 }
+
