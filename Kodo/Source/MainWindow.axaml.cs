@@ -7638,18 +7638,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var dirs = Directory.GetDirectories(dirPath)
-                .Where(d => !Path.GetFileName(d).StartsWith('.'))
+                .Where(d => !IsHiddenOnDisk(d))
                 .OrderBy(d => Path.GetFileName(d), NaturalSortComparer.OrdinalIgnoreCase)
                 .ToArray();
 
             var files = Directory.GetFiles(dirPath)
-                .Where(f => !Path.GetFileName(f).StartsWith('.'))
+                .Where(f => !IsHiddenOnDisk(f))
                 .OrderBy(f => Path.GetFileName(f), NaturalSortComparer.OrdinalIgnoreCase)
                 .ToArray();
 
             return [.. dirs, .. files];
         }
         catch { return []; }
+    }
+
+    // Mirrors Explorer's notion of "hidden": the actual Hidden/System file
+    // attributes, not a Unix-style leading dot. ".gitignore", ".env", etc. have
+    // no such attribute on Windows and so should show up like any other file.
+    private static bool IsHiddenOnDisk(string path)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            return attributes.HasFlag(FileAttributes.Hidden) || attributes.HasFlag(FileAttributes.System);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private async Task ToggleDirectoryExpansionAsync(FileTreeItem dirItem)
