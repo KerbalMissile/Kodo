@@ -104,7 +104,7 @@ public partial class App : Application
         {
             if (!UpdateService.IsAutoUpdateEnabledInSettings())
             {
-                // User has auto-update off entirely - make sure no logon task is left resident.
+                // User has auto-update off entirely; make sure no logon task is left resident.
                 UpdateService.RemoveAutostartRegistration();
                 return;
             }
@@ -127,7 +127,6 @@ public partial class App : Application
         catch (Exception ex)
         {
             // Best-effort - if this fails, updates simply fall back to the in-app
-            // 6-hour check that only runs while Kodo is open.
             KodoDiagnostics.LogWarning("App.LaunchStandaloneUpdaterIfNeeded", ex, operation: "AutoUpdate");
         }
     }
@@ -143,7 +142,7 @@ public partial class App : Application
             var (version, installerPath) = pending.Value;
             var update = new UpdateInfo(
                 Version: version,
-                ReleaseNotesUrl: GitHubRepoInfo.ReleaseNotesUrl,
+                ReleaseNotesUrl: "https://github.com/Kodo-IDE/Kodo/releases",
                 AssetDownloadUrl: string.Empty, // unused: installer is already on disk
                 AssetName: Path.GetFileName(installerPath),
                 AssetSizeBytes: 0);
@@ -573,9 +572,10 @@ public partial class App : Application
                 // Pre-fills a GitHub issue with the exception type as the title.
                 var title = Uri.EscapeDataString($"[Crash] {exception.GetType().Name}: {exception.Message}"
                     .Replace("\r", "").Replace("\n", " ").Trim());
-                var url = GitHubRepoInfo.GetIssueUrl(
-                    $"[Crash] {exception.GetType().Name}: {exception.Message}"
-                        .Replace("\r", "").Replace("\n", " ").Trim(),
+                var url = "https://github.com/Kodo-IDE/Kodo/issues/new?title=" +
+                          Uri.EscapeDataString($"[Crash] {exception.GetType().Name}: {exception.Message}"
+                              .Replace("\r", "").Replace("\n", " ").Trim()) +
+                          "&body=" + Uri.EscapeDataString(
                     KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true)) +
                     "&labels=bug&template=bug_report.md";
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
