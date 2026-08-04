@@ -931,7 +931,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         var snapshot = EnsureSnapshot(document.Text ?? string.Empty);
         var lineState = snapshot.GetLineState(line.LineNumber);
         var text = document.GetText(line.Offset, line.Length);
-        var stack = new Stack<char>(lineState.BracketStack.Reverse());
+        var stack = new Stack<char>(lineState.BracketStack);
         var mode = lineState.Mode;
         var activeDelimiter = lineState.Delimiter;
 

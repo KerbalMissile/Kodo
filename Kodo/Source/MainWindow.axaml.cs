@@ -12592,6 +12592,13 @@ internal sealed class AppSettings
     public bool WordWrapEnabled { get; set; }
     // Predictive completion (Insight). Defaults to true - on unless the user disables it.
     public bool InsightEnabled { get; set; } = true;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool CodePredictEnabled
+    {
+        get => InsightEnabled;
+        set => InsightEnabled = value;
+    }
     public int TabSize { get; set; } = 4;
     public int EditorFontSize { get; set; } = 14;
     public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
