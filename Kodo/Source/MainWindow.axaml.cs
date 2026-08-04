@@ -1065,6 +1065,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         InitializeComponent();
         LoadWindowIcon();
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
+        EditorTextBox.TextArea.TextView.Options.AllowScrollBelowDocument = false;
         EditorTextBox.TextArea.LeftMargins.Add(DottedLineMargin.Create());
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_indentGuideRenderer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_rainbowBracketColorizer);
@@ -12653,4 +12654,3 @@ public sealed class RecentFileEntry
     public DateTime LastOpened { get; set; } = DateTime.Now;
     public bool IsPinned { get; set; }
 }
-

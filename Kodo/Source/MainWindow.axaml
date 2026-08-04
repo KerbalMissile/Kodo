@@ -1288,7 +1288,7 @@
                                              Foreground="{Binding PrimaryTextBrush}"
                                              FontFamily="Cascadia Code,Consolas,Menlo,Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,Monospace"
                                              FontSize="14"
-                                             Padding="8,12,18,18"
+                                             Padding="8,12,18,0"
                                              KeyboardNavigation.TabNavigation="None"
                                              ShowLineNumbers="True"
                                              WordWrap="{Binding IsWordWrapEnabled}"
@@ -4313,10 +4313,10 @@
                                 <CheckBox IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable word wrap" />
-                                <CheckBox IsChecked="{Binding IsCodePredictEnabled, Mode=TwoWay}"
+                                <CheckBox IsChecked="{Binding IsInsightEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           ToolTip.Tip="Predictive code completion as you type"
-                                          Content="Enable CodePredict (code suggestions)" />
+                                          Content="Enable Insight (code suggestions)" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
                                             VerticalAlignment="Center">
                                     <TextBlock VerticalAlignment="Center"
@@ -5246,3 +5246,4 @@
         </Grid>
     </Grid>
 </Window>
+
