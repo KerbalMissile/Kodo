@@ -1066,7 +1066,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         LoadWindowIcon();
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
         EditorTextBox.TextArea.TextView.Options.AllowScrollBelowDocument = false;
-        EditorTextBox.TextArea.LeftMargins.Add(DottedLineMargin.Create());
+        var dottedLineMargin = DottedLineMargin.Create();
+        dottedLineMargin.VerticalAlignment = VerticalAlignment.Top;
+        EditorTextBox.TextArea.LeftMargins.Add(dottedLineMargin);
+        // DottedLineMargin stretches to fill its container (the full viewport) by default,
+        // so on short files the separator runs past the last line into empty scroll space.
+        // Clamp it to the smaller of the document's real height or the viewport height.
+        EditorTextBox.TextArea.TextView.VisualLinesChanged += (_, _) =>
+        {
+            var textView = EditorTextBox.TextArea.TextView;
+            dottedLineMargin.Height = Math.Min(textView.DocumentHeight, textView.Bounds.Height);
+        };
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_indentGuideRenderer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_rainbowBracketColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_interpolatedStringColorizer);
