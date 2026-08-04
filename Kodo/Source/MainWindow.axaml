@@ -1964,29 +1964,7 @@
                                                 </Grid>
                                             </Border>
 
-                                            <!-- Tutorial shortcut strip -->
-                                            <Border Grid.Row="1"
-                                                    BorderBrush="{Binding SurfaceBorderBrush}"
-                                                    BorderThickness="0,0,0,1"
-                                                    Padding="20,12">
-                                                <Grid ColumnDefinitions="*,Auto">
-                                                    <StackPanel Grid.Column="0" Spacing="2">
-                                                        <TextBlock FontSize="12"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                                   Text="New to Kodo?" />
-                                                        <TextBlock FontSize="12"
-                                                                   Foreground="{Binding MutedTextBrush}"
-                                                                   Text="Take the built-in tutorial." />
-                                                    </StackPanel>
-                                                    <Button Grid.Column="1"
-                                                            Classes="chrome"
-                                                            Click="OpenTutorialButton_OnClick"
-                                                            VerticalAlignment="Center"
-                                                            ToolTip.Tip="Open the interactive tutorial"
-                                                            Content="Tutorial" />
-                                                </Grid>
-                                            </Border>
+                                
 
                                             <!-- News body -->
                                             <Border Grid.Row="2"
