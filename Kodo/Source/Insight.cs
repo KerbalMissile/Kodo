@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
 using AvaloniaEdit.CodeCompletion;
@@ -82,10 +83,51 @@ public sealed class InsightSuggestion : ICompletionData
 
     private static readonly FontFamily MonoFontFamily = new("Cascadia Code,Consolas,Menlo,Monospace");
 
+    // Monochrome icon geometries sourced from the provided SVG assets.
+    private static readonly Geometry VariableIconGeometry = Geometry.Parse(
+        "M0 7.008v-3.008q0-1.632 1.184-2.816t2.816-1.184h4q1.664 0 2.816 1.184t1.184 2.816h4q2.496 0 4.256 1.76l9.984 10.016q1.76 1.728 1.76 4.224t-1.76 4.256l-5.984 6.016q-1.76 1.728-4.224 1.728t-4.256-1.728l-10.016-10.016q-1.76-1.76-1.76-4.256v-12h6.016q0-0.832-0.608-1.408t-1.408-0.576h-4q-0.832 0-1.408 0.576t-0.576 1.408v3.008q0 0.608-0.512 0.864t-0.992 0-0.512-0.864zM8 16q0 0.832 0.608 1.408l9.984 10.016q0.608 0.576 1.44 0.576t1.376-0.576l6.016-6.016q0.576-0.576 0.576-1.408t-0.576-1.408l-10.016-10.016q-0.576-0.576-1.408-0.576h-1.024q1.024 1.376 1.024 3.008 0 1.12-0.384 2.048t-0.992 1.536-1.472 0.992-1.728 0.416-1.76-0.192-1.664-0.832v1.024zM8 11.008q0 0.8 0.32 1.44t0.864 0.928 1.184 0.48 1.28 0 1.152-0.48 0.864-0.928 0.352-1.44q0-0.96-0.576-1.728t-1.44-1.056v2.784q0 0.608-0.512 0.864t-0.992 0-0.48-0.864v-2.784q-0.896 0.288-1.44 1.056t-0.576 1.728z");
+
+    private static readonly Geometry FunctionIconGeometry = Geometry.Parse(
+        "M16.6582 9.28638C18.098 10.1862 18.8178 10.6361 19.0647 11.2122C19.2803 11.7152 19.2803 12.2847 19.0647 12.7878C18.8178 13.3638 18.098 13.8137 16.6582 14.7136L9.896 18.94C8.29805 19.9387 7.49907 20.4381 6.83973 20.385C6.26501 20.3388 5.73818 20.0469 5.3944 19.584C5 19.053 5 18.1108 5 16.2264V7.77357C5 5.88919 5 4.94701 5.3944 4.41598C5.73818 3.9531 6.26501 3.66111 6.83973 3.6149C7.49907 3.5619 8.29805 4.06126 9.896 5.05998L16.6582 9.28638Z");
+
+    private static readonly Geometry PropertyIconGeometry = Geometry.Parse(
+        "M2.46148 12.8001C2.29321 12.5087 2.20908 12.3629 2.17615 12.208C2.14701 12.0709 2.14701 11.9293 2.17615 11.7922C2.20908 11.6373 2.29321 11.4915 2.46148 11.2001L6.53772 4.13984C6.70598 3.8484 6.79011 3.70268 6.90782 3.5967C7.01196 3.50293 7.13465 3.43209 7.26793 3.38879C7.41856 3.33984 7.58683 3.33984 7.92336 3.33984H16.0758C16.4124 3.33984 16.5806 3.33984 16.7313 3.38879C16.8645 3.43209 16.9872 3.50293 17.0914 3.5967C17.2091 3.70268 17.2932 3.8484 17.4615 4.13984L21.5377 11.2001C21.706 11.4915 21.7901 11.6373 21.823 11.7922C21.8522 11.9293 21.8522 12.0709 21.823 12.208C21.7901 12.3629 21.706 12.5087 21.5377 12.8001L17.4615 19.8604C17.2932 20.1518 17.2091 20.2975 17.0914 20.4035C16.9872 20.4973 16.8645 20.5681 16.7313 20.6114C16.5806 20.6604 16.4124 20.6604 16.0758 20.6604H7.92336C7.58683 20.6604 7.41856 20.6604 7.26793 20.6114C7.13465 20.5681 7.01196 20.4973 6.90782 20.4035C6.79011 20.2975 6.70598 20.1518 6.53772 19.8604L2.46148 12.8001Z");
+
+    private static readonly Geometry TypeIconGeometry = Geometry.Parse(
+        "M0 12L6 1.60769H18L24 12L18 22.3923H6L0 12Z");
+
+    private static readonly Geometry NamespaceIconGeometry = Geometry.Parse(
+        "M108,36H48A12,12,0,0,0,36,48v60a12,12,0,0,0,12,12h60a12,12,0,0,0,12-12V48A12,12,0,0,0,108,36ZM96,96H60V60H96Z" +
+        "M208,36H148a12,12,0,0,0-12,12v60a12,12,0,0,0,12,12h60a12,12,0,0,0,12-12V48A12,12,0,0,0,208,36ZM196,96H160V60h36Z" +
+        "M108,136H48a12,12,0,0,0-12,12v60a12,12,0,0,0,12,12h60a12,12,0,0,0,12-12V148A12,12,0,0,0,108,136ZM96,196H60V160H96Z" +
+        "M208,136H148a12,12,0,0,0-12,12v60a12,12,0,0,0,12,12h60a12,12,0,0,0,12-12V148A12,12,0,0,0,208,136Zm-12,60H160V160h36Z");
+
+    private static readonly Geometry KeywordIconGeometry = Geometry.Parse(
+        "M12 10.2308L3.08495 7.02346M12 10.2308L20.9178 7.03406M12 10.2308V20.8791" +
+        "M5.13498 18.5771L10.935 20.6242C11.3297 20.7635 11.527 20.8331 11.7294 20.8608" +
+        "C11.909 20.8853 12.091 20.8853 12.2706 20.8608C12.473 20.8331 12.6703 20.7635 13.065 20.6242" +
+        "L18.865 18.5771C19.6337 18.3058 20.018 18.1702 20.3018 17.9269C20.5523 17.7121 20.7459 17.4386 20.8651 17.1308" +
+        "C21 16.7823 21 16.3747 21 15.5595V8.44058C21 7.62542 21 7.21785 20.8651 6.86935" +
+        "C20.7459 6.56155 20.5523 6.28804 20.3018 6.0732C20.018 5.82996 19.6337 5.69431 18.865 5.42301" +
+        "L13.065 3.37595C12.6703 3.23665 12.473 3.167 12.2706 3.13936C12.091 3.11484 11.909 3.11484 11.7294 3.13936" +
+        "C11.527 3.167 11.3297 3.23665 10.935 3.37595L5.13498 5.42301C4.36629 5.69431 3.98195 5.82996 3.69824 6.0732" +
+        "C3.44766 6.28804 3.25414 6.56155 3.13495 6.86935C3 7.21785 3 7.62542 3 8.44058V15.5595" +
+        "C3 16.3747 3 16.7823 3.13495 17.1308C3.25414 17.4386 3.44766 17.7121 3.69824 17.9269" +
+        "C3.98195 18.1702 4.36629 18.3058 5.13498 18.5771Z");
+
     // [icon chip] [name] [kind label, right-aligned], themed to Kodo's live colors.
     private Control BuildContentVisual()
     {
-        var (glyph, _) = GlyphAndColorFor(Kind);
+        var iconGeometry = Kind switch
+        {
+            InsightKind.Variable  => VariableIconGeometry,
+            InsightKind.Function  => FunctionIconGeometry,
+            InsightKind.Property  => PropertyIconGeometry,
+            InsightKind.Type      => TypeIconGeometry,
+            InsightKind.Namespace => NamespaceIconGeometry,
+            InsightKind.Keyword   => KeywordIconGeometry,
+            _ => KeywordIconGeometry,
+        };
 
         var iconChip = new Border
         {
@@ -94,12 +136,17 @@ public sealed class InsightSuggestion : ICompletionData
             CornerRadius = new CornerRadius(6),
             Background = GlyphBrushes[Kind],
             VerticalAlignment = VerticalAlignment.Center,
-            Child = new TextBlock
+            Child = new Path
             {
-                Text = glyph,
-                FontSize = 11,
-                FontWeight = FontWeight.Bold,
-                Foreground = Brushes.White,
+                Data = iconGeometry,
+                Stretch = Stretch.Uniform,
+                Width = 12,
+                Height = 12,
+                Fill = Brushes.White,
+                Stroke = Brushes.White,
+                StrokeThickness = 1.5,
+                StrokeLineCap = PenLineCap.Round,
+                StrokeJoin = PenLineJoin.Round,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             },
@@ -450,4 +497,3 @@ public sealed class InsightEngine
             .ToList();
     }
 }
-
