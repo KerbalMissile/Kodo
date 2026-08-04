@@ -1,8 +1,9 @@
-﻿// Licensed under the GPL-v3.0
+// Licensed under the GPL-v3.0
 using Avalonia;
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -54,18 +55,27 @@ class Program
             .LogToTrace();
 }
 
-// Ensures only one Kodo window exists per user session. The first process to
-// start owns the mutex and becomes "primary" - it opens a named pipe and
-// listens for file paths handed off by later launches (e.g. double-clicking
-// another file in Explorer while Kodo is already open). Any later launch
-// fails to acquire the mutex, forwards its startup file path to the primary
-// instance over the pipe, and exits without ever creating a window.
 internal static class SingleInstance
 {
-    private const string MutexName = @"Local\Kodo_SingleInstance_Mutex_9F3E2C1A";
-    private const string PipeName  = "Kodo_SingleInstance_Pipe_9F3E2C1A";
+    // Suffixed with the build version so a dev build never shares an instance
+    // lock with an installed release build (or a different dev version).
+    private static readonly string MutexName = $@"Local\Kodo_SingleInstance_Mutex_9F3E2C1A_{VersionSuffix()}";
+    private static readonly string PipeName  = $"Kodo_SingleInstance_Pipe_9F3E2C1A_{VersionSuffix()}";
 
     private static Mutex? _mutex;
+
+    private static string VersionSuffix()
+    {
+        var informationalVersion = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+
+        var version = string.IsNullOrEmpty(informationalVersion)
+            ? "0.0.0"
+            : informationalVersion.Split('+', 2)[0]; // strip +<git-hash> metadata
+
+        return version.Replace('.', '_');
+    }
 
     // True if this process is the primary (first) instance and owns the mutex.
     public static bool TryAcquire()
