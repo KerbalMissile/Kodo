@@ -70,7 +70,7 @@ public sealed class InsightSuggestion : ICompletionData
         InsightKind.Function  => ("F", "#A855F7"),
         InsightKind.Property  => ("P", "#14B8A6"),
         InsightKind.Type      => ("T", "#F97316"),
-        InsightKind.Namespace => ("N", "#10B981"),
+        InsightKind.Namespace => ("N", "#0db37b"),
         InsightKind.Keyword   => ("K", "#6366F1"),
         _ => ("•", "#6B7280"),
     };
