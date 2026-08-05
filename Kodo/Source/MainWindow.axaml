@@ -3884,7 +3884,8 @@
                 <ScrollViewer Grid.Row="1"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="32,28,32,36"
+                    <StackPanel x:Name="SettingsCardsPanel"
+                                Margin="32,28,32,36"
                                 Spacing="16"
                                 MaxWidth="760"
                                 Width="760"
@@ -3897,7 +3898,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsThemeSettingsVisible}">
+                                x:Name="ThemeSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4118,7 +4119,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsAccentColourSettingsVisible}">
+                                x:Name="AccentColourSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4216,7 +4217,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsEditorSettingsVisible}">
+                                x:Name="EditorSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4282,7 +4283,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsEditorSettingsVisible}">
+                                x:Name="EditorInsightSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4305,7 +4306,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsTerminalSettingsVisible}">
+                                x:Name="TerminalSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4352,7 +4353,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsDisplaySettingsVisible}">
+                                x:Name="DisplaySettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4378,7 +4379,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsTabsLaunchSettingsVisible}">
+                                x:Name="TabsLaunchSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4406,7 +4407,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsAutosaveSettingsVisible}">
+                                x:Name="AutosaveSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4431,7 +4432,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsUpdatesSettingsVisible}">
+                                x:Name="UpdatesSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4488,7 +4489,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsDiscordRichPresenceSettingsVisible}">
+                                x:Name="DiscordRichPresenceSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4526,7 +4527,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsPrivacySettingsVisible}">
+                                x:Name="PrivacySettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4556,7 +4557,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsPersonalizationSettingsVisible}">
+                                x:Name="PersonalizationSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4642,7 +4643,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsDeveloperOptionsSettingsVisible}">
+                                x:Name="DeveloperOptionsSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4718,7 +4719,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsHelpSettingsVisible}">
+                                x:Name="HelpSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4760,7 +4761,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsAboutSettingsVisible}">
+                                x:Name="AboutSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4856,7 +4857,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                IsVisible="{Binding IsWhatsNewSettingsVisible}">
+                                x:Name="WhatsNewSettingsCard">
                             <StackPanel Spacing="14">
                                 <Grid ColumnDefinitions="*,Auto"
                                       ColumnSpacing="16">
@@ -5020,8 +5021,11 @@
                         </Border>
 
                         <!-- Search active, but nothing matches it - mirrors the extensions
-                             search-empty pattern (IsInstalledSearchEmptyVisible etc.) -->
-                        <Border IsVisible="{Binding IsSettingsSearchEmptyVisible}"
+                             search-empty pattern (IsInstalledSearchEmptyVisible etc.). Named so
+                             the generic card-visibility pass in code-behind skips it - it's the
+                             empty-state indicator, not a settings card. -->
+                        <Border x:Name="SettingsSearchEmptyPlaceholder"
+                                IsVisible="{Binding IsSettingsSearchEmptyVisible}"
                                 Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"

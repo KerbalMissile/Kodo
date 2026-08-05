@@ -23,6 +23,7 @@ using System.Text;
 using Microsoft.Win32;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -1063,6 +1064,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? trimmedStartupPath
             : null;
         InitializeComponent();
+        NotifySettingsSearchChanged();
         LoadWindowIcon();
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
         EditorTextBox.TextArea.TextView.Options.AllowScrollBelowDocument = false;
@@ -5052,100 +5054,90 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // True if the search box is empty (nothing to filter) or the given keyword blob
-    // contains the search text. Keywords should include the card's title plus the
-    // labels of its more findable controls, so e.g. "font" surfaces the Editor card.
-    private bool MatchesSettingsSearch(string keywords)
+    // Automatic settings search: instead of a hand-maintained keyword list per
+    // card, we walk each card's live visual tree and pull out every bit of text
+    // a user could actually read (labels, content, headers, tooltips, watermarks) -
+    // the same way a search engine indexes a page's rendered text rather than a
+    // curated meta-keywords tag. New cards/controls are searchable automatically
+    // as soon as they're named; nothing here needs to be updated for them.
+    private static void CollectSearchableText(StyledElement element, StringBuilder sb)
     {
-        var query = _settingsSearchText?.Trim();
-        return string.IsNullOrEmpty(query) ||
-               keywords.Contains(query, StringComparison.OrdinalIgnoreCase);
+        if (element is TextBlock { Text: { Length: > 0 } text })
+            sb.Append(text).Append(' ');
+
+        if (element is HeaderedContentControl { Header: string header } && !string.IsNullOrWhiteSpace(header))
+            sb.Append(header).Append(' ');
+
+        if (element is ContentControl { Content: string content } && !string.IsNullOrWhiteSpace(content))
+            sb.Append(content).Append(' ');
+
+        if (element is TextBox { PlaceholderText: { Length: > 0 } placeholder })
+            sb.Append(placeholder).Append(' ');
+
+        if (element is Control control && ToolTip.GetTip(control) is string tip && !string.IsNullOrWhiteSpace(tip))
+            sb.Append(tip).Append(' ');
     }
 
-    public bool IsThemeSettingsVisible =>
-        MatchesSettingsSearch("Theme dark light system appearance color colour scheme accent");
+    // Rebuilt on every call rather than cached, so status text that changes at
+    // runtime (e.g. "Enable Insight" hints, version numbers) stays searchable -
+    // these cards are small, so re-walking them per keystroke is cheap.
+    private static string GetSettingsCardSearchText(Control? card)
+    {
+        if (card is null)
+            return string.Empty;
 
-    public bool IsAccentColourSettingsVisible =>
-        MatchesSettingsSearch("Accent Colour color theme kodo windows custom purple");
+        var sb = new StringBuilder();
+        CollectSearchableText(card, sb);
+        foreach (var descendant in card.GetVisualDescendants())
+        {
+            if (descendant is StyledElement styled)
+                CollectSearchableText(styled, sb);
+        }
 
-    public bool IsEditorSettingsVisible =>
-        MatchesSettingsSearch("Editor word wrap Insight code suggestions completion autocomplete tab size font size");
+        return sb.ToString();
+    }
 
-    public bool IsTerminalSettingsVisible =>
-        MatchesSettingsSearch("Terminal shell PowerShell PSReadLine predictive IntelliSense");
-
-    public bool IsDisplaySettingsVisible =>
-        MatchesSettingsSearch("Display status bar file path");
-
-    public bool IsTabsLaunchSettingsVisible =>
-        MatchesSettingsSearch("Tabs Launch confirm closing unsaved restore open tabs startup");
-
-    public bool IsAutosaveSettingsVisible =>
-        MatchesSettingsSearch("Autosave auto save");
-
-    public bool IsUpdatesSettingsVisible =>
-        MatchesSettingsSearch("Updates update Kodo background automatically check extensions");
-
-    public bool IsDiscordRichPresenceSettingsVisible =>
-        MatchesSettingsSearch("Discord Rich Presence RPC detailed");
-
-    public bool IsPrivacySettingsVisible =>
-        MatchesSettingsSearch("Privacy data tracking anonymous usage analytics policy");
-
-    public bool IsPersonalizationSettingsVisible =>
-        MatchesSettingsSearch("Personalization name country hemisphere time zone offset");
-
-    public bool IsDeveloperOptionsSettingsVisible =>
-        MatchesSettingsSearch("Developer Options logs verbose logging crash diagnostic export folder extensions settings");
-
-    public bool IsHelpSettingsVisible =>
-        MatchesSettingsSearch("Help tutorial Discord website shortcuts keyboard");
-
-    public bool IsAboutSettingsVisible =>
-        MatchesSettingsSearch("About version check for updates release copyright Kodo");
-
-    public bool IsWhatsNewSettingsVisible =>
-        MatchesSettingsSearch("What's New changelog release notes");
+    private bool MatchesSettingsSearchCard(Control? card)
+    {
+        return string.IsNullOrWhiteSpace(_settingsSearchText) ||
+               GetSettingsCardSearchText(card).Contains(_settingsSearchText, StringComparison.OrdinalIgnoreCase);
+    }
 
     // Search active, but every card was filtered out - lets the empty-state
     // placeholder tell the difference from "Settings just hasn't loaded yet".
-    public bool IsSettingsSearchEmptyVisible =>
-        !string.IsNullOrWhiteSpace(_settingsSearchText) &&
-        !IsThemeSettingsVisible &&
-        !IsAccentColourSettingsVisible &&
-        !IsEditorSettingsVisible &&
-        !IsTerminalSettingsVisible &&
-        !IsDisplaySettingsVisible &&
-        !IsTabsLaunchSettingsVisible &&
-        !IsAutosaveSettingsVisible &&
-        !IsUpdatesSettingsVisible &&
-        !IsDiscordRichPresenceSettingsVisible &&
-        !IsPrivacySettingsVisible &&
-        !IsPersonalizationSettingsVisible &&
-        !IsDeveloperOptionsSettingsVisible &&
-        !IsHelpSettingsVisible &&
-        !IsAboutSettingsVisible &&
-        !IsWhatsNewSettingsVisible;
+    private bool _isSettingsSearchEmpty;
+    public bool IsSettingsSearchEmptyVisible => _isSettingsSearchEmpty;
 
+    // Toggles each settings card's own IsVisible directly, so a new card needs
+    // nothing beyond existing in SettingsCardsPanel - no per-card property, no
+    // XAML IsVisible binding, no entry in this method (mirrors how new
+    // Marketplace extensions need no code, just a new item in the collection).
+    // Cards that should show/hide as one unit (e.g. Editor + Editor Insight)
+    // opt in by sharing the same Tag string; everyone else defaults to being
+    // their own group.
     private void NotifySettingsSearchChanged()
     {
-        OnPropertyChanged(nameof(IsThemeSettingsVisible));
-        OnPropertyChanged(nameof(IsAccentColourSettingsVisible));
-        OnPropertyChanged(nameof(IsEditorSettingsVisible));
-        OnPropertyChanged(nameof(IsTerminalSettingsVisible));
-        OnPropertyChanged(nameof(IsDisplaySettingsVisible));
-        OnPropertyChanged(nameof(IsTabsLaunchSettingsVisible));
-        OnPropertyChanged(nameof(IsAutosaveSettingsVisible));
-        OnPropertyChanged(nameof(IsUpdatesSettingsVisible));
-        OnPropertyChanged(nameof(IsDiscordRichPresenceSettingsVisible));
-        OnPropertyChanged(nameof(IsPrivacySettingsVisible));
-        OnPropertyChanged(nameof(IsPersonalizationSettingsVisible));
-        OnPropertyChanged(nameof(IsDeveloperOptionsSettingsVisible));
-        OnPropertyChanged(nameof(IsHelpSettingsVisible));
-        OnPropertyChanged(nameof(IsAboutSettingsVisible));
-        OnPropertyChanged(nameof(IsWhatsNewSettingsVisible));
+        var cards = SettingsCardsPanel.Children
+            .OfType<Control>()
+            .Where(c => c.Name != "SettingsSearchEmptyPlaceholder")
+            .ToList();
+        var groupVisible = cards
+            .GroupBy(SettingsCardGroupKey)
+            .ToDictionary(g => g.Key, g => g.Any(MatchesSettingsSearchCard));
+
+        var anyVisible = false;
+        foreach (var card in cards)
+        {
+            var visible = groupVisible[SettingsCardGroupKey(card)];
+            card.IsVisible = visible;
+            anyVisible |= visible;
+        }
+
+        _isSettingsSearchEmpty = !string.IsNullOrWhiteSpace(_settingsSearchText) && !anyVisible;
         OnPropertyChanged(nameof(IsSettingsSearchEmptyVisible));
     }
+
+    private static object SettingsCardGroupKey(Control card) => card.Tag ?? (object)card;
 
     public bool IsUpdatingAllExtensions
     {
