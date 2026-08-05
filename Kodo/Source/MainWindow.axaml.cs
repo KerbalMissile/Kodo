@@ -588,7 +588,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string AutoSaveFailedMessagePrefix = "Save failed:";
     // App version read from <InformationalVersion> in Kodo.csproj (bump only that tag).
     private static readonly string CurrentAppVersion = KodoDiagnostics.AppVersion;
-    public string CopyrightText => $"© {DateTime.Now.Year} KerbalMissile and SS-YYC. Licensed under GPL-3.0.";
+    public string CopyrightText => $"© {DateTime.Now.Year} Kodo, built by KerbalMissile and SS-YYC. Licensed under the GNU GPL-v3.0.";
     // GitHub Contents API endpoint for the extension index JSON, fetched with the raw+json Accept header for direct file bytes.
     private static readonly string[] MarketplaceIndexUrls =
     [
