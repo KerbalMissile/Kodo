@@ -1065,8 +1065,16 @@ public sealed class ConsoleTerminal : Control
             for (var c = 0; c < _cols; c++) row[c] = _cells[r, c];
             _scrollback.Add(row);
         }
-        if (_scrollback.Count > MaxScrollbackLines)
-            _scrollback.RemoveRange(0, _scrollback.Count - MaxScrollbackLines);
+        // Keep the viewport pinned to the same absolute lines instead of letting it
+        // drift toward the live tail as new lines get pushed in from below.
+        if (_scrollOffset > 0)
+            _scrollOffset += n;
+
+        var trimmed = _scrollback.Count > MaxScrollbackLines ? _scrollback.Count - MaxScrollbackLines : 0;
+        if (trimmed > 0)
+            _scrollback.RemoveRange(0, trimmed);
+
+        _scrollOffset = Math.Clamp(_scrollOffset - trimmed, 0, _scrollback.Count);
 
         for (var r = 0; r < _rows - n; r++)
         for (var c = 0; c < _cols; c++)
