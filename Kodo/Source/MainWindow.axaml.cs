@@ -7463,6 +7463,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.SyntaxHighlighting = null;
         ConfigureRainbowBrackets(null);
         SetEditorContent(string.Empty);
+
+        // No tabs and no folder left open - the explorer would otherwise be
+        // stuck visible with nothing to show and no folder-gated toggle to
+        // close it (that toggle only appears when IsFolderOpen).
+        if (_currentFolderPath is null)
+            IsFileExplorerVisible = false;
+
         RefreshState(fullRefresh: true);
     }
 
