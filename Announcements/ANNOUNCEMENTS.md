@@ -32,3 +32,8 @@ Minor updater bugfixes, plus a new settings search bar!
 > August 3, 2026
 Kodo's code has been migrated and we are monitoring performance. Let us know if you encounter any bugs by making an Issue!
 ---
+
+## Update to GitHub Repo Migration
+> August 4, 2026
+We have not noticed any performance issues within just over 24 hours of testing and monitoring, so you are unlikely to experience issues relating to the migration. Thanks for your patience!
+---

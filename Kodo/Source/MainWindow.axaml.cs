@@ -10698,7 +10698,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
         // Lets the open Insight popup own navigation/accept/dismiss keys before smart-enter/smart-tab.
-        if (_completionWindow is not null && e.Key is Key.Enter or Key.Tab or Key.Escape
+        if (_completionWindow is not null && e.Key is Key.Tab or Key.Escape
             or Key.Up or Key.Down or Key.PageUp or Key.PageDown)
         {
             return;
