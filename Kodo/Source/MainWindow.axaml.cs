@@ -1619,12 +1619,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
                 .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
         });
-
-        // Icons are decorative and already fail silently per-icon, so they run in the
-        // background instead of being awaited here - with 4-way concurrency and a 7s
-        // per-icon cap (_iconFetchSemaphore), a marketplace with more than a handful of
-        // cold icons could otherwise take far longer than the refresh watchdog's budget
-        // and trip a false "hang" warning even though nothing was actually stuck.
         _ = FetchMarketplaceIconsAsync(marketplaceIconMap);
         _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap);
     }
@@ -3288,16 +3282,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             yield return baseExt;
         }
     }
-
-    // Every language profile file a .kox / extension folder may contain, in load order.
-    // "language.json" and "language2.json" are the original two files legacy extensions
-    // ship with - their names are kept as-is for backward compatibility. "language1.json"
-    // and "language3.json" through "language5.json" fill in the remaining slots without
-    // touching that existing pair, bringing the total to six.
-    // Each file is parsed independently: a profile whose own "extensions" array is non-empty
-    // becomes an additional scoped LanguageSyntaxProfile (see ParseLanguage), otherwise it's
-    // merged into the extension's base profile. Used by both LoadExtensionsFromFolder and
-    // LoadExtensionsFromKox so multi-language-in-one-package extensions aren't capped at two.
     private static IEnumerable<string> EnumerateLanguageProfileNames()
     {
         yield return "language.json";
@@ -5107,14 +5091,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // placeholder tell the difference from "Settings just hasn't loaded yet".
     private bool _isSettingsSearchEmpty;
     public bool IsSettingsSearchEmptyVisible => _isSettingsSearchEmpty;
-
-    // Toggles each settings card's own IsVisible directly, so a new card needs
-    // nothing beyond existing in SettingsCardsPanel - no per-card property, no
-    // XAML IsVisible binding, no entry in this method (mirrors how new
-    // Marketplace extensions need no code, just a new item in the collection).
-    // Cards that should show/hide as one unit (e.g. Editor + Editor Insight)
-    // opt in by sharing the same Tag string; everyone else defaults to being
-    // their own group.
     private void NotifySettingsSearchChanged()
     {
         var cards = SettingsCardsPanel.Children
@@ -5644,6 +5620,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsAmericanEnglish));
             OnPropertyChanged(nameof(LabelAccentColour));
+            OnPropertyChanged(nameof(TooltipAccentTheme));
+            OnPropertyChanged(nameof(TooltipAccentWindows));
+            OnPropertyChanged(nameof(TooltipAccentCustom));
             OnPropertyChanged(nameof(LabelPersonalization));
             OnPropertyChanged(nameof(LabelPersonalizationDescription));
             OnPropertyChanged(nameof(TutorialSpotlightTitle));
@@ -5661,6 +5640,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Regional spelling: US gets "Color"/"personalize"; everyone else gets "Colour"/"personalise".
     public string LabelAccentColour        => IsAmericanEnglish ? "Accent Color"      : "Accent Colour";
+    public string TooltipAccentTheme       => IsAmericanEnglish ? "Use the accent color preset by the active theme" : "Use the accent colour preset by the active theme";
+    public string TooltipAccentWindows     => IsAmericanEnglish ? "Use your Windows system accent color" : "Use your Windows system accent colour";
+    public string TooltipAccentCustom      => IsAmericanEnglish ? "Choose a custom accent color" : "Choose a custom accent colour";
     public string LabelPersonalization     => IsAmericanEnglish ? "Personalization"   : "Personalisation";
     public string LabelPersonalizationDescription => IsAmericanEnglish
         ? "These settings personalize the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible."
@@ -7233,7 +7215,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CanResize             = false,
             ShowInTaskbar         = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Title                 = "Custom Accent Colour",
+            Title                 = IsAmericanEnglish ? "Custom Accent Color" : "Custom Accent Colour",
             Background            = CardBrush,
             Content = new Border
             {
@@ -8269,13 +8251,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         session.WorkingDirectory = path;
         RetitleTerminalSessions();
     }
-
-
-    /// Recomputes auto-generated tab titles from each session's working-directory folder name.
-    /// The first session in a given directory keeps the bare name (e.g. "Kodo"); later sessions
-    /// sharing that same directory get " 2", " 3", etc., in tab order. Sessions the user has
-    /// renamed (<see cref="TerminalSession.HasCustomTitle"/>) are left untouched and don't
-    /// consume a slot in another session's numbering.
 
     private void RetitleTerminalSessions()
     {

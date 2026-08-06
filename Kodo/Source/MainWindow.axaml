@@ -2994,14 +2994,14 @@
                                                                FontWeight="SemiBold"
                                                                Foreground="{Binding PrimaryTextBrush}"
                                                                VerticalAlignment="Center"
-                                                               Text="ACCENT COLOUR" />
+                                                               Text="{Binding LabelAccentColour}" />
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                                     <Button Classes="chrome"
                                                             Click="AccentThemeButton_OnClick"
                                                             Width="120"
                                                             IsVisible="{Binding HasThemeAccent}"
-                                                            ToolTip.Tip="Use the accent colour preset by the active theme">
+                                                            ToolTip.Tip="{Binding TooltipAccentTheme}">
                                                         <StackPanel Spacing="6">
                                                             <Border Height="28" CornerRadius="8" Background="{Binding ThemeAccentPreviewBrush}" />
                                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
@@ -3029,7 +3029,7 @@
                                                     <Button Classes="chrome"
                                                             Click="AccentWindowsButton_OnClick"
                                                             Width="120"
-                                                            ToolTip.Tip="Use your Windows system accent colour">
+                                                            ToolTip.Tip="{Binding TooltipAccentWindows}">
                                                         <StackPanel Spacing="6">
                                                             <Border Height="28" CornerRadius="8"
                                                                     Background="{Binding AccentBrush}"
@@ -3048,7 +3048,7 @@
                                                     <Button Classes="chrome"
                                                             Click="AccentColorPickerButton_OnClick"
                                                             Width="120"
-                                                            ToolTip.Tip="Choose a custom accent colour">
+                                                            ToolTip.Tip="{Binding TooltipAccentCustom}">
                                                         <StackPanel Spacing="6">
                                                             <Border Height="28" CornerRadius="8"
                                                                     Background="{Binding AccentBrush}"
@@ -4135,7 +4135,7 @@
                                             Click="AccentThemeButton_OnClick"
                                             Width="120"
                                             IsVisible="{Binding HasThemeAccent}"
-                                            ToolTip.Tip="Use the accent colour preset by the active theme">
+                                            ToolTip.Tip="{Binding TooltipAccentTheme}">
                                         <StackPanel Spacing="6">
                                             <Border Height="28" CornerRadius="8" Background="{Binding ThemeAccentPreviewBrush}" />
                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
@@ -4165,7 +4165,7 @@
                                     <Button Classes="chrome"
                                             Click="AccentWindowsButton_OnClick"
                                             Width="120"
-                                            ToolTip.Tip="Use your Windows system accent colour">
+                                            ToolTip.Tip="{Binding TooltipAccentWindows}">
                                         <StackPanel Spacing="6">
                                             <Border Height="28" CornerRadius="8" Background="{Binding AccentBrush}"
                                                     IsVisible="{Binding IsAccentWindows}" />
@@ -4183,7 +4183,7 @@
                                     <Button Classes="chrome"
                                             Click="AccentColorPickerButton_OnClick"
                                             Width="120"
-                                            ToolTip.Tip="Choose a custom accent colour">
+                                            ToolTip.Tip="{Binding TooltipAccentCustom}">
                                         <StackPanel Spacing="6">
                                             <Border Height="28" CornerRadius="8" Background="{Binding AccentBrush}"
                                                     IsVisible="{Binding IsAccentCustom}" />
