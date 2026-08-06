@@ -5045,12 +5045,6 @@
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
-
-            <!-- Opening splash - consolidated release-notes / diagnostics-consent
-                 screen shown at most once per launch for returning users (see
-                 LoadStartupTabsAsync). Depending on why it was triggered it shows
-                 release notes, the consent card, or both. Sits on top of every
-                 other page since it's the last child in this Panel. -->
             <Grid IsVisible="{Binding IsUpdateSplashVisible}"
                   IsHitTestVisible="{Binding IsUpdateSplashVisible}"
                   Background="#B3000000">
