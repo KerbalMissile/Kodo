@@ -83,7 +83,7 @@ internal static class SingleInstance
         _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
         if (createdNew) return true;
 
-        // Didn't create it - someone else owns it. Don't hold a handle around.
+        // Didn't create it; someone else owns it. Don't hold a handle around.
         _mutex.Dispose();
         _mutex = null;
         return false;
@@ -99,8 +99,7 @@ internal static class SingleInstance
         catch { /* best effort on shutdown */ }
     }
 
-    // Called by the primary instance once its MainWindow exists. Listens forever
-    // (until the process exits) for activation requests from later launches.
+    // Called by the primary instance once its MainWindow exists. Listens forever (until the process exits) for activation requests from later launches.
     public static void StartListening(Action<string?> onActivationRequested)
     {
         _ = Task.Run(async () =>
