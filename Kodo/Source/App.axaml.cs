@@ -212,7 +212,7 @@ public partial class App : Application
                 ".txt", ".md", ".cs", ".fs", ".vb",
                 ".js", ".ts", ".jsx", ".tsx",
                 ".html", ".htm", ".css", ".scss", ".sass",
-                ".json", ".xml", ".yaml", ".yml", ".toml",
+                ".json", ".xml", ".yaml", ".yml", ".toml", ".jsonc", ".jsonl",
                 ".py", ".rb", ".go", ".rs", ".cpp", ".c", ".h",
                 ".sh", ".bat", ".ps1",
                 ".sln", ".csproj", ".fsproj",
