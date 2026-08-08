@@ -150,7 +150,7 @@ public class FileTreeItem : INotifyPropertyChanged
 			    ".xml" => "XML",
 			    ".axaml" or ".xaml" => "XAML",
 			    ".html" or ".htm" => "HTML",
-			    ".json" or ".yaml" or ".yml" or ".toml" => "JSON",
+			    ".json" or ".yaml" or ".yml" or ".toml" or ".jsonc" or ".jsonl" => "JSON",
 			    ".txt" or ".rst" or ".log" => "TXT",
                 ".md" or ".markdown" => "MD",
 			    ".png" => "PNG",
