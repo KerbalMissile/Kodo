@@ -45,7 +45,7 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 | 🔄 **Background Auto-Updates** | Kodo checks GitHub releases on its own and keeps both the app and your installed extensions up to date |
 | 🚀 **Guided Tutorial** | A short built-in walkthrough for first-time setup, revisitable any time from Settings |
 
-**Coming soon:** real-time collaborative editing · downloadable compilers (v2.0.0) ·  and much more!
+**Coming soon:** real-time collaborative editing · downloadable compilers (v2.0.0) · UI and C# additions through .kox extensions (v2.0.0) · and much more!
 
 ---
 
