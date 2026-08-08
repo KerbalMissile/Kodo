@@ -1488,8 +1488,10 @@
                         </Border>
 
                         <!-- Two-column body -->
-                        <Grid Grid.Row="1"
-                              ColumnDefinitions="*,340"
+                        <ScrollViewer Grid.Row="1"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                        <Grid ColumnDefinitions="*,340"
                               Margin="32,28,32,36"
                               ColumnSpacing="20">
 
@@ -2098,6 +2100,7 @@
                                 </StackPanel>
 
                             </Grid>
+                        </ScrollViewer>
 
                     </Grid>
                 </Border>
