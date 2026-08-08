@@ -177,7 +177,7 @@
 
         <Style Selector="Button.tab.tabactive">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
-            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
         </Style>
 
@@ -602,6 +602,15 @@
         <Style Selector="CheckBox:pointerover /template/ Border#NormalRectangle">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
             <Setter Property="Opacity" Value="0.8" />
+        </Style>
+        <!-- Checkmark glyph sits on top of the accent-filled box, so it needs the
+             same WCAG-contrast foreground as the Pinned pill / active tab text
+             instead of a fixed white, or it can wash out against a light accent. -->
+        <Style Selector="CheckBox:checked /template/ Path#CheckGlyph">
+            <Setter Property="Fill" Value="{Binding AccentForegroundBrush}" />
+        </Style>
+        <Style Selector="CheckBox:indeterminate /template/ Path#CheckGlyph">
+            <Setter Property="Fill" Value="{Binding AccentForegroundBrush}" />
         </Style>
     </Window.Styles>
 
