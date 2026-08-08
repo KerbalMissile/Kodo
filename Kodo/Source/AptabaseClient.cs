@@ -135,12 +135,9 @@ internal static class AptabaseClient
         _sessionId   = Guid.NewGuid().ToString();
         _systemProps = new AptabaseSystemProps(
             IsDebug:    System.Diagnostics.Debugger.IsAttached,
-            AppVersion: appVersion,
+            AppVersion: readableVersion,
             SdkVersion: "kodo-aptabase@1.0.0",
             OsName:     GetWindowsVersion());
-
-        Console.WriteLine($"[Aptabase] Initialized with session: {_sessionId}");
-        Console.WriteLine($"[Aptabase] App Key: {_appKey}");
 
         if (_isDevBuild)
         {
