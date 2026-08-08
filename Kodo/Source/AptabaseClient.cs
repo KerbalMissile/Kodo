@@ -158,6 +158,13 @@ internal static class AptabaseClient
 
     private static string? GetAptabaseKey()
     {
+        // Primary source: KEYS.cs, a gitignored file sitting next to this one.
+        // Falls back to the env var if KEYS.cs wasn't set up (e.g. CI, or a
+        // contributor who hasn't copied KEYS.cs.example -> KEYS.cs yet).
+        var key = KEYS.AptabaseKey;
+        if (!string.IsNullOrWhiteSpace(key) && key != "YOUR-APTABASE-APP-KEY-HERE")
+            return key;
+
         return Environment.GetEnvironmentVariable("KODO_APTABASE_KEY");
     }
 
