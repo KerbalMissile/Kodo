@@ -798,11 +798,10 @@ internal static class WelcomeMessageBuilder
         }
         if (tod == "afternoon")
         {
-            messages.Add("Afternoon grind - let's go!");
+            messages.Add("Afternoon grind, let's go!");
             messages.Add("Hope the day's treating you well!");
             messages.Add("Halfway through the day, keep it up!");
             messages.Add("Afternoon slump? Not here.");
-            messages.Add("Post-lunch focus: activated.");
         }
         if (tod == "evening")
         {
@@ -870,7 +869,6 @@ internal static class WelcomeMessageBuilder
             messages.Add("Welcome back!");
             messages.Add("Great to see you!");
             messages.Add("Ready to code?");
-            messages.Add("Let's build something!");
             messages.Add("What are we building today?");
             messages.Add("Back at it again!");
             messages.Add("Let's get to work!");
