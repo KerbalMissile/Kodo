@@ -158,14 +158,23 @@ internal static class AptabaseClient
 
     private static string? GetAptabaseKey()
     {
-        // Primary source: KEYS.cs, a gitignored file sitting next to this one.
-        // Falls back to the env var if KEYS.cs wasn't set up (e.g. CI, or a
-        // contributor who hasn't copied KEYS.cs.example -> KEYS.cs yet).
         var key = KEYS.AptabaseKey;
-        if (!string.IsNullOrWhiteSpace(key) && key != "YOUR-APTABASE-APP-KEY-HERE")
-            return key;
+        
+        // Check and warn if the KEYS.cs file is missing or if the key is whitespace.
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            Console.WriteLine("[Aptabase] WARNING: No key found, check if the file is there or if the key is set correctly.");
+            return null;
+        }
 
-        return Environment.GetEnvironmentVariable("KODO_APTABASE_KEY");
+        // Check if placeholder key is there and print if it is.
+        if (key == "PLACEHOLDER")
+        {
+            Console.WriteLine("[Aptabase] Placeholder Key found.");
+            return null;
+        }
+
+        return key;
     }
 
     private static async Task TestConnectivityAsync()
